@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" project_name="decision">
+    <include path="Area0Tree.xml"/>
+    <include path="Area1Tree.xml"/>
+    <include path="Area2Tree.xml"/>
+    <include path="Area3Tree.xml"/>
+    <include path="Area4Tree.xml"/>
+    <include path="Area5Tree.xml"/>
+    <include path="AreaMain.xml"/>
+    <include path="CheckTree.xml"/>
+    <include path="FollowHeroArea.xml"/>
+    <include path="FollowHeroTest.xml"/>
+    <include path="HighPTree.xml"/>
+    <!-- Description of Node Models (used by Groot) -->
+    <TreeNodesModel>
+        <Action ID="Area1Patrol3" editable="true">
+            <input_port name="point1"/>
+            <input_port name="point2"/>
+            <input_port name="point3"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.1"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Condition ID="Area2YellowTimer" editable="true">
+            <input_port name="yellow_point"/>
+            <input_port name="robot_x" default="@current_pose_x"/>
+            <input_port name="robot_y" default="@current_pose_y"/>
+            <input_port name="stay_duration" default="10.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+        </Condition>
+        <Action ID="Area3Patrol3" editable="true">
+            <input_port name="point1"/>
+            <input_port name="point2"/>
+            <input_port name="point3"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.1"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="center_status" default="@center_status"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="CostmapCheckGoal" editable="true">
+            <input_port name="ros_node"/>
+            <input_port name="game_progress" default="@game_progress"/>
+            <input_port name="nav_goal" default="@nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="EvadeEnemyInfantry" editable="true">
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="enemy_infantry1_distance" default="@enemy_infantry1_distance"/>
+            <input_port name="enemy_infantry2_distance" default="@enemy_infantry2_distance"/>
+            <input_port name="enemy_infantry1_x" default="@enemy_infantry1_x"/>
+            <input_port name="enemy_infantry1_y" default="@enemy_infantry1_y"/>
+            <input_port name="enemy_infantry2_x" default="@enemy_infantry2_x"/>
+            <input_port name="enemy_infantry2_y" default="@enemy_infantry2_y"/>
+            <input_port name="current_area" default="@current_area"/>
+            <input_port name="supply_point_location" default="@supply_point_location"/>
+            <input_port name="goto_area1" default="@goto_area1"/>
+            <input_port name="goto_area2" default="@goto_area2"/>
+            <input_port name="goto_area3" default="@goto_area3"/>
+            <input_port name="center_capture_point" default="@center_capture_point"/>
+            <input_port name="tolerance" default="0.1"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="FollowHero" editable="true">
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="hero_x" default="@teammate_hero_location_x"/>
+            <input_port name="hero_y" default="@teammate_hero_location_y"/>
+            <input_port name="center_x" default="@hero_follow_center_x"/>
+            <input_port name="center_y" default="@hero_follow_center_y"/>
+            <input_port name="tolerance" default="0.1"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+            <output_port name="center_x_out"/>
+            <output_port name="center_y_out"/>
+        </Action>
+        <Action ID="GoToArea1" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea2" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea2yellow" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea3" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea4" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea4red" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="GoToArea4yellow" editable="true">
+            <input_port name="target_pose"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.1"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+        <Action ID="StayAtSupplyPoint" editable="true">
+            <input_port name="supply_point_location"/>
+            <input_port name="timeout" default="15.0"/>
+            <input_port name="tolerance" default="0.2"/>
+            <input_port name="ros_node"/>
+            <input_port name="current_pose_x" default="@current_pose_x"/>
+            <input_port name="current_pose_y" default="@current_pose_y"/>
+            <input_port name="nav_goal"/>
+            <output_port name="nav_goalOut"/>
+            <output_port name="nav_goal_requested"/>
+        </Action>
+    </TreeNodesModel>
+</root>

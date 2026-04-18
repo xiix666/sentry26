@@ -1,0 +1,12 @@
+[Unit]
+Description=nav
+After=syslog.target
+[Service]
+User=rps
+
+ExecStartPre=/bin/sleep 20
+ExecStart=/home/rps/sentry26/start/nav.sh
+SuccessExitStatus=143
+Restart=always
+[Install]
+WantedBy=multi-user.target

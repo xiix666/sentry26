@@ -1,0 +1,706 @@
+livox_ros_driver2:
+  ros__parameters:
+    xfer_format: 4                                      # 0-PointCloud2Msg(PointXYZRTL), 1-LivoxCustomMsg, 2-PclPxyziMsg, 3-LivoxImuMsg, 4-AllMsg
+    multi_topic: 1                                      # 0-All LiDARs share the same topic, 1-One LiDAR one topic
+    data_src: 0                                         # 0-lidar, others-Invalid data src
+    publish_freq: 20.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
+    output_data_type: 0   #0-topic 1-rosbag
+    frame_id: lidar_link
+    user_config_path: $(find-pkg-share bringup)/config/mid360_user_config.json
+    cmdline_input_bd_code: livox0000000001
+    lvx_file_path: ""
+
+point_lio:
+  ros__parameters:
+    use_batch: True
+    use_imu_as_input: False                             # Change to True to use IMU as input of Point-LIO
+    prop_at_freq_of_imu: True
+    check_satu: True
+    init_map_size: 8
+    point_filter_num: 4                                 # Options: 4, 3
+    space_down_sample: True
+    filter_size_surf: 0.5                               # Options: 0.5, 0.3, 0.2, 0.15, 0.1
+    filter_size_map: 0.5                                # Options: 0.5, 0.3, 0.15, 0.1
+    ivox_nearby_type: 6                                 # Options: 0, 6, 18, 26
+    runtime_pos_log_enable: False                       # Option: True
+
+    common:
+      lid_topic: "livox/lidar"
+      imu_topic: "livox/imu"
+      con_frame: False                                  # True: if you need to combine several LiDAR frames into one
+      con_frame_num: 1                                  # the number of frames combined
+      cut_frame: False                                  # True: if you need to cut one LiDAR frame into several subframes
+      cut_frame_time_interval: 0.03                     # should be integral fraction of 1 / LiDAR frequency
+      time_diff_lidar_to_imu: 0.0                       # Time offset between LiDAR and IMU calibrated by other algorithms, e.g., LI-Init (find in Readme)
+
+    prior_pcd:
+      enable: False
+      # NOTE: `prior_pcd_map_path` will be provided in the launch file
+      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD1/scans_3.pcd"
+      init_pose: [ 0.0, 0.0, 0.0 ]
+
+    preprocess:
+      lidar_type: 1                                     # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR
+      scan_line: 4
+      timestamp_unit: 3                                 # the unit of time/t field in the PointCloud2 rostopic: 0-second, 1-milisecond, 2-microsecond, 3-nanosecond.
+      blind: 0.5
+
+    mapping:
+
+      det_range: 6.0
+      imu_en: True
+      extrinsic_est_en: False                           # for aggressive motion, set this variable False
+      imu_time_inte: 0.005                              # = 1 / frequency of IMU
+      lidar_time_inte: 0.1
+      satu_acc: 3.0                                     # the saturation value of IMU's acceleration. not related to the units
+      satu_gyro: 35.0                                   # the saturation value of IMU's angular velocity. not related to the units
+      acc_norm: 9.81                                    # 1.0 for g as unit, 9.81 for m/s^2 as unit of the IMU's acceleration
+      lidar_meas_cov: 0.01                              # 0.001
+      acc_cov_output: 500.0
+      gyr_cov_output: 1000.0
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      imu_meas_acc_cov: 0.1
+      imu_meas_omg_cov: 0.1
+      gyr_cov_input: 0.1                                # for IMU as input model
+      acc_cov_input: 0.1                                # for IMU as input model
+      plane_thr: 0.1                                    # 0.05, the threshold for plane criteria, the smaller, the flatter a plane
+      match_s: 81.0
+      ivox_grid_resolution: 0.5
+      gravity: [ 0.0, 0.707, -0.707 ]                     # gravity to be aligned
+      gravity_init: [ 0.0, 0.707, -0.707 ]                # preknown gravity in the first IMU body frame, use when imu_en is False or start from a non-stationary state
+      extrinsic_T: [ -0.011, -0.02329, 0.04412 ]
+      extrinsic_R: [ 1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0 ]
+
+    odometry:
+      publish_odometry_without_downsample: False
+
+    publish:
+      path_en: False                                    # False: close the path output
+      scan_publish_en: True                             # False: close all the point cloud output
+      scan_bodyframe_pub_en: False                      # True: output the point cloud scans in IMU-body-frame
+      tf_send_en: True                                  # True: send transform from 'camera_init' to 'aft_mapped'
+      init_frame: "odom_init"
+      lidar_frame: "lidar_link"
+
+    pcd_save:
+      pcd_save_en: False
+      interval: 10                                      # how many LiDAR frames saved in each pcd file;
+                                                        # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD1/"
+terrain_analysis_ext:
+  ros__parameters:
+    scanVoxelSize: 0.1
+    decayTime: 0.1
+    noDecayDis: 1.0
+    clearingDis: 20.0
+    useSorting: False
+    quantileZ: 0.6
+    vehicleHeight: 0.6          ##########################
+    voxelPointUpdateThre: 40
+    voxelTimeUpdateThre: 0.05
+    lowerBoundZ: -1.0
+    upperBoundZ: 1.0
+    disRatioZ: 0.5
+    checkTerrainConn: True
+    terrainUnderVehicle: -0.3
+    terrainConnThre: 0.5
+    ceilingFilteringThre: 2.0
+    localTerrainMapRadius: 4.0
+    cloud_in: "/livox/pointcloud2/transframe"
+    odom_in: "lidar_odometry"
+
+slam_toolbox:
+  ros__parameters:
+    # https://github.com/SteveMacenski/slam_toolbox/tree/humble?#configuration
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: slam_scan
+    use_map_saver: true
+    mode: mapping
+
+    # if you'd like to immediately start continuing a map at a given pose
+    # or at the dock, but they are mutually exclusive, if pose is given
+    # will use pose
+    # map_file_name: test_steve
+    # map_start_pose: [0.0, 0.0, 0.0]
+    # map_start_at_dock: true
+
+    debug_logging: false
+    throttle_scans: 1
+    scan_queue_size: 10
+    transform_publish_period: 0.0                # if 0 never publishes odometry
+    map_update_interval: 0.5
+    resolution: 0.05
+    min_laser_range: 0.3                        # for rastering images
+    max_laser_range: 10.0                         # for rastering images
+    minimum_time_interval: 0.2
+    transform_timeout: 0.2
+    tf_buffer_duration: 10.
+    stack_size_to_use: 40000000                   # program needs a larger stack size to serialize large maps
+    enable_interactive_mode: true
+
+    # General Parameters
+    use_scan_matching: false
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.1
+    minimum_travel_heading: 0.1
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: false
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # Correlation Parameters - Correlation Parameters
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # Correlation Parameters - Loop Closure Parameters
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan Matcher Parameters
+    distance_variance_penalty: 5.5
+    angle_variance_penalty: 5.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+
+pc2scan:
+  ros__parameters:
+    use_sim_time: True
+    target_frame: base_link
+    min_height: -0.5
+    max_height: 6.0
+    min_intensity: 0.1
+    max_intensity: 2.0
+    angle_min: -3.1415926                   # -M_PI/2
+    angle_max: 3.1415926                    # M_PI/2
+    angle_increment: 0.00872665             # M_PI/360.0
+    scan_time: 0.05
+    range_min: 0.3
+    range_max: 10.0
+    use_inf: true
+
+pointcloud_frame_trans:
+  ros__parameters:
+    # input_topic: /livox/lidar/pointcloud
+    input_topic: /cloud_registered
+    output_topic: /livox/pointcloud2/transframe
+    # output_frame: base_link
+    output_frame: odom
+    tran_odom: true
+    odom_in: aft_mapped_to_init
+    odom_out: /lidar_odometry
+    base_frame: base_link
+    lidar_frame: lidar_link
+    odom_base_out: odometry
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: fake_base_link
+    odom_topic: odometry
+    bt_loop_duration: 10
+    default_server_timeout: 100
+    wait_for_service_timeout: 1000
+    default_nav_to_pose_bt_xml: $(find-pkg-share bringup)/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml
+    default_nav_through_poses_bt_xml: $(find-pkg-share bringup)/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    odom_topic: odometry
+    controller_frequency: 40.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.05
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 5.0
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.1
+      yaw_goal_tolerance: 6.28
+    FollowPath:
+      # plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
+      # translation_kp: 16.0
+      # translation_ki: 0.0
+      # translation_kd: 0.05
+      # enable_rotation: false
+      # rotation_kp: 3.0
+      # rotation_ki: 0.1
+      # rotation_kd: 0.3
+      # transform_tolerance: 0.05
+      # min_max_sum_error: 1.0
+      # lookahead_dist: 0.25
+      # use_velocity_scaled_lookahead_dist: true
+      # lookahead_time: 0.08
+      # min_lookahead_dist: 0.15
+      # max_lookahead_dist: 1.0
+      # use_interpolation: false
+      # use_rotate_to_heading: false
+      # use_rotate_to_heading_treshold: 0.1
+      # min_approach_linear_velocity: 0.4
+      # approach_velocity_scaling_dist: 1.8
+      # v_linear_min: -3.0
+      # v_linear_max: 3.0
+      # v_angular_min: -3.0
+      # v_angular_max: 3.0
+      # curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
+      # curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
+      # reduction_ratio_at_high_curvature: 0.6            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
+      # curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
+      # curvature_backward_dist: 0.4                      # 后向距离，用于曲率计算
+      # large_slow: 0.7
+      # max_velocity_scaling_factor_rate: 0.9             # 速度缩放因子的最大变化率
+      # last_vel: 2.0           #如果上一次速度大于这个，曲率减速大减
+      # lower_speed: 0.4        #每次减速的上限
+      # enable_sg_filter: false
+      # use_mpc_control: false
+      # mpc_Np: 6
+      # mpc_Nc: 3
+      # mpc_Q_x: 18.0
+      # mpc_Q_y: 18.0
+      # mpc_R_vx: 0.3
+      # mpc_R_vy: 0.3
+      # mpc_Rdelta_vx: 0.01
+      # mpc_Rdelta_vy: 0.01
+      # min_dist: 0.35
+      plugin: "constraint_vel_controller::ConstraintVelController"
+      inner_plugin: "nav2_mppi_controller::MPPIController"
+      controller_frequency: 50.0
+      lookahead_dist: 0.25
+      curvature_min: 0.35                                # 低曲率阈值，低于此值不减速。
+      curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
+      reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
+      curvature_forward_dist: 0.8                       # 前向距离，用于曲率计算
+      curvature_backward_dist: 0.2                      # 后向距离，用于曲率计算
+      large_slow: 0.8
+      max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
+      last_vel: 1.8           #如果上一次速度大于这个，曲率减速大减
+      lower_speed: 0.5        #每次减速的上限
+
+      approach_distance: 0.5  #距目标时开始限速
+      approach_velocity: 0.8
+      direct_approach_distance: 1.5  #进入直接驱动模式的距离，绕过MPPI防止画弧
+      direct_approach_kp: 8.0  #直接驱动P控制增益
+      time_steps: 60 # prediction horizon = time_steps x model_dt = 3s
+      model_dt: 0.02 # =1/controller_frequency
+      batch_size: 800 # Count of randomly sampled candidate trajectories from current optimal control sequence in a given iteration. 1000 @ 50 Hz or 2000 @ 30 Hz seems to produce good results.
+
+      vx_std: 0.4 #增大采样多样性，让MPPI能采到更多减速/停止轨迹
+      vy_std: 0.4
+      wz_std: 0.1
+
+      vx_max: 3.5
+      vy_max: 3.5
+      wz_max: 3.5
+
+      vx_min: -3.5
+      vy_min: -3.5
+      wz_min: -3.5
+
+      ax_max: 4.0 #加速度提高，高速时能快速响应
+      ay_max: 4.0
+      az_max: 4.0
+
+      ax_min: -4.0 #关键：制动力必须对称，高速下刹得住
+      ay_min: -4.0
+      az_min: -4.0
+      iteration_count: 1 # Recommended to remain as 1 and instead prefer larger batch sizes.
+      prune_distance: 3.0 # proportion to your maximum velocity and prediction horizon.
+      transform_tolerance: 0.1 # Time tolerance for data transformations with TF (s).
+      temperature: 0.25 # 0 mean use control with best cost, huge value will lead to just taking mean of all trajectories without cost consideration.
+      gamma: 0.013 # A trade-off between smoothness (high) and low energy (low). This is a complex parameter that likely won’t need to be changed from the default.
+      motion_model: "Omni"
+      visualize: false # set to true to visualize the trajectories, but it will slow down the computation by a lot
+      reset_period: 0.2 # Required time of inactivity to reset optimizer (only in Humble
+      regenerate_noises: true
+      retry_attempt_limit: 2 # Number of attempts to find feasible trajectory on failure for soft-resets before reporting total failure.
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+      # AckermannConstraints:
+      #   min_turning_r: 0.2
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "PathFollowCritic", "PathAlignCritic", "ObstaclesCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+      
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 10.0
+        threshold_to_consider: 0.1 # Minimal distance (m) between robot and goal above which goal distance cost considered. It is wise to start with this as being the same as your prediction horizon to have a clean hand-off with the path follower critic.
+        # i.e. When this critic is add to the cost function
+      CostCritic: #通过 costmap 梯度引导避障
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.8 #适当降低，配合修正后的 inflation 梯度
+        critical_cost: 253.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
+        consider_footprint: false
+        collision_cost: 100.0
+        near_goal_distance: 0.3
+        trajectory_point_step: 2
+      PathFollowCritic: #? incentivizes making progress along the path, what is the diff between this and PathAlignCritic?
+        enabled: true
+        cost_power: 1
+        cost_weight: 12.0
+        offset_from_furthest: 6 # Number of path points after furthest one any trajectory achieves to drive path tracking relative to.
+        threshold_to_consider: 1.0 # That is to say, path following will be considered until the robot is within this distance of the goal, at which point the goal critic will take over.
+      ObstaclesCritic: # 如果容易撞到低矮的障碍物，检查地形分析是否正确然后再调整这个参数
+        enabled: true
+        cost_power: 1
+        repulsion_weight: 1.5 #! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
+        # This is separated from the critical term to allow for fine tuning of obstacle behaviors with path alignment for dynamic scenes without impacting actions which may directly lead to near-collisions. This is applied within the inflation_radius distance from obstacles.
+        critical_weight: 10.0
+        consider_footprint: false # turn on this can increase computation cost
+        collision_cost: 100.0
+        collision_margin_distance: 0.35 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
+        near_goal_distance: 1.0 # if the robot is within this distance of the goal, it will not be repelled by obstacles.
+        # inflation_radius: 0.4 # Radius to inflate costmap around lethal obstacles. This should be the same as for your inflation layer (Humble only)
+        # cost_scaling_factor: 10.0 # Exponential decay factor across inflation radius. This should be the same as for your inflation layer (Humble only)
+        # inflation_layer_name: ["local_inflation_layer","global_inflation_layer"] # 
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        max_path_occupancy_ratio: 0.07
+        # trajectory_point_step: 3 #?
+        threshold_to_consider: 0.5 # 0.5 # Distance (m) between robot and goal to stop considering path alignment and allow goal critics to take over. So just keep it same as threshold_to_consider in GoalCritic.
+        offset_from_furthest: 20 #  A selection of this value to be ~30% of the maximum velocity distance projected is good 
+        # (e.g. if a planner produces points every 2.5cm, 60 can fit on the 1.5m local costmap radius. If the max speed is 0.5m/s with a 3s prediction time, 
+        # then 20 points represents 33% of the maximum speed projected over the prediction horizon onto the path). When in doubt, 
+        # prediction_horizon_s * max_speed / path_resolution / 3.0 is a good baseline. = 3 * 0.8 / 0.1 /3.0
+        use_path_orientations: false
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 20.0
+      publish_frequency: 10.0
+      global_frame: odom
+      robot_base_frame: fake_base_link
+      rolling_window: true              #滚动优化
+      width: 5
+      height: 5
+      resolution: 0.05
+      robot_radius: 0.33
+      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      intensity_voxel_layer:
+        plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
+        enabled: true
+        track_unknown_space: true
+        footprint_clearing_enabled: true
+        publish_voxel_map: false
+        combination_method: 1
+        mark_threshold: 0
+        origin_z: 0.0
+        unknown_threshold: 5
+        z_resolution: 0.05
+        z_voxels: 16
+        min_obstacle_height: 0.4
+        max_obstacle_height: 1.0
+        min_obstacle_intensity: 0.4
+        max_obstacle_intensity: 1.0
+        observation_sources: terrain_map_local
+        terrain_map_local:
+          data_type: PointCloud2
+          # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
+          # It doesn't need to start with '/'
+          topic: /terrain_map_local
+          sensor_frame: lidar_link
+          min_obstacle_height: 0.3
+          max_obstacle_height: 2.0
+          obstacle_max_range: 4.0
+          obstacle_min_range: 0.6
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.9
+      always_send_full_costmap: False
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 25.0
+      publish_frequency: 10.0
+      global_frame: map
+      robot_base_frame: fake_base_link
+      robot_radius: 0.33
+      resolution: 0.05
+      track_unknown_space: true
+      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      # obstacle_layer:
+        # plugin: "nav2_costmap_2d::ObstacleLayer"
+        # plugin: "decaying_layer::DecayingObstacleLayer"
+        # enabled: True
+        # footprint_clearing_enabled: true
+        # decay_time: 0.0          # default 0.0s
+        # observation_sources: scan depth
+        # scan:
+        #   topic: /cloud_segmented
+        #   max_obstacle_height: 2.0
+        #   clearing: True
+        #   marking: True
+        #   data_type: "PointCloud2"
+        #   raytrace_max_range: 7.5
+        #   raytrace_min_range: 0.0
+        #   obstacle_max_range: 7.0
+        #   obstacle_min_range: 0.4
+        # depth:
+        #   topic: /scan
+        #   max_obstacle_height: 1.0
+        #   clearing: True
+        #   marking: True
+        #   data_type: "LaserScan"
+        #   raytrace_max_range: 2.5
+        #   raytrace_min_range: 0.0
+        #   obstacle_max_range: 2.0
+        #   obstacle_min_range: 0.4
+      intensity_voxel_layer:
+        plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
+        continuous_hit_threshold: 1          # 连续命中2次
+        neighborhood_radius: 2               # 5x5邻域（半径2）
+        neighborhood_min_voxels: 1           # 邻域内至少3个有效体素
+
+        enabled: true
+        track_unknown_space: true
+        footprint_clearing_enabled: true
+        publish_voxel_map: false
+        combination_method: 1
+        mark_threshold: 0
+        origin_z: 0.0
+        unknown_threshold: 5
+        z_resolution: 0.05
+        z_voxels: 16
+        min_obstacle_height: 0.25
+        max_obstacle_height: 1.0
+        min_obstacle_intensity: 0.25
+        max_obstacle_intensity: 1.0
+        observation_sources: terrain_map_ext
+        terrain_map_ext:
+          data_type: PointCloud2
+          # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
+          # It doesn't need to start with '/'
+          topic: /terrain_map_ext
+          sensor_frame: lidar_link
+          min_obstacle_height: 0.25
+          max_obstacle_height: 1.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.5
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.9
+      always_send_full_costmap: False
+
+# The yaml_filename does not need to be specified since it going to be set by defaults in launch.
+# If you'd rather set it in the yaml, remove the default "map" value in the tb3_simulation_launch.py
+# file & provide full path to map below. If CLI map configuration or launch default is provided, that will be used.
+map_server:
+  ros__parameters:
+    yaml_filename: ""
+
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    expected_planner_frequency: 15.0
+    planner_plugins: ["GridBased"]
+    GridBased:
+      # plugin: "nav2_smac_planner/SmacPlanner2D"
+      # tolerance: 0.11                      # tolerance for planning if unable to reach exact pose, in meters
+      # downsample_costmap: false             # whether or not to downsample the map
+      # downsampling_factor: 1                # multiplier for the resolution of the costmap layer (e.g. 2 on a 5cm costmap would be 10cm)
+      # allow_unknown: True                   # allow traveling in unknown space
+      # max_iterations: 50000               # maximum total iterations to search for before failing (in case unreachable), set to -1 to disable
+      # max_on_approach_iterations: 100      # maximum number of iterations to attempt to reach goal once in tolerance
+      # max_planning_time: 0.5                # max time in s for planner to plan, smooth
+      # cost_travel_multiplier: 2.0           # Cost multiplier to apply to search to steer away from high cost areas. Larger values will place in the center of aisles more exactly (if non-`FREE` cost potential field exists) but take slightly longer to compute. To optimize for speed, a value of 1.0 is reasonable. A reasonable tradeoff value is 2.0. A value of 0.0 effective disables steering away from obstacles and acts like a naive binary search A*.
+      # use_final_approach_orientation: false # Whether to set the final path pose at the goal's orientation to the requested orientation (false) or in line with the approach angle so the robot doesn't rotate to heading (true)
+      # smoother:
+      #   max_iterations: 500
+      #   w_smooth: 0.1
+      #   w_data: 0.4
+      #   tolerance: 1.0e-8
+
+      # plugin: "nav2_navfn_planner/NavfnPlanner"
+      # tolerance: 0.1
+      # use_astar: false
+      # allow_unknown: true
+
+      plugin: "nav2_theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
+      how_many_corners: 8
+      w_euc_cost: 1.0
+      w_traversal_cost: 3.5
+      w_heuristic_cost: 0.5
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-12
+      max_its: 10000
+      do_refinement: True
+
+fake_vel_transform:
+  ros__parameters:
+    use_sim_time: True
+    odom_topic: "odometry"
+    robot_base_frame: "base_link"
+    fake_robot_base_frame: "fake_base_link"
+    input_cmd_vel_topic: "cmd_vel"
+    output_cmd_vel_topic: "cmd_vel_base"
+    # cmd_spin_topic: "cmd_spin"
+    # init_spin_speed: 3.14
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 20.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "pb_nav2_behaviors/BackUpFreeSpace"
+      # plugin: "nav2_behaviors/BackUp"
+      # plugin: "nav2_behaviors/BackUpTwzFree"
+      max_radius: 1.0
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: fake_base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 1.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+    # params for pb_nav2_behaviors/BackUpFreeSpace
+    service_name: "global_costmap/get_costmap"
+    robot_radius: 0.4
+    max_radius: 2.0
+    visualize: false
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: false
+    loop_rate: 20  #检查导航任务结果的频率
+    stop_on_failure: false #如果单个航点失败继续移动到下一个航点
+    waypoint_task_executor_plugin: "wait_at_waypoint" #到达航点后暂停指定长度的时间
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 80.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [3.0, 3.0, 3.0]
+    min_velocity: [-3.0, -3.0, -3.0]
+    max_accel: [4.0, 4.0, 5.0]
+    max_decel: [-4.0, -4.0, -5.0]
+    odom_topic: "odometry"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+#找到控制器降频原因  后退逻辑

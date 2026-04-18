@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="FollwHeroArea">
+    <ReactiveFallback>
+      <Precondition else="FAILURE"
+                    if="(@hero_area &gt;= 0 &amp;&amp; @hero_area &lt; 3) &amp;&amp; @infantry_hp &lt; 71"
+                    _while="(@hero_area &gt;= 0 &amp;&amp; @hero_area &lt; 3) &amp;&amp; @infantry_hp &lt; 71">
+        <GoToArea2 target_pose="{@goto_area2}"
+                   timeout="15.0"
+                   tolerance="0.2"
+                   ros_node="{@ros_node}"
+                   current_pose_x="{@current_pose_x}"
+                   current_pose_y="{@current_pose_y}"
+                   nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                   nav_goal_requested="{@nav_goal_requested}"
+                   _while="(@hero_area &gt;= 0 &amp;&amp; @hero_area &lt; 3) &amp;&amp; @infantry_hp &lt; 71"/>
+      </Precondition>
+      <Precondition else="FAILURE"
+                    if="@hero_area == 3 &amp;&amp; @infantry_hp &lt; 71"
+                    _while="@hero_area == 3 &amp;&amp; @infantry_hp &lt; 71">
+        <Area3Patrol3 point1="{@area3_point1}"
+                      point2="{@area3_point2}"
+                      point3="{@area3_point3}"
+                      timeout="15.0"
+                      tolerance="0.2"
+                      ros_node="{@ros_node}"
+                      current_pose_x="{@current_pose_x}"
+                      current_pose_y="{@current_pose_y}"
+                      center_status="{@center_status}"
+                      nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                      nav_goal_requested="{@nav_goal_requested}"
+                      _while="@hero_area == 3 &amp;&amp; @infantry_hp &lt; 71"/>
+      </Precondition>
+      <Precondition else="FAILURE"
+                    if="@hero_area &gt;= 4 &amp;&amp; @infantry_hp &lt; 71"
+                    _while="@hero_area &gt;= 4 &amp;&amp; @infantry_hp &lt; 71">
+        <GoToArea4 target_pose="{@goto_area4}"
+                   timeout="15.0"
+                   tolerance="0.2"
+                   ros_node="{@ros_node}"
+                   current_pose_x="{@current_pose_x}"
+                   current_pose_y="{@current_pose_y}"
+                   nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                   nav_goal_requested="{@nav_goal_requested}"
+                   _while="@hero_area &gt;= 4 &amp;&amp; @infantry_hp &lt; 71"/>
+      </Precondition>
+    </ReactiveFallback>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="Area3Patrol3"
+            editable="true">
+      <input_port name="point1"/>
+      <input_port name="point2"/>
+      <input_port name="point3"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="center_status"
+                  default="@center_status"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+    <Action ID="GoToArea2"
+            editable="true">
+      <input_port name="target_pose"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+    <Action ID="GoToArea4"
+            editable="true">
+      <input_port name="target_pose"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+  </TreeNodesModel>
+
+</root>

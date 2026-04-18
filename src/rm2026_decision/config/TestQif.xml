@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="TestQifTree">
+    <TestQif point1="{@TestQif_point1}"
+                  point2="{@TestQif_point2}"
+                  timeout="15.0"
+                  tolerance="0.1"
+                  ros_node="{@ros_node}"
+                  current_pose_x="{@current_pose_x}"
+                  current_pose_y="{@current_pose_y}"
+                  center_status="{@center_status}"
+                  nav_goal="{@nav_goal}"
+                  nav_goalOut="{@nav_goal}"
+                  nav_goal_requested="{@nav_goal_requested}"/>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="TestQif"
+            editable="true">
+      <input_port name="point1" />
+      <input_port name="point2" />
+      <input_port name="timeout" default="15.0"/>
+      <input_port name="tolerance" default="0.1"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"/>
+      <input_port name="current_pose_y"/>
+      <input_port name="center_status"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+  </TreeNodesModel>
+
+</root>

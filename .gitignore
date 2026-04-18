@@ -1,0 +1,19 @@
+# ROS 2编译产物（核心忽略）
+build/
+install/
+log/
+# ROSBAG2录包文件（匹配所有日期的录包目录）
+rosbag2_*
+# 系统临时文件
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
+# 二进制可执行文件
+*.bin
+*.exe
+# 临时日志/缓存
+*.log
+*.cache

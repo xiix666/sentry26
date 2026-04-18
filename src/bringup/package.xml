@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>bringup</name>
+  <version>1.3.1</version>
+  <description>bringup</description>
+  <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
+  <license>Apache-2.0</license>
+  <author email="lihanchen2004@163.com">Lihan Chen</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>navigation2</build_depend>
+  <build_depend>nav2_common</build_depend>
+  <build_depend>launch_ros</build_depend>
+
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>navigation2</exec_depend>
+  <exec_depend>nav2_common</exec_depend>
+  <exec_depend>nav2_smac_planner</exec_depend>
+  <exec_depend>pb_nav2_plugins</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>point_lio</exec_depend>
+  <exec_depend>pb_omni_pid_pursuit_controller</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>icp_registration</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_clang_format</test_depend>
+  <test_depend>ament_cmake_black</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

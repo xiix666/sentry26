@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="Area3Tree">
+    <ReactiveFallback>
+      <Precondition else="FAILURE"
+                    if="@center_status == 0 || @center_status == 1 || @center_status == 2"
+                    _while="@center_status == 0 || @center_status == 1 || @center_status == 2">
+        <GoToArea4 target_pose="{@goto_area4}"
+                   timeout="15.0"
+                   tolerance="0.2"
+                   ros_node="{@ros_node}"
+                   current_pose_x="{@current_pose_x}"
+                   current_pose_y="{@current_pose_y}"
+                   nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                   nav_goal_requested="{@nav_goal_requested}"
+                   _while="@current_area == 3 &amp;&amp; (@center_status == 0 || @center_status == 1 || @center_status == 2)"/>
+      </Precondition>
+
+      
+    </ReactiveFallback>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="Area3Patrol3"
+            editable="true">
+      <input_port name="point1"/>
+      <input_port name="point2"/>
+      <input_port name="point3"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.1"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="center_status"
+                  default="@center_status"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+    <Action ID="GoToArea4"
+            editable="true">
+      <input_port name="target_pose"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+  </TreeNodesModel>
+
+</root>

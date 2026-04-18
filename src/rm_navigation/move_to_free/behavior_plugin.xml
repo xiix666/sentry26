@@ -1,0 +1,7 @@
+<class_libraries>
+	<library path="move_to_free">
+	  <class name="pb_nav2_behaviors/BackUpFreeSpace" type="pb_nav2_behaviors::BackUpFreeSpace" base_class_type="nav2_core::Behavior">
+	    <description>An enhanced back_up action that move toward free space.</description>
+	  </class>
+	</library>
+</class_libraries>

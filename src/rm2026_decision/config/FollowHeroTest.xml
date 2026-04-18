@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="FollowHeroTest">
+    <FollowHero ros_node="{@ros_node}"
+                current_pose_x="{@current_pose_x}"
+                current_pose_y="{@current_pose_y}"
+                hero_x="{@teammate_hero_location_x}"
+                hero_y="{@teammate_hero_location_y}"
+                center_x="{@hero_follow_center_x}"
+                center_y="{@hero_follow_center_y}"
+                tolerance="0.1"
+                nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                nav_goal_requested="{@nav_goal_requested}"
+                center_x_out="{@hero_follow_center_x}"
+                center_y_out="{@hero_follow_center_y}"/>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="FollowHero"
+            editable="true">
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="hero_x"
+                  default="@teammate_hero_location_x"/>
+      <input_port name="hero_y"
+                  default="@teammate_hero_location_y"/>
+      <input_port name="center_x"
+                  default="@hero_follow_center_x"/>
+      <input_port name="center_y"
+                  default="@hero_follow_center_y"/>
+      <input_port name="tolerance"
+                  default="0.1"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+      <output_port name="center_x_out"/>
+      <output_port name="center_y_out"/>
+    </Action>
+  </TreeNodesModel>
+
+</root>

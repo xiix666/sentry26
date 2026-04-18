@@ -1,0 +1,205 @@
+逆时针给出点，单位m
+禁区1：（2.3,8.0），（2.3,2.8），（4.7,2.8），（4.7,8.0）
+禁区2：(7.3,5.2),(7.3,0.0),(9.7,0.0),(9.7,5.2)
+
+
+
+# decision_node.cpp 中各点坐标与区域定义（单位：米，frame: map）
+# 来源：src/src/rm2026_decision/src/decision_node.cpp
+
+## 一、地图与坐标变换
+- 蓝方坐标对称中心: (6.0, 4.0)   // center_x, center_y，用于 (x,y) -> (2*center_x-x, 2*center_y-y)
+
+## 二、固定点位（黑板键名 -> 坐标 x, y）
+
+### 补给与中心
+- @supply_point_location    补给点（补给区中心）: (0.75, 7.0)
+- @center_capture_point    中心增益点（区域4中心）: (6.0, 4.0)
+- @teammate_hero_location   队友英雄默认: (0.0, 0.0)
+- @teammate_infantry_location 队友步兵默认: (0.0, 0.0)
+
+### 区域1 巡逻三点（Area1Patrol3）
+- @area1_point1: (1.25, 5.7)   // 原 1250, 5700 mm
+- @area1_point2: (0.84, 3.9)   // 原 840, 3900 mm
+- @area1_point3: (1.7, 3.9)    // 原 1700, 3900 mm
+
+### 区域2
+- @area2_yellow_point  区域2黄色点: (4.0, 2.75)
+
+### 区域3 巡逻三点（Area3Patrol3）
+- @area3_point1: (5.5, 2.0)
+- @area3_point2: (5.0, 1.5)
+- @area3_point3: (6.5, 2.0)
+
+### 区域4 巡逻点
+- @area4_red_patrol    区域4红色巡逻: (7.0, 4.55)
+- @area4_yellow_patrol 区域4黄色巡逻: (7.1, 3.2)
+
+### 前往区域目标点（GoToArea1/2/3/4）
+- @goto_area1: (1.3, 4.8)
+- @goto_area2: (2.5, 1.4)
+- @goto_area3: (5.0, 1.5)
+- @goto_area4: (7.1, 3.2)
+
+### 其他
+- @lower_area_location 撤退/下路点（与区域2黄点同）: (4.0, 2.75)
+- 默认导航目标 default_nav_goal: (0.0, 0.0)
+
+## 三、区域多边形（红方场地坐标，逆时针顶点，用于判断 current_area）
+
+- 区域 0 补给区: (0,8), (0,6), (1.5,6), (1.5,8)
+- 区域 1 : (0,6), (0,3), (2.5,3), (2.5,8), (1.5,8), (1.5,6)
+- 区域 2 : (0,3), (0,0), (4.5,0), (4.5,3)
+- 区域 3 : (4.5,2.5), (4.5,0), (7.5,0), (7.5,2.5)
+- 区域 4 中心增益点: (4.5,5.5), (4.5,2.5), (7.5,2.5), (7.5,5.5)
+- 区域 5: (4.5,8), (4.5,5.5), (7.5,5.5), (7.5,8)
+- 区域 6: (7.5,8), (7.5,5), (12,5), (12,8)
+- 区域 7: (9.5,5), (9.5,0), (12,0), (12,5)
+
+注：机器人坐标先按队伍做场地坐标变换，再与上述多边形做点在多边形内判断得到 @current_area；区域外为 -1。
+
+---
+
+## 四、蓝方坐标（红方坐标经中心对称变换后）
+
+### 补给与中心
+- @supply_point_location    补给点（补给区中心）: (11.25, 1.0)
+- @center_capture_point    中心增益点（区域4中心）: (6.0, 4.0)   // 中心点不变
+- @teammate_hero_location   队友英雄默认: (12.0, 8.0)
+- @teammate_infantry_location 队友步兵默认: (12.0, 8.0)
+
+### 区域1 巡逻三点（Area1Patrol3）
+- @area1_point1: (10.75, 2.3)
+- @area1_point2: (11.16, 4.1)
+- @area1_point3: (10.3, 4.1)
+
+### 区域2
+- @area2_yellow_point  区域2黄色点: (8.0, 5.25)
+
+### 区域3 巡逻三点（Area3Patrol3）
+- @area3_point1: (6.5, 6.0)
+- @area3_point2: (7.0, 6.5)
+- @area3_point3: (5.5, 6.0)
+
+### 区域4 巡逻点
+- @area4_red_patrol    区域4红色巡逻: (5.0, 3.45)
+- @area4_yellow_patrol 区域4黄色巡逻: (4.9, 4.8)
+
+### 前往区域目标点（GoToArea1/2/3/4）
+- @goto_area1: (10.7, 3.2)
+- @goto_area2: (9.5, 6.6)
+- @goto_area3: (7.0, 6.5)
+- @goto_area4: (4.9, 4.8)
+
+### 其他
+- @lower_area_location 撤退/下路点（与区域2黄点同）: (8.0, 5.25)
+- 默认导航目标 default_nav_goal: (12.0, 8.0)
+
+## 五、蓝方区域多边形（蓝方场地坐标，逆时针顶点）
+
+- 区域 0 补给区: (12,0), (12,2), (10.5,2), (10.5,0)
+- 区域 1 : (12,2), (12,5), (9.5,5), (9.5,0), (10.5,0), (10.5,2)
+- 区域 2 : (12,5), (12,8), (7.5,8), (7.5,5)
+- 区域 3 : (7.5,5.5), (7.5,8), (4.5,8), (4.5,5.5)
+- 区域 4 中心增益点: (7.5,5.5), (7.5,2.5), (4.5,2.5), (4.5,5.5)
+- 区域 5: (7.5,0), (7.5,2.5), (4.5,2.5), (4.5,0)
+- 区域 6: (4.5,0), (4.5,3), (0,3), (0,0)
+- 区域 7: (2.5,3), (2.5,8), (0,8), (0,3)
+
+注：蓝方坐标通过中心对称变换 (x,y) -> (12.0-x, 8.0-y) 从红方坐标得到。
+
+
+用于实现跟踪我方英雄，算法逻辑是这样的：以我方英雄位置为圆心，画一个半径为0.5m的圆，将圆分成两半（一半半圆弧中心距离哨兵位置最近，另一半最远），仿照上述算法，将距离最近的半圆弧上均分成9个小圆弧，取每个小圆弧的中心点作为候选点，逐个判断这9个点是不是在我划分的禁去区域里@1.txt (1-3) ，定义区域和判断使用@decision_node.cpp (909-964) 。排除9个点中在禁区的点，剩下的点为可行点，再在可行点中随机抽出一个点为目标点进行前往，设置容忍度，距离0.@src/src/rm2026_decision 添加一个动作节点，用于实现跟踪我方英雄，算法逻辑是这样的：以我方英雄位置为圆心，将圆录入黑板，（在onStart阶段更新圆心黑板前，计算当前英雄位置与上次圆心的距离，距离小于0.3m，认为英雄位置变动较小，节点返回SUCCESS用于中断节点，也不用更新圆心黑板和下面步骤），画一个半径为0.5m的圆，将圆分成两半（一半半圆弧中心距离我的位置@Area1Patrol3.hpp (38-39) 最近，另一半最远），仿照上述算法，将距离最近的半圆弧上均分成9个小圆弧，取每个小圆弧的中心点作为候选点，逐个判断这9个点是不是在我划分的禁去区域里@1.txt (1-3) ，定义区域和判断使用@decision_node.cpp (909-964) 。排除9个点中在禁区的点，剩下的点为可行点，再在可行点中随机抽出一个点为目标点进行前往，设置容忍度，距离0.1m视为到达。期间英雄可能会移动，所以在onrunning阶段一开始计算英雄最新位置与上次所定圆心的距离，大于1m则节点返回SUCCESS用于中断节点。结合@src/src/rm2026_decision 风格给我梳理节点如何实现
+我希望添加动作节点
+
+我现在要写一个异步动作节点，用于防止对方步兵近身攻击我，逻辑和@src/src/rm2026_decision/behaviors/FollowHero.hpp相似：具体逻辑是：以自身位置为圆心画一个半径1米的圆，如果视角中检测到了敌方步兵并且和我的距离小于圆的半径则认为对方要近身攻击我，我要远离。远离逻辑是这样的:以自身位置为圆心画一个半径2米的圆，将圆分成两个圆弧（面向敌方和背对敌方），一个100度，一个260度。100度的圆弧中点是自身位置为原点穿过敌方步兵位置作射线与圆的交点（面向敌人），另一个260度圆弧为背对敌人。将260度圆弧分成13段小圆弧，分别取圆弧中心点，获得13个待选点，仿照@src/src/rm2026_decision/behaviors/FollowHero.hpp 获得可行点，在可行点中选取最优点。获得最优点的逻辑是：通过判断自身区域，选取比当前所在区域小1级的区域的点，具体点为@src/src/rm2026_decision/1.txt 中的各个### 前往区域目标点（GoToArea1/2/3/4）（区域4点设置为（6.0,4.0），区域6、7小1级的区域和5一样都是4），选的这一个点作为期望点，然后逐个计算可行点与选取的一个期望点的距离，选取距离最小的点作为最优点进行前往，设置容忍度，距离0.1m视为到达。结合@src/src/rm2026_decision 风格给我梳理节点如何实现
+
+
+<Precondition else="FAILURE"
+                    if="@infantry_hp &lt; 71 &amp;&amp; @hero_hp &gt;= 71"
+                    _while="@infantry_hp &lt; 71 &amp;&amp; @hero_hp &gt;= 71">
+        <SubTree ID="FollowHeroTest"/>
+      </Precondition>
+
+<Precondition else="FAILURE"
+                    if="((@enemy_infantry1_distance &gt;= 0 &amp;&amp; @enemy_infantry1_distance &lt; 1) || (@enemy_infantry2_distance &gt;= 0 &amp;&amp; @enemy_infantry2_distance &lt; 1)) &amp;&amp; @current_area != 4"
+                    _while="((@enemy_infantry1_distance &gt;= 0 &amp;&amp; @enemy_infantry1_distance &lt; 1) || (@enemy_infantry2_distance &gt;= 0 &amp;&amp; @enemy_infantry2_distance &lt; 1)) &amp;&amp; @current_area != 4">
+        <EvadeEnemyInfantry ros_node="{@ros_node}"
+                           current_pose_x="{@current_pose_x}"
+                           current_pose_y="{@current_pose_y}"
+                           enemy_infantry1_distance="{@enemy_infantry1_distance}"
+                           enemy_infantry2_distance="{@enemy_infantry2_distance}"
+                           enemy_infantry1_x="{@enemy_infantry1_x}"
+                           enemy_infantry1_y="{@enemy_infantry1_y}"
+                           enemy_infantry2_x="{@enemy_infantry2_x}"
+                           enemy_infantry2_y="{@enemy_infantry2_y}"
+                           current_area="{@current_area}"
+                           supply_point_location="{@supply_point_location}"
+                           goto_area1="{@goto_area1}"
+                           goto_area2="{@goto_area2}"
+                           goto_area3="{@goto_area3}"
+                           center_capture_point="{@center_capture_point}"
+                           tolerance="0.1"
+                           nav_goal="{@nav_goal}"
+                           nav_goalOut="{@nav_goal}"
+                           nav_goal_requested="{@nav_goal_requested}"/>
+      </Precondition>
+
+
+
+<Precondition else="FAILURE"
+                    if="(@enemy_hero_area == 8 &amp;&amp; @enemy_hero_distance &gt;= 0) || (@enemy_engineer_area == 8 &amp;&amp; @enemy_engineer_distance &gt;= 0) || (@enemy_infantry1_area == 8 &amp;&amp; @enemy_infantry1_distance &gt;= 0) || (@enemy_infantry2_area == 8 &amp;&amp; @enemy_infantry2_distance &gt;= 0) || (@enemy_sentry_area == 8 &amp;&amp; @enemy_sentry_distance &gt;= 0)"
+                    _while="(@enemy_hero_area == 8 &amp;&amp; @enemy_hero_distance &gt;= 0) || (@enemy_engineer_area == 8 &amp;&amp; @enemy_engineer_distance &gt;= 0) || (@enemy_infantry1_area == 8 &amp;&amp; @enemy_infantry1_distance &gt;= 0) || (@enemy_infantry2_area == 8 &amp;&amp; @enemy_infantry2_distance &gt;= 0) || (@enemy_sentry_area == 8 &amp;&amp; @enemy_sentry_distance &gt;= 0)">
+        <GoToArea4 target_pose="{@goto_area4}"
+                   timeout="15.0"
+                   tolerance="0.2"
+                   ros_node="{@ros_node}"
+                   current_pose_x="{@current_pose_x}"
+                   current_pose_y="{@current_pose_y}"
+                   nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                   nav_goal_requested="{@nav_goal_requested}"
+                   _while="(@enemy_hero_area == 8 &amp;&amp; @enemy_hero_distance &gt;= 0) || (@enemy_engineer_area == 8 &amp;&amp; @enemy_engineer_distance &gt;= 0) || (@enemy_infantry1_area == 8 &amp;&amp; @enemy_infantry1_distance &gt;= 0) || (@enemy_infantry2_area == 8 &amp;&amp; @enemy_infantry2_distance &gt;= 0) || (@enemy_sentry_area == 8 &amp;&amp; @enemy_sentry_distance &gt;= 0)"/>
+      </Precondition>
+
+
+
+<Precondition else="FAILURE"
+                    if="@center_status == 2 || @center_status == 3"
+                    _while="@center_status == 2 || @center_status == 3">
+        <Area3Patrol3 point1="{@area3_point1}"
+                      point2="{@area3_point2}"
+                      point3="{@area3_point3}"
+                      timeout="15.0"
+                      tolerance="0.1"
+                      ros_node="{@ros_node}"
+                      current_pose_x="{@current_pose_x}"
+                      current_pose_y="{@current_pose_y}"
+                      center_status="{@center_status}"
+                      nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                      nav_goal_requested="{@nav_goal_requested}"
+                      _while="@current_area == 3"/>
+      </Precondition>
+
+
+
+<Precondition else="FAILURE"
+                    if="@hero_hp &lt; 71 &amp;&amp; @infantry_hp &lt; 71"
+                    _while="@hero_hp &lt; 71 &amp;&amp; @infantry_hp &lt; 71">
+        <Area1Patrol3 point1="{@area1_point1}"
+                      point2="{@area1_point2}"
+                      point3="{@area1_point3}"
+                      timeout="15.0"
+                      tolerance="0.1"
+                      ros_node="{@ros_node}"
+                      current_pose_x="{@current_pose_x}"
+                      current_pose_y="{@current_pose_y}"
+                      nav_goal="{@nav_goal}"
+                      nav_goalOut="{@nav_goal}"
+                      nav_goal_requested="{@nav_goal_requested}"
+                      _while="@hero_hp &lt; 71 &amp;&amp; @infantry_hp &lt; 71"/>
+      </Precondition>
+
+
+

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="Area4Tree">
+    <ReactiveFallback>
+      <Precondition else="FAILURE"
+                    if="@sentry_hp &lt; 280"
+                    _while="@sentry_hp &lt; 280">
+              <GoToArea4red target_pose="{@area4_red_patrol}"
+                    timeout="15.0"
+                    tolerance="0.2"
+                    ros_node="{@ros_node}"
+                    current_pose_x="{@current_pose_x}"
+                    current_pose_y="{@current_pose_y}"
+                    nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                    nav_goal_requested="{@nav_goal_requested}"
+                    _while="@current_area == 4 &amp;&amp; @sentry_hp &lt; 280"/>
+      </Precondition>
+
+      <GoToArea4yellow target_pose="{@area4_yellow_patrol}"
+                         timeout="15.0"
+                         tolerance="0.2"
+                         ros_node="{@ros_node}"
+                         current_pose_x="{@current_pose_x}"
+                         current_pose_y="{@current_pose_y}"
+                         nav_goal="{@nav_goal}"
+                         nav_goalOut="{@nav_goal}"
+                         nav_goal_requested="{@nav_goal_requested}"
+                         _while="@current_area == 4 "/>
+    </ReactiveFallback>
+  </BehaviorTree>
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="GoToArea4red"
+            editable="true">
+      <input_port name="target_pose"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+    <Action ID="GoToArea4yellow"
+            editable="true">
+      <input_port name="target_pose"/>
+      <input_port name="timeout"
+                  default="15.0"/>
+      <input_port name="tolerance"
+                  default="0.2"/>
+      <input_port name="ros_node"/>
+      <input_port name="current_pose_x"
+                  default="@current_pose_x"/>
+      <input_port name="current_pose_y"
+                  default="@current_pose_y"/>
+      <input_port name="nav_goal"/>
+      <output_port name="nav_goalOut"/>
+      <output_port name="nav_goal_requested"/>
+    </Action>
+  </TreeNodesModel>
+
+</root>
