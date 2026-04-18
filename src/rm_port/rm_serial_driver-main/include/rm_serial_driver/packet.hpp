@@ -75,6 +75,35 @@ struct ReceivePacketUL
 
   uint16_t checksum = 0;
 } __attribute__((packed));
+
+struct ReceivePacketUC
+{
+  uint8_t header = 0xA3;
+  uint8_t game_progress;         // 当前比赛状态
+  uint16_t stage_remain_time;    // 比赛剩余时间
+  uint8_t red_blue;              // 红蓝方（红方为1,蓝方为0）
+             
+  uint16_t self_hero_hp;            //英雄血量
+  uint16_t self_infantry_hp;        //步兵血量
+  uint16_t self_sentry_hp;          //自身血量
+
+  float self_pose_x;                //自身位置
+  float self_pose_y;
+
+  uint16_t bullets_allowance;       //允许发弹量
+
+  float hero_pose_x;                //英雄位置
+  float hero_pose_y;
+
+  float infantry_pose_x;            //步兵位置
+  float infantry_pose_y;
+
+  uint16_t remain_gold;               //剩余金币
+  float self_speed_x;                //自身速度
+  float self_speed_y;
+  uint16_t checksum = 0;
+} __attribute__((packed));
+
 struct ReceivePacketB
 {
   uint8_t header = 0xA6;
@@ -91,9 +120,10 @@ struct SendPacket
   float speed_x;
   float speed_y;
   float angle;                                          //转头角度 
-  uint8_t shoot_mode;                                    //0为自瞄，1为打符，2为打前哨站
-  uint8_t special_number;                               //特殊地形区域编号
-  uint8_t nav_enable;                                   //自瞄识别到后，默认0为不导航，发1为导航
+  uint8_t shoot_mode;                                   //0为自瞄，1为打符，2为打前哨站
+  // uint8_t special_number;                            //特殊地形区域编号
+  uint8_t spin_enable;                                  //0关小陀螺过起伏路段 
+  uint8_t nav_enable;                                   //默认0为不导航，发1为导航
   uint8_t sentry_stance;                                //1 为进攻姿态，2 为防御姿态，3 为移动姿态，默认为 3                                  
   std::array<std::array<float, 2>, 5> send_enemy_poses; //发给雷达补盲的消息(顺序：英雄、工程、步兵1、步兵2、哨兵)
   uint16_t checksum = 0;
@@ -108,6 +138,12 @@ inline ReceivePacketA fromVectorA(const std::vector<uint8_t> & data)
 inline ReceivePacketUL fromVectorul(const std::vector<uint8_t> & data)
 {
   ReceivePacketUL packet;
+  std::copy(data.begin(), data.end(), reinterpret_cast<uint8_t *>(&packet));
+  return packet;
+}
+inline ReceivePacketUC fromVectoruc(const std::vector<uint8_t> & data)
+{
+  ReceivePacketUC packet;
   std::copy(data.begin(), data.end(), reinterpret_cast<uint8_t *>(&packet));
   return packet;
 }

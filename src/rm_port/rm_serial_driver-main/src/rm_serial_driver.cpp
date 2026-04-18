@@ -36,7 +36,7 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   receive_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveMsg>("/receive_pack",rclcpp::QoS(10));
   receiveLLC_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveLLC>("/receiveLLC_pack",rclcpp::QoS(10));
   lidar_pub_ = this->create_publisher<rm_interfaces::msg::LidarMsg>("/lidar_pack",rclcpp::QoS(10));
-
+  pub_speed_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/self_speed", rclcpp::QoS(10));
   try {
     serial_driver_->init_port(device_name_, *device_config_);
     if (!serial_driver_->port()->is_open()) {
@@ -78,7 +78,9 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   save_sub = this->create_subscription<std_msgs::msg::Int32>(
     "/self_save_status", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::saveData, this, std::placeholders::_1));
-  // /cmd_vel_nav2_result
+  spin_sub = this->create_subscription<std_msgs::msg::Int32>(
+    "/spin_status", rclcpp::SensorDataQoS(),
+    std::bind(&RMSerialDriver::spinData, this, std::placeholders::_1));
   stance_sub_ = this->create_subscription<rm_interfaces::msg::StatusMsg>(
     "/status_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::stanceData, this, std::placeholders::_1));
@@ -86,10 +88,10 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   timer_ = this->create_wall_timer(
     std::chrono::milliseconds(10),  // 10 ms = 100 Hz
     std::bind(&RMSerialDriver::sendData, this));
-
-  timer_reset = this->create_wall_timer(
-    std::chrono::milliseconds(10000),  // 0.1Hz
-    std::bind(&RMSerialDriver::timer_callback, this));
+  
+  // timer_reset = this->create_wall_timer(
+  //   std::chrono::milliseconds(10000),  // 0.1Hz
+  //   std::bind(&RMSerialDriver::timer_callback, this));
 }
 
 RMSerialDriver::~RMSerialDriver()
@@ -112,12 +114,13 @@ void RMSerialDriver::receiveData()
   std::vector<uint8_t> header(1);
   std::vector<uint8_t> data_a;
   std::vector<uint8_t> data_ul;
+  std::vector<uint8_t> data_uc;
   std::vector<uint8_t> data_b;
   // std::vector<uint8_t> data;
   data_a.reserve(sizeof(ReceivePacketA));
   // data.reserve(sizeof(ReceivePacket));
-  data_ul.reserve(sizeof(ReceivePacketUL));
-
+  // data_ul.reserve(sizeof(ReceivePacketUL));
+  data_uc.reserve(sizeof(ReceivePacketUC));
   data_b.reserve(sizeof(ReceivePacketB));
 
   while (rclcpp::ok()) {
@@ -183,11 +186,11 @@ void RMSerialDriver::receiveData()
           RCLCPP_ERROR(get_logger(), "A5 CRC error!");
         }
       }
-      else if (header[0] == 0xA4){
-        data_ul.resize(sizeof(ReceivePacketUL) - 1);
-        serial_driver_->port()->receive(data_ul);
+      else if (header[0] == 0xA3){
+        data_uc.resize(sizeof(ReceivePacketUC) - 1);
+        serial_driver_->port()->receive(data_uc);
 
-        data_ul.insert(data_ul.begin(), header[0]);
+        data_uc.insert(data_uc.begin(), header[0]);
 
         // std::cout<< "A5" << std::endl;
         // std::cout << "Size of ReceivePacketA: " << sizeof(ReceivePacketA) << " bytes" << std::endl;
@@ -197,7 +200,7 @@ void RMSerialDriver::receiveData()
         // }
         // std::cout<<std::endl;
 
-        ReceivePacketUL packet = fromVectorul(data_ul);
+        ReceivePacketUC packet = fromVectoruc(data_uc);
 
         bool crc_ok =
           crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
@@ -205,7 +208,8 @@ void RMSerialDriver::receiveData()
           // timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
           // rclcpp::Time now_time = rclcpp::Clock().now() + rclcpp::Duration::from_seconds(timestamp_offset_);
           rm_interfaces::msg::ReceiveLLC pub_pack;
-          // pub_pack.header.stamp = now_time;
+          geometry_msgs::msg::Point pub_speed;
+
           pub_pack.game_progress = packet.game_progress;
           pub_pack.stage_remain_time = packet.stage_remain_time;
           pub_pack.red_blue = packet.red_blue;
@@ -220,10 +224,15 @@ void RMSerialDriver::receiveData()
           pub_pack.hero_pose_y = packet.hero_pose_y;
           pub_pack.infantry_pose_x = packet.infantry_pose_x;
           pub_pack.infantry_pose_y = packet.infantry_pose_y;
-          pub_pack.center_status = packet.center_status;
+          // pub_pack.center_status = packet.center_status;
+          pub_pack.center_status = 0;
           pub_pack.remain_gold = packet.remain_gold;
 
           receiveLLC_pub_->publish(pub_pack);
+          pub_speed.x = packet.self_speed_x;
+          pub_speed.y = packet.self_speed_y;
+          pub_speed.z = 0.0;
+          pub_speed_pub_->publish(pub_speed);
       }
         else {
         RCLCPP_ERROR(get_logger(), "A4 CRC error!");
@@ -296,7 +305,6 @@ else {
     }
   }
 
-  // 格式化输出无效头+后续读取的完整字节（保留原美观格式）
   std::cout << "┌──────────────── Invalid Serial Data ────────────────┐" << std::endl;
   std::cout << "│ Total bytes: " << std::setw(3) << all_invalid_data.size() << " | Invalid header: 0x" 
             << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(header[0]) << std::dec << " │" << std::endl;
@@ -371,6 +379,10 @@ void RMSerialDriver::saveData(const std_msgs::msg::Int32::SharedPtr msg)
 {
     self_save_status = msg->data;
 }
+void RMSerialDriver::spinData(const std_msgs::msg::Int32::SharedPtr msg)
+{
+    spin_enable = msg->data;
+}
 void RMSerialDriver::sendData()
 {
   try {
@@ -387,7 +399,8 @@ void RMSerialDriver::sendData()
     // packet.angle = (std::abs(angle_sp) > ANGLE_EPSILON) ? angle_sp : angle;
     packet.angle = angle;
     packet.shoot_mode = shoot_mode;
-    packet.special_number = special_number;
+    // packet.special_number = special_number;
+    packet.spin_enable = spin_enable;
     packet.nav_enable = nav_enable;
     packet.sentry_stance = sentry_stance;
     {

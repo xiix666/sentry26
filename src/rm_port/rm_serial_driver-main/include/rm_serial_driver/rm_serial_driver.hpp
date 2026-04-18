@@ -68,23 +68,26 @@ private:
   
   void saveData(const std_msgs::msg::Int32::SharedPtr msg);
 
+  void spinData(const std_msgs::msg::Int32::SharedPtr msg);
+
   void sendData();
 
   void timer_callback();
 
   void reopenPort();
 
-  std::atomic<float> speed_x;
-  std::atomic<float> speed_y;
-  std::atomic<float> speed_save_x;
-  std::atomic<float> speed_save_y;
-  std::atomic<int> self_save_status;
-  std::atomic<float> angle;
-  std::atomic<float> angle_sp;
-  std::atomic<uint8_t> shoot_mode;
-  std::atomic<uint8_t> special_number;  
-  std::atomic<uint8_t> nav_enable;
-  std::atomic<uint8_t> sentry_stance;
+  std::atomic<float> speed_x{0.0f};
+  std::atomic<float> speed_y{0.0f};
+  std::atomic<float> speed_save_x{0.0f};
+  std::atomic<float> speed_save_y{0.0f};
+  std::atomic<int> self_save_status{0};
+  std::atomic<float> angle{0.0f};
+  std::atomic<float> angle_sp{0.0f};
+  std::atomic<uint8_t> shoot_mode{0};
+  std::atomic<uint8_t> special_number{0};  
+  std::atomic<uint8_t> spin_enable{1};
+  std::atomic<uint8_t> nav_enable{1};
+  std::atomic<uint8_t> sentry_stance{3};
   std::array<std::array<float, 2>, 5> send_enemy_poses_;
   std::mutex send_enemy_poses_mutex_;
 
@@ -99,6 +102,7 @@ private:
   rclcpp::Publisher<rm_interfaces::msg::ReceiveMsg>::SharedPtr receive_pub_;
   rclcpp::Publisher<rm_interfaces::msg::ReceiveLLC>::SharedPtr receiveLLC_pub_;
   rclcpp::Publisher<rm_interfaces::msg::LidarMsg>::SharedPtr lidar_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pub_speed_pub_;
 
   rclcpp::Subscription<rm_interfaces::msg::AngleMsg>::SharedPtr angle_sub_;
   rclcpp::Subscription<rm_interfaces::msg::ShootMsg>::SharedPtr shoot_mode_sub_;
@@ -109,6 +113,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_save_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr save_sub;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr spin_sub;
 
   rclcpp::Subscription<rm_interfaces::msg::StatusMsg>::SharedPtr stance_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
