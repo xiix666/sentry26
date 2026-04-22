@@ -29,7 +29,7 @@ void IntensityVoxelLayer::onInitialize()
   max_obstacle_height_ = node->get_parameter(name_ + ".max_obstacle_height").as_double();
   combination_method_ = node->get_parameter(name_ + ".combination_method").as_int();
 
-  obstacle_hold_time_ = node->declare_parameter(name_ + ".obstacle_hold_time", 0.5);
+  obstacle_hold_time_ = node->declare_parameter(name_ + ".obstacle_hold_time", 0.2);
   size_z_ = node->declare_parameter(name_ + ".z_voxels", 16);
   origin_z_ = node->declare_parameter(name_ + ".origin_z", 16.0);
   min_obstacle_intensity_ = node->declare_parameter(name_ + ".min_obstacle_intensity", 0.1);
@@ -220,7 +220,7 @@ void IntensityVoxelLayer::updateBounds(
       continue; // 邻域有效体素不足，跳过障碍标记
     }
     bool has_other_z_hit = false;
-    int z_range = static_cast<int>(std::ceil(0.2 / z_resolution_));
+    int z_range = static_cast<int>(std::ceil(0.5 / z_resolution_));
 
     for (int dz = -z_range; dz <= z_range; ++dz) {
       if (dz == 0) continue;  // 跳过自己这一层
@@ -237,9 +237,9 @@ void IntensityVoxelLayer::updateBounds(
       }
     }
 
-    if (!has_other_z_hit) {
-      continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
-    }
+    // if (!has_other_z_hit) {
+    //   continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
+    // }
     // 只有连续命中次数≥阈值 + 非孤立体素，才标记为致命障碍
 
     // last_hit_time_grid_[voxel_idx] = sec; 

@@ -26,7 +26,7 @@ def generate_launch_description():
     launch_dir = os.path.join(bringup_dir, "launch")
 
     # 决策
-    rm_decision_dir = get_package_share_directory("rm_decision")
+    rm_decision_dir = get_package_share_directory("rm2026_decision")
     rm_decision_decision_dir = os.path.join(rm_decision_dir, "launch")
 
     # Create the launch configuration variables
@@ -88,7 +88,7 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/25uc_final.yaml", description="Full path to map yaml file to load"
-        "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/rps/sentry26/src/bringup/map/map.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
     )
 
@@ -287,13 +287,13 @@ def generate_launch_description():
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)
     # ld.add_action(angle_pub_cmd)
-    ld.add_action(delayed_omni_node)
+    # ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
 
     ld.add_action(rviz_cmd)
 
     # 决策
     #ld.add_action(rm26_decision)
-    ld.add_action(delayed_decision_node)
+    # ld.add_action(delayed_decision_node)
 
     return ld

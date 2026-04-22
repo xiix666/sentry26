@@ -10,9 +10,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/common/transforms.h>
 #include "nav_msgs/msg/odometry.hpp"
-#include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
-#include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -142,6 +140,7 @@ private:
             tf2::Transform tf_base_frame_to_lidar;
             tf2::fromMsg(transform_stamped.transform, tf_base_frame_to_lidar);
             tf_odom_to_lidar_odom_ = tf_base_frame_to_lidar;
+            tf_lidar_to_base_ = tf_base_frame_to_lidar.inverse();
             Eigen::Isometry3d eigen_transform_d = tf2::transformToEigen(transform_stamped);
             T_target_source = eigen_transform_d.cast<float>().matrix();
             tf_initialized_ = true;

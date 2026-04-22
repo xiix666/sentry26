@@ -167,7 +167,46 @@ ConstraintVelController() = default;
     const geometry_msgs::msg::Twist & velocity,
     nav2_core::GoalChecker * goal_checker) override
   {
-    auto cmd = inner_controller_->computeVelocityCommands(pose, velocity, goal_checker);
+    geometry_msgs::msg::TwistStamped cmd;
+    bool inner_ok = true;
+    geometry_msgs::msg::Twist current_inner_cmd;
+    try {
+      cmd = inner_controller_->computeVelocityCommands(pose, velocity, goal_checker);
+      current_inner_cmd = cmd.twist;
+    } catch (const std::runtime_error & e) {
+      RCLCPP_WARN(logger_, "Inner controller exception: %s", e.what());
+      error_count++;
+      inner_ok = false;
+    }
+    if (!g_has_last_inner_cmd) {
+      g_last_inner_cmd = current_inner_cmd;
+      g_has_last_inner_cmd = true;
+    } else {
+      // 这里只比较线速度变化量（x,y 合速度变化）
+      double delta_v = std::hypot(
+        current_inner_cmd.linear.x - g_last_inner_cmd.linear.x,
+        current_inner_cmd.linear.y - g_last_inner_cmd.linear.y);
+    
+      if (delta_v > delta_max) {
+        RCLCPP_WARN(
+          logger_,
+          "Inner controller velocity jump too large: delta_v=%.3f > lower_speed=%.3f, "
+          "use last inner cmd * 0.8",
+          delta_v, lower_speed_);
+    
+        cmd.twist.linear.x = g_last_inner_cmd.linear.x * 0.8;
+        cmd.twist.linear.y = g_last_inner_cmd.linear.y * 0.8;
+        cmd.twist.linear.z = g_last_inner_cmd.linear.z * 0.8;
+        cmd.twist.angular.x = g_last_inner_cmd.angular.x * 0.8;
+        cmd.twist.angular.y = g_last_inner_cmd.angular.y * 0.8;
+        cmd.twist.angular.z = g_last_inner_cmd.angular.z * 0.8;
+        g_last_inner_cmd = cmd.twist;
+        // 注意：这里不更新 g_last_inner_cmd
+        // 这样下次还是拿“上一次正常的 inner 输出”作比较
+      } else {
+        g_last_inner_cmd = current_inner_cmd;
+      }
+    }
     auto transformed_plan = transformGlobalPlan(pose);
     double lookahead_dist = getLookAheadDistance(velocity);
     auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
@@ -205,11 +244,13 @@ ConstraintVelController() = default;
     double limited_speed = linear_speed;
     
     applyCurvatureLimitation(transformed_plan, carrot_pose, limited_speed);
+
     double scale_ratio = limited_speed / linear_speed;
     
     // 按比例缩放 x 和 y，保持运动方向不变
     cmd.twist.linear.x *= scale_ratio;
     cmd.twist.linear.y *= scale_ratio;
+
     return cmd;
   }
 
@@ -396,11 +437,10 @@ ConstraintVelController() = default;
     double curvature =
       calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
     RCLCPP_DEBUG(logger_, "Curvature: %.3f", curvature);
-    if(slow && curvature <= large_slow_-0.2) slow = false;
+    if(slow && curvature <= large_slow_-0.3) slow = false;
     if(!slow && curvature >= large_slow_) slow = true;
     double scaled_linear_vel = linear_vel;
-    // std::cout << "cur " << curvature << std::endl;
-    // std::cout << "slow " << slow << std::endl;
+
     
     if (curvature > curvature_min_) {
       double reduction_ratio = 1.0;
@@ -432,8 +472,11 @@ ConstraintVelController() = default;
     // scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
     RCLCPP_DEBUG(logger_, "Scaled linear vel: %.3f", scaled_linear_vel);
     linear_vel = std::min(linear_vel, scaled_linear_vel);
+    linear_vel = std::clamp(linear_vel,last_velocity_scaling_factor_-lower_speed_,last_velocity_scaling_factor_+lower_speed_);
     // std::lock_guard<std::mutex> lock(sm_mutex);
     last_velocity_scaling_factor_ = linear_vel;
+    // std::cout << "cur " << curvature << std::endl;
+    // std::cout << "slow " << slow << std::endl;
     // std::cout << "vel " << last_velocity_scaling_factor_ << std::endl;
   }
   double calculateCurvature(
@@ -561,6 +604,8 @@ private:
   bool use_interpolation_;
   double last_velocity_scaling_factor_;
   bool has_prev_cmd_vel_ = false;
+  int error_count = 0;
+  double delta_max = 2.0;
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D * costmap_;
@@ -568,6 +613,9 @@ private:
   tf2::Duration transform_tolerance_ = tf2::durationFromSec(0.1);
   double control_duration_, control_frequency;
   bool slow = false;
+  bool g_has_last_inner_cmd = false;
+  
+  geometry_msgs::msg::Twist g_last_inner_cmd;
 };
 
 }  // namespace goal_approach_controller

@@ -236,7 +236,7 @@ def generate_launch_description():
     ld.add_action(start_point_lio_node)
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
-    # ld.add_action(start_static_transform_node)
+    ld.add_action(pointcloud_seg_node)
     ld.add_action(terrain_node)
 
     return ld
