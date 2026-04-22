@@ -44,7 +44,7 @@ ConstraintVelController() = default;
     logger_ = node->get_logger();
     costmap_ros_ = costmap_ros;
     costmap_ = costmap_ros_->getCostmap();
-
+    clock_ = node->get_clock();
     tf_ = tf;
     // 声明本wrapper的参数
     declare_parameter_if_not_declared(
@@ -167,6 +167,7 @@ ConstraintVelController() = default;
     const geometry_msgs::msg::Twist & velocity,
     nav2_core::GoalChecker * goal_checker) override
   {
+    auto now = clock_->now();  
     geometry_msgs::msg::TwistStamped cmd;
     bool inner_ok = true;
     geometry_msgs::msg::Twist current_inner_cmd;
@@ -177,6 +178,57 @@ ConstraintVelController() = default;
       RCLCPP_WARN(logger_, "Inner controller exception: %s", e.what());
       error_count++;
       inner_ok = false;
+      last_error_increase_time_ = now;
+    }
+    // std::cout << "error_count: " << error_count << std::endl;
+    if (!fallback_p_mode_ && error_count > 10) {
+      fallback_p_mode_ = true;
+      // fallback_enter_error_count_ = error_count;
+      fallback_enter_time_ = now;
+      last_error_increase_time_ = now;
+  
+      RCLCPP_WARN(logger_,
+        "error_count=%d > 10, switch to PURE-P fallback mode",
+        error_count);
+    }
+    auto transformed_plan = transformGlobalPlan(pose);
+    double lookahead_dist = getLookAheadDistance(velocity);
+    auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
+    double dx = goal_.pose.position.x - pose.pose.position.x;
+    double dy = goal_.pose.position.y - pose.pose.position.y;
+    double goal_dist = std::hypot(dx,dy);
+    double dist = std::hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
+    double target_speed = 0.0;
+    if (fallback_p_mode_) {
+      double stable_time = (now - last_error_increase_time_).seconds();
+  
+      if (stable_time >= fallback_recover_time_sec_) {
+        fallback_p_mode_ = false;
+        error_count = 0;
+        g_has_last_inner_cmd = false;
+  
+        RCLCPP_WARN(logger_,
+          "No new errors for %.1f sec, switch back to normal mode and reset error_count",
+          stable_time);
+      } else {
+  
+        target_speed = (dist * direct_approach_kp_);
+        double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+        cmd.twist.linear.x = target_speed * cos(theta_dist);
+        cmd.twist.linear.y = target_speed * sin(theta_dist);
+  
+        double linear_speed = std::hypot(cmd.twist.linear.x, cmd.twist.linear.y);
+        double limited_speed = linear_speed;
+        applyCurvatureLimitation(transformed_plan, carrot_pose, limited_speed);
+  
+        if (linear_speed > 1e-6) {
+          double scale_ratio = limited_speed / linear_speed;
+          cmd.twist.linear.x *= scale_ratio;
+          cmd.twist.linear.y *= scale_ratio;
+        }
+  
+        return cmd;
+      }
     }
     if (!g_has_last_inner_cmd) {
       g_last_inner_cmd = current_inner_cmd;
@@ -190,9 +242,9 @@ ConstraintVelController() = default;
       if (delta_v > delta_max) {
         RCLCPP_WARN(
           logger_,
-          "Inner controller velocity jump too large: delta_v=%.3f > lower_speed=%.3f, "
+          "Inner controller velocity jump too large: delta_v=%.3f > delta_max=%.3f, "
           "use last inner cmd * 0.8",
-          delta_v, lower_speed_);
+          delta_v, delta_max);
     
         cmd.twist.linear.x = g_last_inner_cmd.linear.x * 0.8;
         cmd.twist.linear.y = g_last_inner_cmd.linear.y * 0.8;
@@ -207,14 +259,6 @@ ConstraintVelController() = default;
         g_last_inner_cmd = current_inner_cmd;
       }
     }
-    auto transformed_plan = transformGlobalPlan(pose);
-    double lookahead_dist = getLookAheadDistance(velocity);
-    auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
-    double dx = goal_.pose.position.x - pose.pose.position.x;
-    double dy = goal_.pose.position.y - pose.pose.position.y;
-    double goal_dist = std::hypot(dx,dy);
-    double dist = std::hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
-    double target_speed = 0.0;
     
     if (goal_dist < direct_approach_distance_) {
 
@@ -614,7 +658,12 @@ private:
   double control_duration_, control_frequency;
   bool slow = false;
   bool g_has_last_inner_cmd = false;
-  
+  rclcpp::Clock::SharedPtr clock_;
+
+  bool fallback_p_mode_{false};                    // 是否处于纯P降级模式
+  rclcpp::Time fallback_enter_time_{0, 0, RCL_ROS_TIME};      // 进入降级的时间
+  rclcpp::Time last_error_increase_time_{0, 0, RCL_ROS_TIME}; // 最近一次 error_count 增加的时间
+  double fallback_recover_time_sec_{30.0};        // 30s 内无新增错误则恢复
   geometry_msgs::msg::Twist g_last_inner_cmd;
 };
 
