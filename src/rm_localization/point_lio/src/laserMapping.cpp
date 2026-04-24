@@ -836,7 +836,11 @@ int main(int argc, char ** argv)
         bool imu_upda_cov = false;
         effct_feat_num = 0;
         /**** point by point update ****/
-        if (!time_seq.empty()) { //有雷达点云
+
+        const int least_valid_point_num = 30;
+        bool lidar_valid = (feats_down_size >= least_valid_point_num);
+
+        if (lidar_valid) { //有雷达点云
           double pcl_beg_time = Measures.lidar_beg_time;
           idx = -1;
           for (k = 0; k < time_seq.size(); k++) {
@@ -985,19 +989,20 @@ int main(int argc, char ** argv)
                    ((get_time_sec(imu_next.header.stamp) <
                      Measures.lidar_beg_time + lidar_time_inte))) {  // >= ?要预测的帧的时间戳在time_current和雷达开始时间+雷达时间窗口
               if (is_first_frame) {  //过滤掉早于雷达时间窗口的imu数据
-                {
-                  {
-                    while (get_time_sec(imu_next.header.stamp) <
-                           Measures.lidar_beg_time + lidar_time_inte) {
-                      // meas.imu.emplace_back(imu_deque.front()); should add to initialization
-                      imu_deque.pop_front();
-                      if (imu_deque.empty()) break;
-                      imu_last = imu_next;
-                      imu_next = *(imu_deque.front());
-                    }
-                  }
-                  break;
-                }
+                // {
+                //   {
+                //     while (get_time_sec(imu_next.header.stamp) <
+                //            Measures.lidar_beg_time + lidar_time_inte) {
+                //       // meas.imu.emplace_back(imu_deque.front()); should add to initialization
+                //       imu_deque.pop_front();
+                //       if (imu_deque.empty()) break;
+                //       imu_last = imu_next;
+                //       imu_next = *(imu_deque.front());
+                //     }
+                //   }
+                //   break;
+                // }
+                time_current = get_time_sec(imu_next.header.stamp);
                 angvel_avr << imu_last.angular_velocity.x, imu_last.angular_velocity.y,
                   imu_last.angular_velocity.z;
 
@@ -1013,24 +1018,26 @@ int main(int argc, char ** argv)
               time_current = get_time_sec(imu_next.header.stamp);
 
               if (!is_first_frame) {
-                double dt = time_current - time_predict_last_const;  //当前imu帧与上一次预测的dt
-                {
-                  double dt_cov = time_current - time_update_last; //与上一次更新的时间差
-                  if (dt_cov > 0.0) {
-                    kf_output.predict(dt_cov, Q_output, input_in, false, true); // 状态预测
-                    time_update_last = time_current;
-                  }
-                  kf_output.predict(dt, Q_output, input_in, true, false); // 协方差预测
-                }
-
-                time_predict_last_const = time_current;
+                // double dt = time_current - time_predict_last_const;  //当前imu帧与上一次预测的dt
+                // {
+                //   double dt_cov = time_current - time_update_last; //与上一次更新的时间差
+                //   if (dt_cov > 0.0) {
+                //     kf_output.predict(dt_cov, Q_output, input_in, false, true); // 状态预测
+                //     time_update_last = time_current;
+                //   }
+                //   kf_output.predict(dt, Q_output, input_in, true, false); // 协方差预测
+                // }
 
                 angvel_avr << imu_next.angular_velocity.x, imu_next.angular_velocity.y,
                   imu_next.angular_velocity.z;
                 acc_avr << imu_next.linear_acceleration.x, imu_next.linear_acceleration.y,
                   imu_next.linear_acceleration.z;
+
+                time_current = get_time_sec(imu_next.header.stamp);
+                time_update_last = time_current;
+                time_predict_last_const = time_current;
                 // acc_avr_norm = acc_avr * G_m_s2 / acc_norm;
-                kf_output.update_iterated_dyn_share_IMU(); // 更新
+                // kf_output.update_iterated_dyn_share_IMU(); // 更新
                 imu_deque.pop_front();
                 if (imu_deque.empty()) break;
                 imu_last = imu_next;

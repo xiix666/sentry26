@@ -81,6 +81,9 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   spin_sub = this->create_subscription<std_msgs::msg::Int32>(
     "/spin_status", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::spinData, this, std::placeholders::_1));
+  gimbal_angle_sub_ = this->create_subscription<std_msgs::msg::Float32>(
+    "/gimbal_angle", rclcpp::SensorDataQoS(),
+    std::bind(&RMSerialDriver::gimbalAngleData, this, std::placeholders::_1));
   stance_sub_ = this->create_subscription<rm_interfaces::msg::StatusMsg>(
     "/status_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::stanceData, this, std::placeholders::_1));
@@ -354,6 +357,11 @@ void RMSerialDriver::specialNumberData(const rm_interfaces::msg::SpecialMsg::Sha
     special_number = msg->special_number;
 }
 
+void RMSerialDriver::gimbalAngleData(const std_msgs::msg::Float32::SharedPtr msg)
+{
+    gimbal_angle = msg->data;
+}
+
 void RMSerialDriver::sendEnemyPosesData(const rm_interfaces::msg::SendToLidarMsg::SharedPtr msg)
 {
     std::lock_guard<std::mutex> lock(send_enemy_poses_mutex_);
@@ -397,7 +405,8 @@ void RMSerialDriver::sendData()
     }
 
     // packet.angle = (std::abs(angle_sp) > ANGLE_EPSILON) ? angle_sp : angle;
-    packet.angle = angle;
+    packet.angle = spin_enable ? angle : gimbal_angle;
+    // packet.angle = angle;
     packet.shoot_mode = shoot_mode;
     // packet.special_number = special_number;
     packet.spin_enable = spin_enable;

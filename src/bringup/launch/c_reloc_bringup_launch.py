@@ -90,7 +90,7 @@ def generate_launch_description():
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/25uc_final.yaml", description="Full path to map yaml file to load"
         "map", default_value="/home/rps/sentry26/src/bringup/map/map.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
-    )
+    )                                                                                                 
 
     declare_pcd_file_cmd = DeclareLaunchArgument(
         "pcd_file", default_value="", description="Full path to PCD file to load"

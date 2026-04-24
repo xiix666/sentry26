@@ -13,6 +13,7 @@
 #include <std_msgs/msg/float64.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <visualization_msgs/msg/marker.hpp>
+#include "std_msgs/msg/float32.hpp"
 
 // C++ system
 #include <future>
@@ -75,6 +76,9 @@ private:
   void timer_callback();
 
   void reopenPort();
+  
+  void gimbalAngleData(const std_msgs::msg::Float32::SharedPtr msg);
+
 
   std::atomic<float> speed_x{0.0f};
   std::atomic<float> speed_y{0.0f};
@@ -90,7 +94,7 @@ private:
   std::atomic<uint8_t> sentry_stance{3};
   std::array<std::array<float, 2>, 5> send_enemy_poses_;
   std::mutex send_enemy_poses_mutex_;
-
+  std::atomic<float> gimbal_angle{0.0f};
   // Serial port
   std::unique_ptr<IoContext> owned_ctx_;
   std::string device_name_;
@@ -114,7 +118,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_save_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr save_sub;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr spin_sub;
-
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr gimbal_angle_sub_;
   rclcpp::Subscription<rm_interfaces::msg::StatusMsg>::SharedPtr stance_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr timer_reset;

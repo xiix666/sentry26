@@ -16,7 +16,7 @@ int k = 0;
 int idx = -1;
 //（状态结构体，过程噪声维度，输入结构体类型）
 esekfom::esekf<state_input, 24, input_ikfom> kf_input;
-esekfom::esekf<state_output, 30, input_ikfom> kf_output; //多了角速度和加速度两个状态量
+esekfom::esekf<state_output, 30, input_ikfom> kf_output; //多了角速度和加速度两个状态量 pos rot offset_R_L_I offset_T_L_I vel omg acc gravity bg ba
 input_ikfom input_in;
 V3D angvel_avr, acc_avr, acc_avr_norm;
 int feats_down_size = 0;

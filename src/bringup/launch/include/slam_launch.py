@@ -190,6 +190,14 @@ def generate_launch_description():
         parameters=[configured_params],
         arguments=["--ros-args", "--log-level", log_level],
     )
+    special_area = Node(
+        package="special_area",
+        executable="special_area_node",
+        name="special_area",
+        output="screen",
+        parameters=[configured_params],
+        arguments=["--ros-args", "--log-level", log_level],
+    )
     robot_state = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, "include", "robot_state_publisher_launch.py")
@@ -213,6 +221,7 @@ def generate_launch_description():
             os.path.join(launch_dir, "include", "pointcloud_seg_launch.py")
         ),
     )
+
     ld = LaunchDescription()
 
     # Set environment variables
@@ -238,6 +247,7 @@ def generate_launch_description():
     # ld.add_action(start_pointcloud_to_laserscan_node)
     # ld.add_action(start_sync_slam_toolbox_node)
     # ld.add_action(start_static_transform_node)
+    ld.add_action(special_area)
     ld.add_action(terrain_node)
 
     return ld
