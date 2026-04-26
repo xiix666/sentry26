@@ -34,9 +34,9 @@ point_lio:
       time_diff_lidar_to_imu: 0.0                       # Time offset between LiDAR and IMU calibrated by other algorithms, e.g., LI-Init (find in Readme)
 
     prior_pcd:
-      enable: False
+      enable: True
       # NOTE: `prior_pcd_map_path` will be provided in the launch file
-      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD1/scans_3.pcd"
+      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD/3.pcd"
       init_pose: [ 0.0, 0.0, 0.0 ]
 
     preprocess:
@@ -86,7 +86,7 @@ point_lio:
       lidar_frame: "lidar_link"
 
     pcd_save:
-      pcd_save_en: True
+      pcd_save_en: False
       interval: 10                                      # how many LiDAR frames saved in each pcd file;
                                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
       save_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD/"
@@ -96,8 +96,8 @@ terrain_analysis_ext:
     decayTime: 0.1
     noDecayDis: 1.0
     clearingDis: 20.0
-    useSorting: False
-    quantileZ: 0.6
+    useSorting: True
+    quantileZ: 0.2
     vehicleHeight: 0.6          ##########################
     voxelPointUpdateThre: 40
     voxelTimeUpdateThre: 0.05
@@ -284,24 +284,25 @@ controller_server:
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.05
+    failure_tolerance: 0.15
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
-      movement_time_allowance: 999.0
+      movement_time_allowance: 99.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.1
+      xy_goal_tolerance: 0.15
       yaw_goal_tolerance: 6.28
     FollowPath:
+      # controller_frequency: 20.0
       # plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
-      # translation_kp: 16.0
+      # translation_kp: 13.0
       # translation_ki: 0.0
-      # translation_kd: 0.05
+      # translation_kd: 0.5
       # enable_rotation: false
       # rotation_kp: 3.0
       # rotation_ki: 0.1
@@ -310,27 +311,27 @@ controller_server:
       # min_max_sum_error: 1.0
       # lookahead_dist: 0.25
       # use_velocity_scaled_lookahead_dist: true
-      # lookahead_time: 0.08
-      # min_lookahead_dist: 0.15
+      # lookahead_time: 0.1
+      # min_lookahead_dist: 0.2
       # max_lookahead_dist: 1.0
       # use_interpolation: false
       # use_rotate_to_heading: false
       # use_rotate_to_heading_treshold: 0.1
-      # min_approach_linear_velocity: 0.4
+      # min_approach_linear_velocity: 0.5
       # approach_velocity_scaling_dist: 1.8
-      # v_linear_min: -3.0
-      # v_linear_max: 3.0
+      # v_linear_min: -3.5
+      # v_linear_max: 3.5
       # v_angular_min: -3.0
       # v_angular_max: 3.0
-      # curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
+      # curvature_min: 0.35                                # 低曲率阈值，低于此值不减速。
       # curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
-      # reduction_ratio_at_high_curvature: 0.6            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
+      # reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
       # curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
       # curvature_backward_dist: 0.4                      # 后向距离，用于曲率计算
-      # large_slow: 0.7
-      # max_velocity_scaling_factor_rate: 0.9             # 速度缩放因子的最大变化率
+      # large_slow: 0.8
+      # max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
       # last_vel: 2.0           #如果上一次速度大于这个，曲率减速大减
-      # lower_speed: 0.4        #每次减速的上限
+      # lower_speed: 0.5        #每次减速的上限
       # enable_sg_filter: false
       # use_mpc_control: false
       # mpc_Np: 6
@@ -342,18 +343,19 @@ controller_server:
       # mpc_Rdelta_vx: 0.01
       # mpc_Rdelta_vy: 0.01
       # min_dist: 0.35
+      # acc_max: 5.0
       plugin: "constraint_vel_controller::ConstraintVelController"
       inner_plugin: "nav2_mppi_controller::MPPIController"
       controller_frequency: 50.0
-      lookahead_dist: 0.25
-      curvature_min: 0.35                                # 低曲率阈值，低于此值不减速。
+      lookahead_dist: 0.3
+      curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
       curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
       reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
       curvature_forward_dist: 0.8                       # 前向距离，用于曲率计算
       curvature_backward_dist: 0.2                      # 后向距离，用于曲率计算
       large_slow: 0.8
       max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
-      last_vel: 1.8           #如果上一次速度大于这个，曲率减速大减
+      last_vel: 1.6           #如果上一次速度大于这个，曲率减速大减
       lower_speed: 0.5        #每次减速的上限
 
       approach_distance: 0.5  #距目标时开始限速
@@ -363,17 +365,17 @@ controller_server:
       time_steps: 60 # prediction horizon = time_steps x model_dt = 3s
       model_dt: 0.02 # =1/controller_frequency
       batch_size: 800 # Count of randomly sampled candidate trajectories from current optimal control sequence in a given iteration. 1000 @ 50 Hz or 2000 @ 30 Hz seems to produce good results.
-
+      open_loop: false
       vx_std: 0.35 #增大采样多样性，让MPPI能采到更多减速/停止轨迹
       vy_std: 0.35
       wz_std: 0.1
 
-      vx_max: 3.0
-      vy_max: 3.0
+      vx_max: 3.5
+      vy_max: 3.5
       wz_max: 3.5
 
-      vx_min: -3.0
-      vy_min: -3.0
+      vx_min: -3.5
+      vy_min: -3.5
       wz_min: -3.5
 
       ax_max: 4.0 #加速度提高，高速时能快速响应
@@ -387,7 +389,7 @@ controller_server:
       prune_distance: 3.0 # proportion to your maximum velocity and prediction horizon.
       transform_tolerance: 0.1 # Time tolerance for data transformations with TF (s).
       temperature: 0.25 # 0 mean use control with best cost, huge value will lead to just taking mean of all trajectories without cost consideration.
-      gamma: 0.013 # A trade-off between smoothness (high) and low energy (low). This is a complex parameter that likely won’t need to be changed from the default.
+      gamma: 0.015 # A trade-off between smoothness (high) and low energy (low). This is a complex parameter that likely won’t need to be changed from the default.
       motion_model: "Omni"
       visualize: false # set to true to visualize the trajectories, but it will slow down the computation by a lot
       reset_period: 0.2 # Required time of inactivity to reset optimizer (only in Humble
@@ -413,27 +415,27 @@ controller_server:
       CostCritic: #通过 costmap 梯度引导避障
         enabled: true
         cost_power: 1
-        cost_weight: 3.8 #适当降低，配合修正后的 inflation 梯度
-        critical_cost: 253.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
+        cost_weight: 3.0 #适当降低，配合修正后的 inflation 梯度
+        critical_cost: 100.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
         consider_footprint: false
         collision_cost: 100.0
-        near_goal_distance: 0.3
+        near_goal_distance: 1.0
         trajectory_point_step: 2
       PathFollowCritic: #? incentivizes making progress along the path, what is the diff between this and PathAlignCritic?
         enabled: true
         cost_power: 1
-        cost_weight: 12.0
+        cost_weight: 15.0
         offset_from_furthest: 6 # Number of path points after furthest one any trajectory achieves to drive path tracking relative to.
         threshold_to_consider: 1.0 # That is to say, path following will be considered until the robot is within this distance of the goal, at which point the goal critic will take over.
-      ObstaclesCritic: # 如果容易撞到低矮的障碍物，检查地形分析是否正确然后再调整这个参数
+      ObstaclesCritic:
         enabled: true
         cost_power: 1
-        repulsion_weight: 1.5 #! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
+        repulsion_weight: 1.5 #靠近障碍时><collision_margin_distance的代价  ! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
         # This is separated from the critical term to allow for fine tuning of obstacle behaviors with path alignment for dynamic scenes without impacting actions which may directly lead to near-collisions. This is applied within the inflation_radius distance from obstacles.
-        critical_weight: 10.0
+        critical_weight: 5.0  #特别接近障碍，<collision_margin_distance时的代价
         consider_footprint: false # turn on this can increase computation cost
-        collision_cost: 100.0
-        collision_margin_distance: 0.35 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
+        collision_cost: 100.0 #如果采样的轨迹碰撞了，给一个很大的代价
+        collision_margin_distance: 0.05 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
         near_goal_distance: 1.0 # if the robot is within this distance of the goal, it will not be repelled by obstacles.
         # inflation_radius: 0.4 # Radius to inflate costmap around lethal obstacles. This should be the same as for your inflation layer (Humble only)
         # cost_scaling_factor: 10.0 # Exponential decay factor across inflation radius. This should be the same as for your inflation layer (Humble only)
@@ -442,7 +444,7 @@ controller_server:
         enabled: true
         cost_power: 1
         cost_weight: 5.0
-        max_path_occupancy_ratio: 0.07
+        max_path_occupancy_ratio: 0.01
         # trajectory_point_step: 3 #?
         threshold_to_consider: 0.5 # 0.5 # Distance (m) between robot and goal to stop considering path alignment and allow goal critics to take over. So just keep it same as threshold_to_consider in GoalCritic.
         offset_from_furthest: 20 #  A selection of this value to be ~30% of the maximum velocity distance projected is good 
@@ -450,6 +452,7 @@ controller_server:
         # then 20 points represents 33% of the maximum speed projected over the prediction horizon onto the path). When in doubt, 
         # prediction_horizon_s * max_speed / path_resolution / 3.0 is a good baseline. = 3 * 0.8 / 0.1 /3.0
         use_path_orientations: false
+
 
 local_costmap:
   local_costmap:
@@ -463,7 +466,7 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      robot_radius: 0.33
+      robot_radius: 0.3
       plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
@@ -498,7 +501,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.8
+        inflation_radius: 0.6
       always_send_full_costmap: False
 
 global_costmap:
@@ -509,7 +512,7 @@ global_costmap:
       publish_frequency: 10.0
       global_frame: map
       robot_base_frame: fake_base_link
-      robot_radius: 0.33
+      robot_radius: 0.3
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
@@ -556,9 +559,9 @@ global_costmap:
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
-        min_obstacle_height: 0.2
+        min_obstacle_height: 0.3
         max_obstacle_height: 1.0
-        min_obstacle_intensity: 0.2
+        min_obstacle_intensity: 0.3
         max_obstacle_intensity: 1.0
         observation_sources: terrain_map_ext
         terrain_map_ext:
@@ -567,7 +570,7 @@ global_costmap:
           # It doesn't need to start with '/'
           topic: /terrain_map_ext
           sensor_frame: lidar_link
-          min_obstacle_height: 0.2
+          min_obstacle_height: 0.3
           max_obstacle_height: 1.0
           obstacle_max_range: 10.0
           obstacle_min_range: 0.35
@@ -577,7 +580,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.9
+        inflation_radius: 0.7
       always_send_full_costmap: False
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
@@ -617,8 +620,8 @@ planner_server:
       plugin: "nav2_theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
       how_many_corners: 8
       w_euc_cost: 1.0
-      w_traversal_cost: 3.5
-      w_heuristic_cost: 0.5
+      w_traversal_cost: 2.0
+      w_heuristic_cost: 1.0
 
 smoother_server:
   ros__parameters:

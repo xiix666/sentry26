@@ -12,12 +12,12 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
+#include <filesystem>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include "li_initialization.h"
 
 using namespace std;
-
+namespace fs = std::filesystem;
 #define PUBFRAME_PERIOD (20)
 
 std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -376,18 +376,31 @@ void publish_frame_world(
       }
 
       static int scan_wait_num = 0;
+      static int saved_this_run = 0;
       scan_wait_num++;
       if (!pcl_wait_save->empty() && pcd_save_interval > 0 && scan_wait_num >= pcd_save_interval) {
-        pcd_index++;
-        if(pcd_index<1000){
-        string all_points_dir(
-          string(save_path + to_string(pcd_index) + string(".pcd")));
+        fs::path all_points_path;
+
+        // 找到下一个不存在的 pcd 文件，避免覆盖
+        do {
+          pcd_index++;
+    
+          if (saved_this_run >= 1000) {
+            RCLCPP_WARN(
+              rclcpp::get_logger("pcd_save"),
+              "This run has already saved 1000 PCD files, stop saving more.");
+            return;
+          }
+    
+          all_points_path = fs::path(save_path) / (std::to_string(pcd_index) + ".pcd");
+    
+        } while (fs::exists(all_points_path));
         pcl::PCDWriter pcd_writer;
-        std::cout << "current scan saved to /PCD/" << all_points_dir << '\n';
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+        std::cout << "current scan saved to /PCD/" << all_points_path.string() << '\n';
+        pcd_writer.writeBinary(all_points_path.string(), *pcl_wait_save);
+        saved_this_run++;
         pcl_wait_save->clear();
         scan_wait_num = 0;
-        }
       }
     }
   }
@@ -1315,10 +1328,19 @@ int main(int argc, char ** argv)
   // 1. make sure you have enough memories
   // 2. noted that pcd save will influence the real-time performances
   if (!pcl_wait_save->empty() && pcd_save_en) {
-    string file_name = string("scans1.pcd");
-    string all_points_dir(save_path + file_name);
+    // string file_name = string("scans1.pcd");
+    fs::path dir(save_path);
+
+    int idx = 1;
+    fs::path all_points_path;
+  
+    do {
+      all_points_path = dir / ("scans" + std::to_string(idx) + ".pcd");
+      ++idx;
+    } while (fs::exists(all_points_path));
+  
     pcl::PCDWriter pcd_writer;
-    pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+    pcd_writer.writeBinary(all_points_path.string(), *pcl_wait_save);
   }
   fout_out.close();
   fout_imu_pbp.close();
