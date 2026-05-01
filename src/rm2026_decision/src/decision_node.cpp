@@ -41,11 +41,17 @@
 namespace fs = std::filesystem;
 
 // ===== 配置结构体定义 =====联盟赛nav_to_project_offset_x = 0.75;double nav_to_project_offset_y = 7.0;
+// struct CoordinateConfig {
+//     double nav_to_project_offset_x = 1.2;
+//     double nav_to_project_offset_y = 6.5;
+//     double project_to_nav_offset_x = -1.2;
+//     double project_to_nav_offset_y = -6.5;
+// };
 struct CoordinateConfig {
-    double nav_to_project_offset_x = 1.2;
-    double nav_to_project_offset_y = 6.5;
-    double project_to_nav_offset_x = -1.2;
-    double project_to_nav_offset_y = -6.5;
+    double nav_to_project_offset_x = 0.0;
+    double nav_to_project_offset_y = 0.0;
+    double project_to_nav_offset_x = 0.0;
+    double project_to_nav_offset_y = 0.0;
 };
 
 struct BehaviorTreeConfig {
@@ -120,18 +126,18 @@ private:
         this->declare_parameter<std::string>("tree_file", "HighPTree.xml");
         this->declare_parameter<std::string>("tree_directory", "config");
         this->declare_parameter<double>("tick_frequency", 10.0);
-        // // 地图与导航坐标系偏置：导航系 -> 本项目系（用于 TF 自身坐标）
-        // this->declare_parameter<double>("nav_to_project_offset_x", 0.6);
-        // this->declare_parameter<double>("nav_to_project_offset_y", 2.0);
-        // // 地图与导航坐标系偏置：本项目系 -> 导航系（用于发送目标点）
-        // this->declare_parameter<double>("project_to_nav_offset_x", -0.6);
-        // this->declare_parameter<double>("project_to_nav_offset_y", -2.0);
-                // 地图与导航坐标系偏置：导航系 -> 本项目系（用于 TF 自身坐标）
-        this->declare_parameter<double>("nav_to_project_offset_x", 1.2) ;
-        this->declare_parameter<double>("nav_to_project_offset_y", 6.5);
+        // 地图与导航坐标系偏置：导航系 -> 本项目系（用于 TF 自身坐标）
+        this->declare_parameter<double>("nav_to_project_offset_x", 0.0);
+        this->declare_parameter<double>("nav_to_project_offset_y", 0.0);
         // 地图与导航坐标系偏置：本项目系 -> 导航系（用于发送目标点）
-        this->declare_parameter<double>("project_to_nav_offset_x", -1.2);
-        this->declare_parameter<double>("project_to_nav_offset_y", -6.5);
+        this->declare_parameter<double>("project_to_nav_offset_x", 0.0);
+        this->declare_parameter<double>("project_to_nav_offset_y", 0.0);
+                // 地图与导航坐标系偏置：导航系 -> 本项目系（用于 TF 自身坐标）
+        // this->declare_parameter<double>("nav_to_project_offset_x", 1.2) ;
+        // this->declare_parameter<double>("nav_to_project_offset_y", 6.5);
+        // // 地图与导航坐标系偏置：本项目系 -> 导航系（用于发送目标点）
+        // this->declare_parameter<double>("project_to_nav_offset_x", -1.2);
+        // this->declare_parameter<double>("project_to_nav_offset_y", -6.5);
         // team_color 参数已移除，队伍颜色完全由裁判系统消息确定
     }
 
@@ -260,8 +266,8 @@ private:
         // 补给点
         geometry_msgs::msg::PoseStamped supply_pose;
         supply_pose.header.frame_id = "map";
-        supply_pose.pose.position.x = 1.0;  // (1500/2)/1000 = 0.75m
-        supply_pose.pose.position.y = 6.8;   // ((6000+8000)/2)/1000 = 7.0m
+        supply_pose.pose.position.x = 0.0;  // (1500/2)/1000 = 0.75m
+        supply_pose.pose.position.y = 0.0;   // ((6000+8000)/2)/1000 = 7.0m
         supply_pose.pose.position.z = 0.0;
         global_blackboard_->set("@supply_point_location", supply_pose);
 
@@ -291,27 +297,66 @@ private:
         global_blackboard_->set("@hero_follow_center_x", 0.0f);     // 英雄跟踪圆心X坐标
         global_blackboard_->set("@hero_follow_center_y", 0.0f);     // 英雄跟踪圆心Y坐标
 
+        // // 区域一巡逻点（1250,5700），（840,3900），（1700,3900）
+        // geometry_msgs::msg::PoseStamped area1_p1;
+        // area1_p1.header.frame_id = "map";
+        // area1_p1.pose.position.x = 1.25;
+        // area1_p1.pose.position.y = 5.7;
+        // area1_p1.pose.position.z = 0.0;
+        // global_blackboard_->set("@area1_point1", area1_p1);
+
+        // geometry_msgs::msg::PoseStamped area1_p2;
+        // area1_p2.header.frame_id = "map";
+        // area1_p2.pose.position.x = 0.84;
+        // area1_p2.pose.position.y = 3.9;
+        // area1_p2.pose.position.z = 0.0;
+        // global_blackboard_->set("@area1_point2", area1_p2);
+
+        // geometry_msgs::msg::PoseStamped area1_p3;
+        // area1_p3.header.frame_id = "map";
+        // area1_p3.pose.position.x = 1.7;
+        // area1_p3.pose.position.y = 3.9;
+        // area1_p3.pose.position.z = 0.0;
+        // global_blackboard_->set("@area1_point3", area1_p3);
+
+
         // 区域一巡逻点（1250,5700），（840,3900），（1700,3900）
         geometry_msgs::msg::PoseStamped area1_p1;
         area1_p1.header.frame_id = "map";
-        area1_p1.pose.position.x = 1.25;
-        area1_p1.pose.position.y = 5.7;
+        area1_p1.pose.position.x = 5.475;
+        area1_p1.pose.position.y = 4.22;
         area1_p1.pose.position.z = 0.0;
         global_blackboard_->set("@area1_point1", area1_p1);
 
         geometry_msgs::msg::PoseStamped area1_p2;
         area1_p2.header.frame_id = "map";
-        area1_p2.pose.position.x = 0.84;
-        area1_p2.pose.position.y = 3.9;
+        area1_p2.pose.position.x = 3.08;
+        area1_p2.pose.position.y = 5.59;
         area1_p2.pose.position.z = 0.0;
         global_blackboard_->set("@area1_point2", area1_p2);
 
         geometry_msgs::msg::PoseStamped area1_p3;
         area1_p3.header.frame_id = "map";
-        area1_p3.pose.position.x = 1.7;
-        area1_p3.pose.position.y = 3.9;
+        area1_p3.pose.position.x = 2.24;
+        area1_p3.pose.position.y = 2.64;
         area1_p3.pose.position.z = 0.0;
         global_blackboard_->set("@area1_point3", area1_p3);
+
+
+        // TestPatrol3 前置过渡点（先依次经过这两个点，再进入 area1 三点巡逻）
+        geometry_msgs::msg::PoseStamped test_patrol3_pre_p1;
+        test_patrol3_pre_p1.header.frame_id = "map";
+        test_patrol3_pre_p1.pose.position.x = 6.52;
+        test_patrol3_pre_p1.pose.position.y = 0.94;
+        test_patrol3_pre_p1.pose.position.z = 0.0;
+        global_blackboard_->set("@test_patrol3_pre_point1", test_patrol3_pre_p1);
+
+        geometry_msgs::msg::PoseStamped test_patrol3_pre_p2;
+        test_patrol3_pre_p2.header.frame_id = "map";
+        test_patrol3_pre_p2.pose.position.x = 7.81;
+        test_patrol3_pre_p2.pose.position.y = 2.76;
+        test_patrol3_pre_p2.pose.position.z = 0.0;
+        global_blackboard_->set("@test_patrol3_pre_point2", test_patrol3_pre_p2);
 
         //TestPatrol3用于测试的坐标
         // geometry_msgs::msg::PoseStamped area1_p1;
@@ -383,14 +428,14 @@ private:
         geometry_msgs::msg::PoseStamped area4_red_patrol;
         area4_red_patrol.header.frame_id = "map";
         area4_red_patrol.pose.position.x = 6.9;
-        area4_red_patrol.pose.position.y = 3.4;
+        area4_red_patrol.pose.position.y = 3.2;
         area4_red_patrol.pose.position.z = 0.0;
         global_blackboard_->set("@area4_red_patrol", area4_red_patrol);
 
         geometry_msgs::msg::PoseStamped area4_yellow_patrol;
         area4_yellow_patrol.header.frame_id = "map";
-        area4_yellow_patrol.pose.position.x = 5.1;
-        area4_yellow_patrol.pose.position.y = 4.6;
+        area4_yellow_patrol.pose.position.x = 6.9;
+        area4_yellow_patrol.pose.position.y = 3.2;
         area4_yellow_patrol.pose.position.z = 0.0;
         global_blackboard_->set("@area4_yellow_patrol", area4_yellow_patrol);
         // 开局到点标志位：0=未到达，1=已到达
@@ -671,7 +716,8 @@ private:
             bt_.factory.registerBehaviorTreeFromFile(tree_path.string());
             RCLCPP_INFO(this->get_logger(), "registered main tree file: %s", tree_path.string().c_str());
 
-            const std::string main_tree_id = "HighP";
+            //const std::string main_tree_id = "HighP";
+            const std::string main_tree_id = "TestPatrol3";
             // const std::string main_tree_id = "TestQifTree";
             const std::string main_tree_check = "CheckTree";
             const std::string main_tree_monitor = "Area0Tree";
@@ -1482,6 +1528,12 @@ private:
         }
         comm_.nav_msg->publish(nav_msg);
         comm_.status_msg->publish(status_msg);
+        int reached_dbg = -999;
+        try {
+            reached_dbg = global_blackboard_->get<int>("@area4_yellow_patrol_reached");
+        } catch (...) {}
+        RCLCPP_INFO(this->get_logger(),
+                    "[area4_yellow_patrol_reached] = %d", reached_dbg);
         RCLCPP_DEBUG(this->get_logger(), "发布 NavMsg: nav_unable=%d (敌人数量:%d, 哨兵血量:%d, 英雄血量:%d, 步兵血量:%d, 子弹限额:%d, 步兵1距离:%.2fm, 步兵2距离:%.2fm)",
                     nav_msg.nav_unable, enemy_count, sentry_hp, hero_hp, infantry_hp, bullets_allowance, enemy_infantry1_distance, enemy_infantry2_distance);
     }

@@ -3,9 +3,20 @@
   <BehaviorTree ID="Area4Tree">
     <ReactiveFallback>
       <Precondition else="FAILURE"
-                    if="@sentry_hp &lt; 280"
-                    _while="@sentry_hp &lt; 280">
-              <GoToArea4red target_pose="{@area4_red_patrol}"
+                    if="@sentry_hp &lt; 250"
+                    _while="@sentry_hp &lt; 250">
+        <GoToArea4yellow target_pose="{@area4_yellow_patrol}"
+                         timeout="15.0"
+                         tolerance="0.2"
+                         ros_node="{@ros_node}"
+                         current_pose_x="{@current_pose_x}"
+                         current_pose_y="{@current_pose_y}"
+                         nav_goal="{@nav_goal}"
+                   nav_goalOut="{@nav_goal}"
+                         nav_goal_requested="{@nav_goal_requested}"
+                         _while="@current_area == 4 &amp;&amp; @sentry_hp &lt; 250"/>
+      </Precondition>
+      <GoToArea4red target_pose="{@area4_red_patrol}"
                     timeout="15.0"
                     tolerance="0.2"
                     ros_node="{@ros_node}"
@@ -14,19 +25,7 @@
                     nav_goal="{@nav_goal}"
                    nav_goalOut="{@nav_goal}"
                     nav_goal_requested="{@nav_goal_requested}"
-                    _while="@current_area == 4 &amp;&amp; @sentry_hp &lt; 280"/>
-      </Precondition>
-
-      <GoToArea4yellow target_pose="{@area4_yellow_patrol}"
-                         timeout="15.0"
-                         tolerance="0.2"
-                         ros_node="{@ros_node}"
-                         current_pose_x="{@current_pose_x}"
-                         current_pose_y="{@current_pose_y}"
-                         nav_goal="{@nav_goal}"
-                         nav_goalOut="{@nav_goal}"
-                         nav_goal_requested="{@nav_goal_requested}"
-                         _while="@current_area == 4 "/>
+                    _while="@current_area == 4"/>
     </ReactiveFallback>
   </BehaviorTree>
 

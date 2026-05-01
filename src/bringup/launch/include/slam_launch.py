@@ -176,9 +176,9 @@ def generate_launch_description():
         parameters=[configured_params],
         arguments=["--ros-args", "--log-level", log_level],
         remappings=[
-            ("/map", "map"),
-            ("/map_metadata", "map_metadata"),
-            ("/map_updates", "map_updates"),
+            ("/map", "/slam_map"),
+            ("/map_metadata", "/slam_map_metadata"),
+            ("/map_updates", "/slam_map_updates"),
         ],
     )
     
@@ -244,8 +244,8 @@ def generate_launch_description():
     ld.add_action(lidar_publish)
     ld.add_action(start_point_lio_node)
     # ld.add_action(pointcloud_seg_node)
-    # ld.add_action(start_pointcloud_to_laserscan_node)
-    # ld.add_action(start_sync_slam_toolbox_node)
+    ld.add_action(start_pointcloud_to_laserscan_node)
+    ld.add_action(start_sync_slam_toolbox_node)
     # ld.add_action(start_static_transform_node)
     ld.add_action(special_area)
     ld.add_action(terrain_node)

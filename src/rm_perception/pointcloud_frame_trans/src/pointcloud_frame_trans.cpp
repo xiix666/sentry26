@@ -8,6 +8,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/passthrough.h>
 #include <pcl/common/transforms.h>
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/transform_broadcaster.h"
@@ -31,6 +32,11 @@ public:
         this->declare_parameter("lidar_frame", "lidar_link");
         this->declare_parameter("odom_base_out", "base_odometry");
 
+        this->declare_parameter("limit_x", 10.0); // X轴方向总长度
+        this->declare_parameter("limit_y", 10.0); // Y轴方向总长度
+        this->declare_parameter("limit_z", 3.0);  // Z轴高度限制 (顺便滤掉地面和天空)
+        // this->declare_parameter("enable_voxel", true); // 是否开启体素滤波进一步降采样
+
         this->get_parameter("input_topic", input_topic_);
         this->get_parameter("output_topic", output_topic_);
         this->get_parameter("output_frame", output_frame_);
@@ -40,6 +46,11 @@ public:
         this->get_parameter("base_frame", base_frame_);
         this->get_parameter("lidar_frame", lidar_frame_);
         this->get_parameter("odom_base_out", odom_base_out_);
+
+        this->get_parameter("limit_x", limit_x_);
+        this->get_parameter("limit_y", limit_y_);
+        this->get_parameter("limit_z", limit_z_);
+        // this->get_parameter("enable_voxel", enable_voxel_);
         // 初始化tf监听器，tf_buffer将被填充
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -60,6 +71,7 @@ public:
     }
 
 private:
+    // 特别标注一下，曾经对自己这段代码产生了质疑，一定不要忘记输入的点云是lio发布的！！
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr input_cloud)
     {
         try
@@ -89,17 +101,29 @@ private:
                 return;
             }
         pcl::transformPointCloud(*cloud, *cloud, T_target_source);
-            // tf2::doTransform(*input_cloud, *transformed_cloud, transform_stamped);
-            // 3. 可选：体素滤波（保留滤波逻辑，但直接操作PointCloud2）
-            // if (leaf_size_ > 0.0f) {
-            //     applyVoxelGridFilter(transformed_cloud);
-            // }
+        float curr_x, curr_y, curr_z;
+        {
+            std::lock_guard<std::mutex> lock(odom_mutex_);
+            curr_x = vehicle_x_;
+            curr_y = vehicle_y_;
+            curr_z = vehicle_z_;
+        }
+        pcl::PassThrough<pcl::PointXYZI> pass;
+        pass.setInputCloud(cloud);
+        pass.setFilterFieldName("x");
+        pass.setFilterLimits(curr_x - limit_x_, curr_x + limit_x_);
+        pass.filter(*cloud);
 
-            // 4. 发布转换后的点云
-            // transformed_cloud->header.stamp = this->now();  // 可选：更新时间戳
-            // transformed_cloud->header.frame_id = output_frame_;
-            // pub_->publish(*transformed_cloud);
-            publishcloud(cloud);
+        pass.setInputCloud(cloud);
+        pass.setFilterFieldName("y");
+        pass.setFilterLimits(curr_y - limit_y_, curr_y + limit_y_);
+        pass.filter(*cloud);
+
+        pass.setInputCloud(cloud);
+        pass.setFilterFieldName("z");
+        pass.setFilterLimits(curr_z - limit_z_, curr_z + limit_z_);
+        pass.filter(*cloud);
+        publishcloud(cloud);
         }
         catch (const tf2::TransformException& ex)
         {
@@ -193,6 +217,12 @@ private:
         out_base.pose.pose.position.y = base_origin.y();
         out_base.pose.pose.position.z = base_origin.z();
         out_base.pose.pose.orientation = tf2::toMsg(tf_baseodom_to_base.getRotation());
+        {
+            std::lock_guard<std::mutex> lock(odom_mutex_);
+            vehicle_x_ = base_origin.x();
+            vehicle_y_ = base_origin.y();
+            vehicle_z_ = base_origin.z();
+        }
 
         const tf2::Matrix3x3 R_base_lidar = tf_base_to_lidar_.getBasis();
         const tf2::Vector3 p_base_lidar = tf_base_to_lidar_.getOrigin();
@@ -249,6 +279,14 @@ private:
     tf2::Transform tf_odom_to_lidar_odom_;
     tf2::Transform tf_base_to_lidar_;
     tf2::Transform tf_lidar_to_base_;
+    float limit_x_;
+    float limit_y_;
+    float limit_z_;
+    bool enable_voxel_;
+    std::mutex odom_mutex_;
+    float vehicle_x_ = 0.0;
+    float vehicle_y_ = 0.0;
+    float vehicle_z_ = 0.0;
 };
 
 int main(int argc, char** argv)

@@ -87,7 +87,7 @@ public:
         // 检查是否超时
         if (std::chrono::steady_clock::now() > timeout_point_) {
             RCLCPP_WARN(node_->get_logger(), "Navigation to Area4 timed out");
-            return BT::NodeStatus::SUCCESS;
+            return BT::NodeStatus::FAILURE;
         }
 
         // 仅按当前点到目标点距离判断到达（不依赖 navigation/status）

@@ -36,7 +36,7 @@ point_lio:
     prior_pcd:
       enable: True
       # NOTE: `prior_pcd_map_path` will be provided in the launch file
-      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD/3.pcd"
+      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD1/3.pcd"
       init_pose: [ 0.0, 0.0, 0.0 ]
 
     preprocess:
@@ -89,14 +89,14 @@ point_lio:
       pcd_save_en: False
       interval: 10                                      # how many LiDAR frames saved in each pcd file;
                                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
-      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD/"
+      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCD1/"
 terrain_analysis_ext:
   ros__parameters:
     scanVoxelSize: 0.1
     decayTime: 0.1
     noDecayDis: 1.0
     clearingDis: 20.0
-    useSorting: True
+    useSorting: False
     quantileZ: 0.2
     vehicleHeight: 0.6          ##########################
     voxelPointUpdateThre: 40
@@ -216,6 +216,9 @@ pointcloud_frame_trans:
     base_frame: base_link
     lidar_frame: lidar_link
     odom_base_out: odometry
+    limit_x: 10.0
+    limit_y: 10.0
+    limit_z: 3.0
 bt_navigator:
   ros__parameters:
     use_sim_time: false
@@ -280,7 +283,7 @@ controller_server:
   ros__parameters:
     use_sim_time: false
     odom_topic: odometry
-    controller_frequency: 50.0
+    controller_frequency: 40.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -291,7 +294,7 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
-      movement_time_allowance: 99.0
+      movement_time_allowance: 999.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -363,7 +366,7 @@ controller_server:
       direct_approach_distance: 1.5  #进入直接驱动模式的距离，绕过MPPI防止画弧
       direct_approach_kp: 8.0  #直接驱动P控制增益
       time_steps: 60 # prediction horizon = time_steps x model_dt = 3s
-      model_dt: 0.02 # =1/controller_frequency
+      model_dt: 0.025 # =1/controller_frequency
       batch_size: 800 # Count of randomly sampled candidate trajectories from current optimal control sequence in a given iteration. 1000 @ 50 Hz or 2000 @ 30 Hz seems to produce good results.
       open_loop: false
       vx_std: 0.35 #增大采样多样性，让MPPI能采到更多减速/停止轨迹
@@ -409,18 +412,18 @@ controller_server:
       GoalCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 10.0
-        threshold_to_consider: 0.1 # Minimal distance (m) between robot and goal above which goal distance cost considered. It is wise to start with this as being the same as your prediction horizon to have a clean hand-off with the path follower critic.
+        cost_weight: 5.0
+        threshold_to_consider: 1.0 # Minimal distance (m) between robot and goal above which goal distance cost considered. It is wise to start with this as being the same as your prediction horizon to have a clean hand-off with the path follower critic.
         # i.e. When this critic is add to the cost function
       CostCritic: #通过 costmap 梯度引导避障
         enabled: true
         cost_power: 1
         cost_weight: 3.0 #适当降低，配合修正后的 inflation 梯度
-        critical_cost: 100.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
-        consider_footprint: false
-        collision_cost: 100.0
+        critical_cost: 5.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
+        consider_footprint: true
+        collision_cost: 5.0
         near_goal_distance: 1.0
-        trajectory_point_step: 2
+
       PathFollowCritic: #? incentivizes making progress along the path, what is the diff between this and PathAlignCritic?
         enabled: true
         cost_power: 1
@@ -428,14 +431,14 @@ controller_server:
         offset_from_furthest: 6 # Number of path points after furthest one any trajectory achieves to drive path tracking relative to.
         threshold_to_consider: 1.0 # That is to say, path following will be considered until the robot is within this distance of the goal, at which point the goal critic will take over.
       ObstaclesCritic:
-        enabled: true
+        enabled: false
         cost_power: 1
         repulsion_weight: 1.5 #靠近障碍时><collision_margin_distance的代价  ! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
         # This is separated from the critical term to allow for fine tuning of obstacle behaviors with path alignment for dynamic scenes without impacting actions which may directly lead to near-collisions. This is applied within the inflation_radius distance from obstacles.
-        critical_weight: 5.0  #特别接近障碍，<collision_margin_distance时的代价
-        consider_footprint: false # turn on this can increase computation cost
-        collision_cost: 100.0 #如果采样的轨迹碰撞了，给一个很大的代价
-        collision_margin_distance: 0.05 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
+        critical_weight: 3.0  #特别接近障碍，<collision_margin_distance时的代价
+        consider_footprint: true # turn on this can increase computation cost
+        collision_cost: 5.0 #如果采样的轨迹碰撞了，给一个很大的代价
+        collision_margin_distance: 0.01 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
         near_goal_distance: 1.0 # if the robot is within this distance of the goal, it will not be repelled by obstacles.
         # inflation_radius: 0.4 # Radius to inflate costmap around lethal obstacles. This should be the same as for your inflation layer (Humble only)
         # cost_scaling_factor: 10.0 # Exponential decay factor across inflation radius. This should be the same as for your inflation layer (Humble only)
@@ -445,7 +448,7 @@ controller_server:
         cost_power: 1
         cost_weight: 5.0
         max_path_occupancy_ratio: 0.01
-        # trajectory_point_step: 3 #?
+        trajectory_point_step: 4 #?
         threshold_to_consider: 0.5 # 0.5 # Distance (m) between robot and goal to stop considering path alignment and allow goal critics to take over. So just keep it same as threshold_to_consider in GoalCritic.
         offset_from_furthest: 20 #  A selection of this value to be ~30% of the maximum velocity distance projected is good 
         # (e.g. if a planner produces points every 2.5cm, 60 can fit on the 1.5m local costmap radius. If the max speed is 0.5m/s with a 3s prediction time, 
@@ -458,7 +461,7 @@ local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: true
-      update_frequency: 20.0
+      update_frequency: 25.0
       publish_frequency: 10.0
       global_frame: odom
       robot_base_frame: fake_base_link
@@ -467,10 +470,14 @@ local_costmap:
       height: 5
       resolution: 0.05
       robot_radius: 0.3
+      footprint: "[ [0.3, 0.3], [0.3, -0.3], [-0.3, -0.3], [-0.3, 0.3]]"
       plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
+        continuous_hit_threshold: 1          # 连续命中2次
+        neighborhood_radius: 2               # 5x5邻域（半径2）
+        neighborhood_min_voxels: 1   
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
@@ -491,10 +498,10 @@ local_costmap:
           # It doesn't need to start with '/'
           topic: /terrain_map_local
           sensor_frame: lidar_link
-          min_obstacle_height: 0.3
+          min_obstacle_height: 0.4
           max_obstacle_height: 2.0
           obstacle_max_range: 4.0
-          obstacle_min_range: 0.6
+          obstacle_min_range: 0.5
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -508,11 +515,12 @@ global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: false
-      update_frequency: 25.0
+      update_frequency: 15.0
       publish_frequency: 10.0
       global_frame: map
       robot_base_frame: fake_base_link
       robot_radius: 0.3
+      footprint: "[ [0.3, 0.3], [0.3, -0.3], [-0.3, -0.3], [-0.3, 0.3] ]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
@@ -548,7 +556,7 @@ global_costmap:
         continuous_hit_threshold: 1          # 连续命中2次
         neighborhood_radius: 2               # 5x5邻域（半径2）
         neighborhood_min_voxels: 1           # 邻域内至少3个有效体素
-
+        obstacle_hold_time: 0.5              # 障碍物保持时间
         enabled: true
         track_unknown_space: true
         footprint_clearing_enabled: true
@@ -559,9 +567,9 @@ global_costmap:
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
-        min_obstacle_height: 0.3
+        min_obstacle_height: 0.35
         max_obstacle_height: 1.0
-        min_obstacle_intensity: 0.3
+        min_obstacle_intensity: 0.35
         max_obstacle_intensity: 1.0
         observation_sources: terrain_map_ext
         terrain_map_ext:
@@ -570,7 +578,7 @@ global_costmap:
           # It doesn't need to start with '/'
           topic: /terrain_map_ext
           sensor_frame: lidar_link
-          min_obstacle_height: 0.3
+          min_obstacle_height: 0.35
           max_obstacle_height: 1.0
           obstacle_max_range: 10.0
           obstacle_min_range: 0.35
@@ -580,7 +588,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
-        inflation_radius: 0.7
+        inflation_radius: 0.6
       always_send_full_costmap: False
 
 # The yaml_filename does not need to be specified since it going to be set by defaults in launch.
@@ -593,7 +601,7 @@ map_server:
 planner_server:
   ros__parameters:
     use_sim_time: false
-    expected_planner_frequency: 15.0
+    expected_planner_frequency: 20.0
     planner_plugins: ["GridBased"]
     GridBased:
       # plugin: "nav2_smac_planner/SmacPlanner2D"

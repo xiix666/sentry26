@@ -16,10 +16,10 @@ public:
         RCLCPP_INFO(this->get_logger(), "SpecialArea node has been started.");
 
         // 原始区域参数
-        this->declare_parameter("left_top_x", 7.069710);
-        this->declare_parameter("left_top_y", 3.582489);
-        this->declare_parameter("right_bottom_x", 5.202050);
-        this->declare_parameter("right_bottom_y", -1.89287);
+        this->declare_parameter("left_top_x", 8.641380);
+        this->declare_parameter("left_top_y", 2.241885);
+        this->declare_parameter("right_bottom_x", 6.396358);
+        this->declare_parameter("right_bottom_y", -1.603606);
 
         this->get_parameter("left_top_x", left_top_x);
         this->get_parameter("left_top_y", left_top_y);

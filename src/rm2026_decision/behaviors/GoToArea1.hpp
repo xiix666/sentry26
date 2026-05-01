@@ -20,6 +20,7 @@ public:
         : BT::StatefulActionNode(name, config)
         , node_(nullptr)
         , navigation_started_(false)
+        , target_pose_{}
     {}
 
     static BT::PortsList providedPorts()
@@ -53,6 +54,7 @@ public:
             RCLCPP_ERROR(node_->get_logger(), "Failed to get Area1 target position: target_pose");
             return BT::NodeStatus::FAILURE;
         }
+        target_pose_ = target_pose.value();
 
         // 设置超时时间
         auto timeout = getInput<double>("timeout");
@@ -65,14 +67,14 @@ public:
         tolerance_ = tolerance.value_or(0.2);
 
         // 通过输出端口设置导航目标（写入黑板 nav_goal，距离判断从 nav_goal 端口读取, input/output分离）
-        setOutput("nav_goalOut", target_pose.value());
+        setOutput("nav_goalOut", target_pose_);
         setOutput("nav_goal_requested", true);
 
         navigation_started_ = true;
 
         RCLCPP_INFO(node_->get_logger(), "Start navigating to area1 (x=%.2f, y=%.2f), tolerance=%.2fm",
-                   target_pose.value().pose.position.x,
-                   target_pose.value().pose.position.y,
+                   target_pose_.pose.position.x,
+                   target_pose_.pose.position.y,
                    tolerance_);
 
         return BT::NodeStatus::RUNNING;
@@ -87,7 +89,7 @@ public:
         // 检查是否超时
         if (std::chrono::steady_clock::now() > timeout_point_) {
             RCLCPP_WARN(node_->get_logger(), "Navigation to Area1 timed out");
-            return BT::NodeStatus::SUCCESS;
+            return BT::NodeStatus::FAILURE;
         }
 
         // 仅按当前点到目标点距离判断到达（不依赖 navigation/status）
@@ -128,14 +130,9 @@ private:
         float current_x = current_x_input.value();
         float current_y = current_y_input.value();
 
-        // 从黑板变量 nav_goal 读取目标位姿 (inout)
-        auto nav_goal_input = getInput<geometry_msgs::msg::PoseStamped>("nav_goal");
-        if (!nav_goal_input) {
-            RCLCPP_WARN(node_->get_logger(), "Failed to get nav_goal from blackboard");
-            return false;
-        }
-        float target_x = nav_goal_input.value().pose.position.x;
-        float target_y = nav_goal_input.value().pose.position.y;
+        // 使用本节点启动时锁定的目标位姿做距离判定，避免被外部改写的 nav_goal 干扰
+        float target_x = target_pose_.pose.position.x;
+        float target_y = target_pose_.pose.position.y;
 
         // 计算距离
         float dx = target_x - current_x;
@@ -149,6 +146,7 @@ private:
     }
 
     rclcpp::Node::SharedPtr node_;
+    geometry_msgs::msg::PoseStamped target_pose_;
     std::chrono::steady_clock::time_point timeout_point_;
     double tolerance_;
     bool navigation_started_;

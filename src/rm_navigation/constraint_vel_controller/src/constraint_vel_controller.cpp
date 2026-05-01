@@ -170,14 +170,32 @@ ConstraintVelController() = default;
     auto now = clock_->now();  
     geometry_msgs::msg::TwistStamped cmd;
     bool inner_ok = true;
+    bool speed_exceeded = false;
+    bool force_p_drive = false; 
     geometry_msgs::msg::Twist current_inner_cmd;
     try {
       cmd = inner_controller_->computeVelocityCommands(pose, velocity, goal_checker);
       current_inner_cmd = cmd.twist;
+      double inner_speed = std::hypot(current_inner_cmd.linear.x, current_inner_cmd.linear.y);
+      std::cout << "inner_speed: " << inner_speed << std::endl;
+      if (std::isnan(inner_speed) || std::isinf(inner_speed) || inner_speed > max_inner_speed_) {
+        speed_exceeded = true;
+        force_p_drive = true;
+        RCLCPP_WARN(logger_,
+          "Inner controller speed invalid (nan/inf or too large): %.3f, force P-drive",
+          inner_speed);
+      }
+      // speed_exceeded = (inner_speed > max_inner_speed_);
+      // if (speed_exceeded) {
+      //   RCLCPP_WARN(logger_, 
+      //     "Inner controller speed too large: %.3f > %.3f, using P-control temporarily",
+      //     inner_speed, max_inner_speed_);
+      // }
     } catch (const std::runtime_error & e) {
-      RCLCPP_WARN(logger_, "Inner controller exception: %s", e.what());
+      RCLCPP_WARN(logger_, "Inner controller exception: %s, force P-drive", e.what());
       error_count++;
       inner_ok = false;
+      force_p_drive = true;   
       last_error_increase_time_ = now;
     }
     // std::cout << "error_count: " << error_count << std::endl;
@@ -199,19 +217,36 @@ ConstraintVelController() = default;
     double goal_dist = std::hypot(dx,dy);
     double dist = std::hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
     double target_speed = 0.0;
-    if (fallback_p_mode_) {
-      double stable_time = (now - last_error_increase_time_).seconds();
+    if (fallback_p_mode_ || speed_exceeded || force_p_drive) {
+      if (fallback_p_mode_) {
+        double stable_time = (now - last_error_increase_time_).seconds();
+        if (stable_time >= fallback_recover_time_sec_) {
+          fallback_p_mode_ = false;
+          error_count = 0;
+          g_has_last_inner_cmd = false;
+          RCLCPP_WARN(logger_,
+            "No new errors for %.1f sec, switch back to normal mode and reset error_count",
+            stable_time);
+        } else {
+          // Fallback 模式下的 P 驱动
+          target_speed = (dist * direct_approach_kp_);
+          double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+          cmd.twist.linear.x = target_speed * cos(theta_dist);
+          cmd.twist.linear.y = target_speed * sin(theta_dist);
   
-      if (stable_time >= fallback_recover_time_sec_) {
-        fallback_p_mode_ = false;
-        error_count = 0;
-        g_has_last_inner_cmd = false;
+          double linear_speed = std::hypot(cmd.twist.linear.x, cmd.twist.linear.y);
+          double limited_speed = linear_speed;
+          applyCurvatureLimitation(transformed_plan, carrot_pose, limited_speed);
   
-        RCLCPP_WARN(logger_,
-          "No new errors for %.1f sec, switch back to normal mode and reset error_count",
-          stable_time);
+          if (linear_speed > 1e-6) {
+            double scale_ratio = limited_speed / linear_speed;
+            cmd.twist.linear.x *= scale_ratio;
+            cmd.twist.linear.y *= scale_ratio;
+          }
+          return cmd;
+        }
       } else {
-  
+        // speed_exceeded 为 true 时，直接走 P 驱动，不涉及状态恢复
         target_speed = (dist * direct_approach_kp_);
         double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
         cmd.twist.linear.x = target_speed * cos(theta_dist);
@@ -226,7 +261,6 @@ ConstraintVelController() = default;
           cmd.twist.linear.x *= scale_ratio;
           cmd.twist.linear.y *= scale_ratio;
         }
-  
         return cmd;
       }
     }
@@ -286,7 +320,12 @@ ConstraintVelController() = default;
     double linear_speed = 0.0;
     linear_speed = std::hypot(cmd.twist.linear.x, cmd.twist.linear.y);
     double limited_speed = linear_speed;
-    
+    if (linear_speed < 1e-4) {
+      cmd.twist.linear.x = 0.0;
+      cmd.twist.linear.y = 0.0;
+      cmd.twist.angular.z = 0.0;
+      return cmd;
+    }
     applyCurvatureLimitation(transformed_plan, carrot_pose, limited_speed);
 
     double scale_ratio = limited_speed / linear_speed;
@@ -665,6 +704,7 @@ private:
   rclcpp::Time last_error_increase_time_{0, 0, RCL_ROS_TIME}; // 最近一次 error_count 增加的时间
   double fallback_recover_time_sec_{30.0};        // 30s 内无新增错误则恢复
   geometry_msgs::msg::Twist g_last_inner_cmd;
+  double max_inner_speed_ = 5.0; 
 };
 
 }  // namespace goal_approach_controller

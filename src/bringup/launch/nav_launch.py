@@ -26,7 +26,7 @@ def generate_launch_description():
     launch_dir = os.path.join(bringup_dir, "launch")
 
     # 决策
-    rm_decision_dir = get_package_share_directory("rm_decision")
+    rm_decision_dir = get_package_share_directory("rm2026_decision")
     rm_decision_decision_dir = os.path.join(rm_decision_dir, "launch")
 
     # Create the launch configuration variables
@@ -88,7 +88,7 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/25uc_final.yaml", description="Full path to map yaml file to load"
-        "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/rps/sentry26/src/bringup/map/map_home.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
     )
 
@@ -139,7 +139,19 @@ def generate_launch_description():
     declare_use_rviz_cmd = DeclareLaunchArgument(
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
-
+    save_map_cmd = Node(
+        package="map_save",
+        executable="map_save",
+        name="map_save",
+        output="screen",
+        parameters=[configured_params,
+        {
+            "save_interval": 20.0,
+            "save_path": "/home/rps/sentry26/map/map",
+            "map_topic": "/slam_map",
+        }
+        ],
+    )
     # Specify the actions
     bringup_cmd_group = GroupAction(
         [
@@ -291,7 +303,7 @@ def generate_launch_description():
     ld.add_action(port_cmd)
 
     # 决策
-    #ld.add_action(rm26_decision)
+    # ld.add_action(rm26_decision)
     ld.add_action(delayed_decision_node)
 
     return ld
