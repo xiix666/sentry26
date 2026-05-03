@@ -399,7 +399,21 @@ private:
     const nav_msgs::msg::Path & path, const std::vector<double> & cumulative_distances,
     double target_distance) const;
   void smoothedVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg) ;
-private:
+  nav_msgs::msg::Path cropGlobalPlanToLocal(
+    const geometry_msgs::msg::PoseStamped & pose);
+  std::vector<geometry_msgs::msg::PoseStamped> removeCornerPts(
+    const std::vector<geometry_msgs::msg::PoseStamped> &path);
+  double euclideanDistance(
+    const geometry_msgs::msg::PoseStamped & p1,
+    const geometry_msgs::msg::PoseStamped & p2);
+  bool checkLineCollision(
+    const geometry_msgs::msg::PoseStamped & start,
+    const geometry_msgs::msg::PoseStamped & end);
+  Eigen::Vector2d poseToEigen(
+    const geometry_msgs::msg::PoseStamped & pose)
+  {
+      return Eigen::Vector2d(pose.pose.position.x, pose.pose.position.y);
+  }
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string plugin_name_;
@@ -449,14 +463,19 @@ private:
   double lower_speed_;
   double min_dist_;
   double large_slow_;
+  double acc_max_;
   tf2::Duration transform_tolerance_;
   double smoothed_vel;
+  bool slow = false;
   std::mutex sm_mutex;
   nav_msgs::msg::Path global_plan_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr carrot_pub_;
   rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr
     curvature_points_pub_;
+  // rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr smoothed_path_pub_;
+  // std::unique_ptr<minco_nav2::MincoTracker> minco_tracker_;
+  const double max_skip_distance = 2.0;
   
   // Dynamic parameters handler
   std::mutex mutex_;

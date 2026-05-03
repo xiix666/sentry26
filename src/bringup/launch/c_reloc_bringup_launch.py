@@ -307,5 +307,11 @@ def generate_launch_description():
     # 决策
     #ld.add_action(rm26_decision)
     # ld.add_action(delayed_decision_node)
+    from launch.actions import ExecuteProcess
 
+    audio_node = ExecuteProcess(
+        cmd=["python3", "/home/rps/sentry26/src/yuyin/yuyin.py"],
+        output="screen"
+    )
+    ld.add_action(audio_node)
     return ld

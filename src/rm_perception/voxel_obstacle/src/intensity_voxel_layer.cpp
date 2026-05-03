@@ -18,40 +18,64 @@ using nav2_costmap_2d::ObservationBuffer;
 namespace xx_nav2_costmap_2d
 {
 
-void IntensityVoxelLayer::onInitialize()
-{
-  auto node = node_.lock();
-  clock_ = node->get_clock();
-  ObstacleLayer::onInitialize();
-  footprint_clearing_enabled_ =
-    node->get_parameter(name_ + ".footprint_clearing_enabled").as_bool();
-  enabled_ = node->get_parameter(name_ + ".enabled").as_bool();
-  max_obstacle_height_ = node->get_parameter(name_ + ".max_obstacle_height").as_double();
-  combination_method_ = node->get_parameter(name_ + ".combination_method").as_int();
-
-  obstacle_hold_time_ = node->declare_parameter(name_ + ".obstacle_hold_time", 0.2);
-  size_z_ = node->declare_parameter(name_ + ".z_voxels", 16);
-  origin_z_ = node->declare_parameter(name_ + ".origin_z", 16.0);
-  min_obstacle_intensity_ = node->declare_parameter(name_ + ".min_obstacle_intensity", 0.1);
-  max_obstacle_intensity_ = node->declare_parameter(name_ + ".max_obstacle_intensity", 2.0);
-  z_resolution_ = node->declare_parameter(name_ + ".z_resolution", 0.05);
-  unknown_threshold_ =
-    node->declare_parameter(name_ + ".unknown_threshold", 15) + (VOXEL_BITS - size_z_);
-  mark_threshold_ = node->declare_parameter(name_ + ".mark_threshold", 0);
-  publish_voxel_ = node->declare_parameter(name_ + ".publish_voxel_map", false);
+  void IntensityVoxelLayer::onInitialize()
+  {
+    auto node = node_.lock();
+    clock_ = node->get_clock();
+    ObstacleLayer::onInitialize();
   
-  // 核心参数
-  continuous_hit_threshold_ = node->declare_parameter(name_ + ".continuous_hit_threshold", 2);
-  // 新增：动态邻域配置参数
-  neighborhood_radius_ = node->declare_parameter(name_ + ".neighborhood_radius", 1); // 邻域半径（网格数）
-  neighborhood_min_voxels_ = node->declare_parameter(name_ + ".neighborhood_min_voxels", 1); // 邻域有效体素阈值
-
-  if (publish_voxel_) {
-    voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
+    node->get_parameter(name_ + ".footprint_clearing_enabled", footprint_clearing_enabled_);
+    node->get_parameter(name_ + ".enabled", enabled_);
+    node->get_parameter(name_ + ".min_obstacle_height", min_obstacle_height_);
+    node->get_parameter(name_ + ".max_obstacle_height", max_obstacle_height_);
+    node->get_parameter(name_ + ".combination_method", combination_method_);
+  
+    node->declare_parameter(name_ + ".obstacle_hold_time", 1.5);
+    node->get_parameter(name_ + ".obstacle_hold_time", obstacle_hold_time_);
+  
+    node->declare_parameter(name_ + ".z_voxels", 16);
+    node->get_parameter(name_ + ".z_voxels", size_z_);
+  
+    node->declare_parameter(name_ + ".origin_z", 16.0);
+    node->get_parameter(name_ + ".origin_z", origin_z_);
+  
+    node->declare_parameter(name_ + ".min_obstacle_intensity", 0.1);
+    node->get_parameter(name_ + ".min_obstacle_intensity", min_obstacle_intensity_);
+  
+    node->declare_parameter(name_ + ".max_obstacle_intensity", 2.0);
+    node->get_parameter(name_ + ".max_obstacle_intensity", max_obstacle_intensity_);
+  
+    node->declare_parameter(name_ + ".z_resolution", 0.05);
+    node->get_parameter(name_ + ".z_resolution", z_resolution_);
+  
+    node->declare_parameter(name_ + ".unknown_threshold", 15);
+    node->get_parameter(name_ + ".unknown_threshold", unknown_threshold_);
+    unknown_threshold_ += (VOXEL_BITS - size_z_);
+  
+    node->declare_parameter(name_ + ".mark_threshold", 0);
+    node->get_parameter(name_ + ".mark_threshold", mark_threshold_);
+  
+    node->declare_parameter(name_ + ".publish_voxel_map", false);
+    node->get_parameter(name_ + ".publish_voxel_map", publish_voxel_);
+  
+    node->declare_parameter(name_ + ".max_gradient_threshold", 1.0);
+    node->get_parameter(name_ + ".max_gradient_threshold", max_gradient_threshold_);
+  
+    node->declare_parameter(name_ + ".continuous_hit_threshold", 2);
+    node->get_parameter(name_ + ".continuous_hit_threshold", continuous_hit_threshold_);
+  
+    node->declare_parameter(name_ + ".neighborhood_radius", 1);
+    node->get_parameter(name_ + ".neighborhood_radius", neighborhood_radius_);
+  
+    node->declare_parameter(name_ + ".neighborhood_min_voxels", 1);
+    node->get_parameter(name_ + ".neighborhood_min_voxels", neighborhood_min_voxels_);
+  
+    if (publish_voxel_) {
+      voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
+    }
+  
+    matchSize();
   }
-
-  matchSize();
-}
 
 IntensityVoxelLayer::~IntensityVoxelLayer() 
 {
@@ -90,16 +114,16 @@ void IntensityVoxelLayer::matchSize()
   voxel_grid_.resize(size_x_, size_y_, size_z_);
   
   // 初始化连续命中计数网格（x*y*z维度）
-  unsigned int total_voxels = size_x_ * size_y_ * size_z_;
+  int total_voxels = size_x_ * size_y_ * size_z_;
   if (hit_count_grid_ != nullptr) {
     delete[] hit_count_grid_;
   }
-  hit_count_grid_ = new unsigned int[total_voxels](); // 初始化为0
+  hit_count_grid_ = new int[total_voxels](); // 初始化为0
   if (last_hit_time_grid_ != nullptr) {
     delete[] last_hit_time_grid_;
   }
   last_hit_time_grid_ = new double[total_voxels];
-  for (unsigned int i = 0; i < total_voxels; ++i) {
+  for (int i = 0; i < total_voxels; ++i) {
     last_hit_time_grid_[i] = -1.0;
   }
 }
@@ -182,8 +206,9 @@ void IntensityVoxelLayer::updateBounds(
     sensor_msgs::PointCloud2ConstIterator<float> it_y(*obs.cloud_, "y");
     sensor_msgs::PointCloud2ConstIterator<float> it_z(*obs.cloud_, "z");
     sensor_msgs::PointCloud2ConstIterator<float> it_i(*obs.cloud_, "intensity");
-    
-    for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z, ++it_i) {
+    sensor_msgs::PointCloud2ConstIterator<float> it_grad(*obs.cloud_, "curvature");
+
+    for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z, ++it_i, ++it_grad) {
       double px = *it_x, py = *it_y, pz = *it_z;
       unsigned int mx, my, mz;
       if (pz < origin_z_) {
@@ -192,11 +217,19 @@ void IntensityVoxelLayer::updateBounds(
       unsigned int voxel_idx = getVoxelIndex(mx, my, mz);
 
       // 原有过滤逻辑（高度、强度、距离）
-      if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
-      if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
-      double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
-      if (sq_dist <= sq_obstacle_min_range || sq_dist >= sq_obstacle_max_range) continue;
+      // if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
+      // if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
+      // double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
+      // if (sq_dist <= sq_obstacle_min_range || sq_dist >= sq_obstacle_max_range) continue;
+      double gradient = 0.0;
+  
+      // bool has_gradient_field = (it_grad != it_grad.end());
+      // if (has_gradient_field) {
+      gradient = *it_grad;
+        // std::cout << "Point (" << px << ", " << py << ", " << pz << ") has gradient: " << gradient <<  "  " << max_gradient_threshold_ << std::endl;
+      if (gradient <= max_gradient_threshold_) continue;
 
+      // }
       // 增加连续命中计数
       hit_count_grid_[voxel_idx]++;
       hit_voxels.insert(voxel_idx);
@@ -220,7 +253,7 @@ void IntensityVoxelLayer::updateBounds(
       continue; // 邻域有效体素不足，跳过障碍标记
     }
     bool has_other_z_hit = false;
-    int z_range = static_cast<int>(std::ceil(0.5 / z_resolution_));
+    int z_range = static_cast<int>(std::ceil(0.2 / z_resolution_));
 
     for (int dz = -z_range; dz <= z_range; ++dz) {
       if (dz == 0) continue;  // 跳过自己这一层
@@ -237,9 +270,9 @@ void IntensityVoxelLayer::updateBounds(
       }
     }
 
-    // if (!has_other_z_hit) {
-    //   continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
-    // }
+    if (!has_other_z_hit) {
+      continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
+    }
     // 只有连续命中次数≥阈值 + 非孤立体素，才标记为致命障碍
 
     // last_hit_time_grid_[voxel_idx] = sec; 

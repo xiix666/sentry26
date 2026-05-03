@@ -18,7 +18,7 @@ public:
         // 原始区域参数
         this->declare_parameter("left_top_x", 8.641380);
         this->declare_parameter("left_top_y", 2.241885);
-        this->declare_parameter("right_bottom_x", 6.396358);
+        this->declare_parameter("right_bottom_x", 5.596358);
         this->declare_parameter("right_bottom_y", -1.603606);
 
         this->get_parameter("left_top_x", left_top_x);

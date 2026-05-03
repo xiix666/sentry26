@@ -60,19 +60,20 @@ private:
   nav2_voxel_grid::VoxelGrid voxel_grid_;
   double z_resolution_, origin_z_;
   double min_obstacle_intensity_, max_obstacle_intensity_;
-  unsigned int unknown_threshold_, mark_threshold_, size_z_;
+  int unknown_threshold_, mark_threshold_, size_z_;
   rclcpp::Clock::SharedPtr clock_;
   double * last_hit_time_grid_ = nullptr;   // 每个体素最近一次命中时间
   double obstacle_hold_time_ = 0.5;         
+  double max_gradient_threshold_ = 1.0;    
   double z_hit_range_ = 0.2; 
   std::vector<ActiveObstacle> active_obstacle_cells_;
 
-  unsigned int * hit_count_grid_ = nullptr;  // 连续命中计数网格
-  unsigned int continuous_hit_threshold_ = 2; // 连续命中阈值
-  unsigned int * voxel_point_count_ = nullptr; // 单批次体素点数统计网格
-  unsigned int neighborhood_radius_ = 1;      // 邻域校验半径（网格数）
-  unsigned int neighborhood_min_voxels_ = 2;  // 邻域内有效体素数阈值
-  unsigned int voxel_min_points_ = 2;         // 单个体素最小点数阈值
+  int * hit_count_grid_ = nullptr;  // 连续命中计数网格
+  int continuous_hit_threshold_ = 2; // 连续命中阈值
+  int * voxel_point_count_ = nullptr; // 单批次体素点数统计网格
+  int neighborhood_radius_ = 1;      // 邻域校验半径（网格数）
+  int neighborhood_min_voxels_ = 2;  // 邻域内有效体素数阈值
+  int voxel_min_points_ = 2;         // 单个体素最小点数阈值
 
   // 内联函数声明：计算3D体素的一维索引
   inline unsigned int getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz) const

@@ -64,6 +64,7 @@ void OmniPidPursuitController::configure(
   double transform_tolerance = 1.0;
   double control_frequency = 20.0;
   max_robot_pose_search_dist_ = getCostmapMaxExtent();
+  // smoothed_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("/smoothed_path", 1);
 
   // ========== 核心改动：添加算法选择参数 ==========
   declare_parameter_if_not_declared(
@@ -93,6 +94,9 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".mpc_Rdelta_vx", rclcpp::ParameterValue(0.5)); 
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".mpc_Rdelta_vy", rclcpp::ParameterValue(0.5));  
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".acc_max", rclcpp::ParameterValue(5.5));  
+  
 
   // 公共参数声明（PID/MPC均需使用）
   declare_parameter_if_not_declared(
@@ -222,9 +226,11 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".mpc_Np", mpc_Np_);
   node->get_parameter(plugin_name_ + ".mpc_Nc", mpc_Nc_);
   node->get_parameter(plugin_name_ + ".min_dist", min_dist_);
+  node->get_parameter(plugin_name_ + ".acc_max", acc_max_);
 
   control_duration_ = 1.0 / control_frequency;
-
+  // minco_tracker_ = std::make_unique<minco_nav2::MincoTracker>();
+  // minco_tracker_->setParams(v_linear_max_,acc_max_,control_duration_);
   // ========== 核心改动：根据参数初始化对应控制器 ==========
   if (use_mpc_control_) {
     // MPC模式：初始化MPC控制器
@@ -349,10 +355,10 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   std::vector<geometry_msgs::msg::PoseStamped> valid_path_poses;
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = pose.header;
-  std::lock_guard<std::mutex> lock_reinit(mutex_);
+  // std::lock_guard<std::mutex> lock_reinit(mutex_);
 
   nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
-  std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
+  // std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
 
   // Transform path to robot base frame
   auto transformed_plan = transformGlobalPlan(pose);
@@ -485,7 +491,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
       // 全向机器人速度分解（极坐标→直角坐标）
       cmd_vx = lin_vel * cos(theta_dist);
       cmd_vy = lin_vel * sin(theta_dist);
-      // RCLCPP_DEBUG(logger_, "PID output: lin_vel=%.3f, vx=%.3f, vy=%.3f", lin_vel, cmd_vx, cmd_vy);
+      RCLCPP_DEBUG(logger_, "PID output: lin_vel=%.3f, vx=%.3f, vy=%.3f", lin_vel, cmd_vx, cmd_vy);
     }
 
     // SG滤波（仅PID模式使用，可选）
@@ -500,17 +506,17 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
   }
 
-  nav_msgs::msg::Path costmap_frame_local_plan;
-  int sample_points = 10;
-  int plan_size = transformed_plan.poses.size();
-  for (int i = 0; i < sample_points; ++i) {
-    int index = std::min((i * plan_size) / sample_points, plan_size - 1);
-    geometry_msgs::msg::PoseStamped map_pose;
-    transformPose(costmap_ros_->getGlobalFrameID(), transformed_plan.poses[index], map_pose);
-    costmap_frame_local_plan.poses.push_back(map_pose);
-  }
+  // nav_msgs::msg::Path costmap_frame_local_plan;
+  // int sample_points = 10;
+  // int plan_size = transformed_plan.poses.size();
+  // for (int i = 0; i < sample_points; ++i) {
+  //   int index = std::min((i * plan_size) / sample_points, plan_size - 1);
+  //   geometry_msgs::msg::PoseStamped map_pose;
+  //   transformPose(costmap_ros_->getGlobalFrameID(), transformed_plan.poses[index], map_pose);
+  //   costmap_frame_local_plan.poses.push_back(map_pose);
+  // }
 
-  // 若启用碰撞检测，检测到碰撞则停止机器人（PID/MPC通用）
+  // // 若启用碰撞检测，检测到碰撞则停止机器人（PID/MPC通用）
   // if (isCollisionDetected(costmap_frame_local_plan)) {
   //   RCLCPP_WARN(logger_, "Collision detected! Stopping robot.");
   //   impl_->linear_vel_filter_->reset();
@@ -531,6 +537,156 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   return cmd_vel;
 }
 
+nav_msgs::msg::Path OmniPidPursuitController::cropGlobalPlanToLocal(
+  const geometry_msgs::msg::PoseStamped & pose)
+{
+  if (global_plan_.poses.empty()) {
+    throw nav2_core::PlannerException("Received plan with zero length");
+  }
+
+  geometry_msgs::msg::PoseStamped robot_pose;
+  if (!transformPose(global_plan_.header.frame_id, pose, robot_pose)) {
+    throw nav2_core::PlannerException("Unable to transform robot pose into global plan's frame");
+  }
+
+  double max_costmap_extent = getCostmapMaxExtent();
+
+  auto closest_pose_upper_bound = nav2_util::geometry_utils::first_after_integrated_distance(
+    global_plan_.poses.begin(), global_plan_.poses.end(), max_robot_pose_search_dist_);
+
+  auto transformation_begin = nav2_util::geometry_utils::min_by(
+    global_plan_.poses.begin(), closest_pose_upper_bound,
+    [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
+      return euclidean_distance(robot_pose, ps);
+    });
+
+  auto transformation_end = std::find_if(
+    transformation_begin, global_plan_.poses.end(),
+    [&](const auto & pose) { return euclidean_distance(pose, robot_pose) > max_costmap_extent; });
+
+  nav_msgs::msg::Path local_plan;
+  local_plan.header = global_plan_.header; 
+  local_plan.poses.reserve(std::distance(transformation_begin, transformation_end));
+  
+  for (auto it = transformation_begin; it != transformation_end; ++it) {
+    local_plan.poses.push_back(*it);
+  }
+  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+
+  local_path_pub_->publish(local_plan);
+
+  if (local_plan.poses.empty()) {
+    throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
+  }
+
+  // RCLCPP_INFO(logger_, "裁剪路径: 全局[%lu] -> 局部[%lu] (坐标系: %s)",
+  //             global_plan_.poses.size() + local_plan.poses.size(), // 加回来是因为刚才 erase 了
+  //             local_plan.poses.size(),
+  //             local_plan.header.frame_id.c_str());
+
+  return local_plan;
+}
+// geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityCommands(
+//   const geometry_msgs::msg::PoseStamped & pose,
+//   const geometry_msgs::msg::Twist & velocity,
+//   nav2_core::GoalChecker * /*goal_checker*/)
+// {
+//   std::lock_guard<std::mutex> lock_reinit(mutex_);
+//   geometry_msgs::msg::TwistStamped cmd_vel;
+//   cmd_vel.header = pose.header;
+
+//   // 1. 获取 Nav2 标准局部路径
+//   auto local_plan = cropGlobalPlanToLocal(pose);
+//   if (global_plan_.poses.empty()) {
+//     return cmd_vel;
+//   }
+
+//   static bool first_plan = true;
+//   static rclcpp::Time last_path_stamp;
+  
+//   rclcpp::Time current_path_stamp(global_plan_.header.stamp);
+//   // bool path_is_new = (first_plan) || 
+//   //                    (fabs((current_path_stamp - last_path_stamp).seconds()) > 0.5);
+//   bool path_is_new = first_plan || minco_tracker_->isFinished();
+//   if (path_is_new) {
+//     RCLCPP_INFO(logger_, "Generating new MINCO trajectory (map frame)...");
+    
+//     bool success = minco_tracker_->setPath(local_plan, velocity);
+//     if (!success) {
+//       RCLCPP_WARN(logger_, "MINCO setPath failed!");
+//       return cmd_vel;
+//     }
+//     last_path_stamp = global_plan_.header.stamp;
+//     first_plan = false;
+//     minco_tracker_->resetTime();
+//   }
+
+//   double dt = control_duration_; 
+//   Eigen::Vector2d des_vel_map, des_acc_map;
+//   minco_tracker_->advanceAndGetCmd(dt, des_vel_map, des_acc_map);
+//   double t = minco_tracker_->getCurrentTime();
+//   double total_t = minco_tracker_->getTotalTime(); // 你需要在 MincoTracker 里加这个函数
+//   std::cout << "[DEBUG] 时间: t=" << t << " / total_t=" << total_t << std::endl;
+
+//   t = std::min(t, total_t);
+
+//   Eigen::Vector2d des_pos_map = minco_tracker_->getDesiredPos(t);
+//   std::cout << "pos" << des_pos_map << std::endl;
+
+//   double robot_x = pose.pose.position.x;
+//   double robot_y = pose.pose.position.y;
+
+//   tf2::Quaternion q(pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w);
+//   tf2::Matrix3x3 m(q);
+//   double roll, pitch, yaw;
+//   m.getRPY(roll, pitch, yaw);
+
+//   // 1. 计算 map 下的误差
+//   double dx_map = des_pos_map.x() - robot_x;
+//   double dy_map = des_pos_map.y() - robot_y;
+
+//   // 2. 旋转到 base_link
+//   double c = cos(yaw);
+//   double s = sin(yaw);
+//   double des_x_robot =  c * dx_map + s * dy_map;
+//   double des_y_robot = -s * dx_map + c * dy_map;
+
+//   // 3. 速度也旋转
+//   double des_vx_robot =  c * des_vel_map.x() + s * des_vel_map.y();
+//   double des_vy_robot = -s * des_vel_map.x() + c * des_vel_map.y();
+
+//   // ==============================
+//   // 现在 des_x_robot / des_y_robot 是正常的小数值！
+//   // ==============================
+//   std::cout << "[正常] Robot frame: x=" << des_x_robot << ", y=" << des_y_robot << std::endl;
+
+//   // 反馈控制
+//   double kp = 1.0;
+//   double fb_vx = kp * des_x_robot;
+//   double fb_vy = kp * des_y_robot;
+
+//   double final_vx = des_vx_robot + fb_vx;
+//   double final_vy = des_vy_robot + fb_vy;
+
+//   // 6. 简单限速
+//   double speed = std::hypot(final_vx, final_vy);
+//   if (speed > v_linear_max_) {
+//     double scale = v_linear_max_ / speed;
+//     final_vx *= scale;
+//     final_vy *= scale;
+//   }
+
+//   auto smooth_path = minco_tracker_->getSmoothedPath();
+//   smooth_path.header.stamp = clock_->now();
+//   smoothed_path_pub_->publish(smooth_path);
+
+//   // 7. 赋值输出
+//   // cmd_vel.twist.linear.x = final_vx;
+//   // cmd_vel.twist.linear.y = final_vy;
+//   cmd_vel.twist.angular.z = 0.0; // 全向车不需要旋转车头
+
+//   return cmd_vel;
+// }
 std::vector<Eigen::Vector2d> OmniPidPursuitController::samplePathToRefSeq(
   const std::vector<geometry_msgs::msg::PoseStamped> &path_poses,
   int Np)
@@ -565,7 +721,10 @@ std::vector<Eigen::Vector2d> OmniPidPursuitController::samplePathToRefSeq(
   return ref_seq;
 }
 
-void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path) { global_plan_ = path; }
+void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path) { 
+  global_plan_ = path; 
+  // minco_tracker_->reset();
+}
 
 void OmniPidPursuitController::setSpeedLimit(
   const double & /*speed_limit*/, const bool & /*percentage*/)
@@ -599,7 +758,7 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
     global_plan_.poses.begin(), closest_pose_upper_bound,
     [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
       return euclidean_distance(robot_pose, ps);
-    });
+  });
 
   // Find points up to max_transform_dist so we only transform them.
   auto transformation_end = std::find_if(
@@ -624,17 +783,183 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
     transform_global_pose_to_local);
   transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
   transformed_plan.header.stamp = robot_pose.header.stamp;
+  // std::cout << "Original transformed plan size: " << transformed_plan.poses.size() << std::endl;
+  bool robot_in_obstacle = false;
+  {
+    auto costmap = costmap_ros_->getCostmap();
+    std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
+    unsigned int mx, my;
+    if (costmap->worldToMap(0.0, 0.0, mx, my)) {
+      unsigned char robot_cost = costmap->getCost(mx, my);
+      robot_in_obstacle = (robot_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+    }
+  }
 
+  if (!robot_in_obstacle && transformed_plan.poses.size() > 2) {
+    transformed_plan.poses = removeCornerPts(transformed_plan.poses);
+    // std::cout << "Removed corner points, remaining poses: " << transformed_plan.poses.size() << std::endl;
+  }
+  // std::cout << "Transformed plan size: " << transformed_plan.poses.size() << std::endl;
   // Remove the portion of the global plan that we've already passed so we don't
   // process it on the next iteration (this is called path pruning)
   global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
   local_path_pub_->publish(transformed_plan);
 
   if (transformed_plan.poses.empty()) {
+    std::cout << "Transformed plan is empty after pruning. Returning zero velocity." << std::endl;
     throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
   }
 
   return transformed_plan;
+}
+std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCornerPts(
+  const std::vector<geometry_msgs::msg::PoseStamped> &path) 
+{
+  if (path.size() < 2)
+      return path;
+  const double OBSTACLE_NEAR_DISTANCE = 0.3;
+  // cut zigzag segment
+  std::vector<geometry_msgs::msg::PoseStamped> optimized_path;
+  geometry_msgs::msg::PoseStamped pose1 = path[0];
+  geometry_msgs::msg::PoseStamped pose2 = path[1];
+  geometry_msgs::msg::PoseStamped prev_pose = pose1;
+  optimized_path.push_back(pose1);
+  double cost1, cost2, cost3;
+
+  if (!checkLineCollision(pose1, pose2))
+      cost1 = euclideanDistance(pose1, pose2);
+  else
+      cost1 = std::numeric_limits<double>::infinity();
+
+  for (unsigned int i = 1; i < path.size() - 1; i++) {
+      pose1 = path[i];
+      pose2 = path[i + 1];
+      const double skip_distance = euclideanDistance(prev_pose, pose2);
+      if (skip_distance > max_skip_distance) {
+          optimized_path.push_back(path[i]);
+          cost1 = euclideanDistance(pose1, pose2);
+          prev_pose = pose1;
+          continue;
+      }
+      double dist_to_robot = hypot(pose1.pose.position.x, pose1.pose.position.y);
+
+      if (!checkLineCollision(pose1, pose2))
+          cost2 = euclideanDistance(pose1, pose2);
+      else
+          // cost2 = euclideanDistance(pose1, pose2);
+          cost2 = std::numeric_limits<double>::infinity();
+
+      if (!checkLineCollision(prev_pose, pose2))
+          cost3 = euclideanDistance(prev_pose, pose2);
+      else
+          // cost3 = euclideanDistance(pose1, pose2);
+          cost3 = std::numeric_limits<double>::infinity();
+      // std::cout << "cost1: " << cost1 << " cost2: " << cost2 << " cost3: " << cost3 << std::endl;
+      if (cost3 < cost1 + cost2) {
+          cost1 = cost3;  
+      } else {
+
+          optimized_path.push_back(path[i]);
+          cost1 = euclideanDistance(pose1, pose2);
+          prev_pose = pose1;
+          
+      }
+  }
+
+  optimized_path.push_back(path.back());
+  return optimized_path;
+}
+double OmniPidPursuitController::euclideanDistance(
+  const geometry_msgs::msg::PoseStamped & p1,
+  const geometry_msgs::msg::PoseStamped & p2)
+{
+  double dx = p1.pose.position.x - p2.pose.position.x;
+  double dy = p1.pose.position.y - p2.pose.position.y;
+  return std::sqrt(dx * dx + dy * dy);
+}
+
+bool OmniPidPursuitController::checkLineCollision(
+  const geometry_msgs::msg::PoseStamped & start,
+  const geometry_msgs::msg::PoseStamped & end)
+{
+  auto costmap = costmap_ros_->getCostmap();
+  std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
+
+  const double resolution = costmap->getResolution();
+  const int size_x = static_cast<int>(costmap->getSizeInCellsX());
+  const int size_y = static_cast<int>(costmap->getSizeInCellsY());
+
+  double x0 = start.pose.position.x;
+  double y0 = start.pose.position.y;
+  double x1 = end.pose.position.x;
+  double y1 = end.pose.position.y;
+
+  auto world_to_grid_base_link = [&](double x, double y) -> std::pair<int, int> {
+      int mx = static_cast<int>(x / resolution + size_x / 2.0);
+      int my = static_cast<int>(y / resolution + size_y / 2.0);
+      return {mx, my};
+  };
+
+  auto [grid_x0, grid_y0] = world_to_grid_base_link(x0, y0);
+  auto [grid_x1, grid_y1] = world_to_grid_base_link(x1, y1);
+
+  // 范围检查
+  auto is_in_range = [&](int gx, int gy) {
+      return (gx >= 0 && gx < size_x && gy >= 0 && gy < size_y);
+  };
+
+  if (!is_in_range(grid_x0, grid_y0) || !is_in_range(grid_x1, grid_y1)) {
+      RCLCPP_DEBUG(logger_, "Point out of range -> skip check");
+      return true; // 越界认为无碰撞
+  }
+
+  // Bresenham 算法
+  int dx = std::abs(grid_x1 - grid_x0);
+  int dy = std::abs(grid_y1 - grid_y0);
+  int sx = (grid_x0 < grid_x1) ? 1 : -1;
+  int sy = (grid_y0 < grid_y1) ? 1 : -1;
+  int err = dx - dy;
+
+  int x = grid_x0;
+  int y = grid_y0;
+
+  const int max_iter = 200;
+  int iter = 0;
+
+  while (iter < max_iter) {
+      iter++;
+
+      if (is_in_range(x, y)) {
+          size_t index = static_cast<size_t>(y) * static_cast<size_t>(size_x) + static_cast<size_t>(x);
+          
+          if (index < static_cast<size_t>(size_x * size_y)) {
+              unsigned char cost = costmap->getCharMap()[index]; 
+              
+              RCLCPP_DEBUG(logger_, "Grid(%d, %d) -> cost=%d", x, y, (int)cost);
+
+              if (cost >= 120) {
+                  RCLCPP_WARN(logger_, "COLLISION DETECTED at Grid(%d, %d), cost = %d", x, y, (int)cost);
+                  return true;
+              }
+          }
+      }
+
+      if (x == grid_x1 && y == grid_y1) {
+          break;
+      }
+
+      int e2 = 2 * err;
+      if (e2 > -dy) {
+          err -= dy;
+          x += sx;
+      }
+      if (e2 < dx) {
+          err += dx;
+          y += sy;
+      }
+  }
+
+  return false;
 }
 
 std::unique_ptr<geometry_msgs::msg::PointStamped> OmniPidPursuitController::createCarrotMsg(
@@ -841,9 +1166,13 @@ void OmniPidPursuitController::applyCurvatureLimitation(
   double & linear_vel)
 {
   double curvature =
-    calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
+  calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
   RCLCPP_DEBUG(logger_, "Curvature: %.3f", curvature);
+  if(slow && curvature <= large_slow_-0.3) slow = false;
+  if(!slow && curvature >= large_slow_) slow = true;
   double scaled_linear_vel = linear_vel;
+
+
   if (curvature > curvature_min_) {
     double reduction_ratio = 1.0;
     if (curvature > curvature_max_) {
@@ -855,14 +1184,15 @@ void OmniPidPursuitController::applyCurvatureLimitation(
 
     double target_scaled_vel = linear_vel * reduction_ratio;
 
-    if(curvature > large_slow_ && last_velocity_scaling_factor_ > last_vel_){
+    if(slow && last_velocity_scaling_factor_ >= last_vel_){
+      // scaled_linear_vel = last_vel_;
       scaled_linear_vel =
       last_velocity_scaling_factor_ + std::clamp(
-                                        target_scaled_vel - last_velocity_scaling_factor_,
+                                        last_vel_-last_velocity_scaling_factor_,
                                         -lower_speed_ ,
                                         lower_speed_ );
     }  
-    else if(last_velocity_scaling_factor_ > target_scaled_vel){
+    else if(!slow && last_velocity_scaling_factor_ > target_scaled_vel){
       scaled_linear_vel =
       last_velocity_scaling_factor_ + std::clamp(
                                         target_scaled_vel - last_velocity_scaling_factor_,
@@ -870,11 +1200,12 @@ void OmniPidPursuitController::applyCurvatureLimitation(
                                         max_velocity_scaling_factor_rate_ * control_duration_);
     }                                    
   }
-  scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
+  // scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
   RCLCPP_DEBUG(logger_, "Scaled linear vel: %.3f", scaled_linear_vel);
   linear_vel = std::min(linear_vel, scaled_linear_vel);
-  std::lock_guard<std::mutex> lock(sm_mutex);
-  last_velocity_scaling_factor_ = smoothed_vel;
+  linear_vel = std::clamp(linear_vel,last_velocity_scaling_factor_-lower_speed_,last_velocity_scaling_factor_+lower_speed_);
+  // std::lock_guard<std::mutex> lock(sm_mutex);
+  last_velocity_scaling_factor_ = linear_vel;
 }
 
 void OmniPidPursuitController::applyCurvatureLimitation_mpc(
@@ -919,8 +1250,8 @@ void OmniPidPursuitController::applyCurvatureLimitation_mpc(
   double scale_ratio = linear_vel / original_linear_vel;
   vx *= scale_ratio;  
   vy *= scale_ratio;
-  std::lock_guard<std::mutex> lock(sm_mutex);
-  last_velocity_scaling_factor_ = smoothed_vel;
+  // std::lock_guard<std::mutex> lock(sm_mutex);
+  last_velocity_scaling_factor_ = linear_vel;
 }
 
 double OmniPidPursuitController::calculateCurvature(
