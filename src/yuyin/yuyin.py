@@ -8,7 +8,6 @@ import os
 from rm_interfaces.msg import StatusMsg
 from geometry_msgs.msg import PoseStamped
 
-
 class AllAudioNode(Node):
     def __init__(self):
         super().__init__('all_audio_node')

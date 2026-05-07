@@ -42,7 +42,7 @@ using DurationMs = std::chrono::duration<double, std::milli>; // 毫秒级时长
 
 // 全局参数定义
 double scanVoxelSize = 0.1;
-double decayTime = 10.0;
+double decayTime = 1.0;
 double noDecayDis = 0;
 double clearingDis = 30.0;
 bool clearingCloud = true;
@@ -398,10 +398,11 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
         point = laserCloudDwz->points[i];
         float dis = sqrt((point.x - vehicleX) * (point.x - vehicleX) +
                          (point.y - vehicleY) * (point.y - vehicleY));
+
+        bool is_fresh = (laserCloudTime - systemInitTime - point.intensity < decayTime);
         if (point.z - vehicleZ > lowerBoundZ - disRatioZ * dis &&
             point.z - vehicleZ < upperBoundZ + disRatioZ * dis &&
-            (laserCloudTime - systemInitTime - point.intensity < decayTime || dis < noDecayDis) &&
-            !(dis < clearingDis && clearingCloud)) {
+            is_fresh) {
           terrainVoxelCloudPtr->push_back(point);
         }
       }
@@ -563,22 +564,20 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
   }
   if (!terrainCloudElev->empty() && !terrainCloud->empty()) {
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_full_xyz(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::copyPointCloud(*terrainCloud, *cloud_full_xyz);
+    pcl::NormalEstimation<pcl::PointXYZINormal, pcl::PointXYZINormal> ne;
+    pcl::search::KdTree<pcl::PointXYZINormal>::Ptr tree_full(new pcl::search::KdTree<pcl::PointXYZINormal>());
 
-    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree_full(new pcl::search::KdTree<pcl::PointXYZ>);
-    ne.setInputCloud(cloud_full_xyz);
+    ne.setInputCloud(terrainCloud);
     ne.setSearchMethod(tree_full);
-    ne.setKSearch(20);    
+    ne.setKSearch(20);
 
-    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_full(new pcl::PointCloud<pcl::Normal>);
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_normals_full(new pcl::PointCloud<pcl::PointXYZINormal>());
     ne.compute(*cloud_normals_full);
 
     pcl::KdTreeFLANN<pcl::PointXYZINormal> kdtree_full;
     kdtree_full.setInputCloud(terrainCloud);
 
-    const int knn = 1;  
+    const int knn = 1;
     std::vector<int> idx(knn);
     std::vector<float> dist(knn);
 
@@ -588,6 +587,10 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
         if (kdtree_full.nearestKSearch(p, knn, idx, dist) > 0) {
             int original_idx = idx[0];
             auto& normal = cloud_normals_full->points[original_idx];
+
+            p.normal_x = normal.normal_x;
+            p.normal_y = normal.normal_y;
+            p.normal_z = normal.normal_z;
 
             if (fabs(normal.normal_z) < 1e-6f) {
                 p.curvature = 0.0f;
@@ -599,12 +602,15 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
             float nz = normal.normal_z;
             float gradient = (nx*nx + ny*ny) / (nz*nz);
 
-            p.curvature = gradient;  
+            p.curvature = gradient;
         } else {
+            p.normal_x = 0;
+            p.normal_y = 0;
+            p.normal_z = 1;
             p.curvature = 0.0f;
         }
     }
-  }
+}
   for (int i = 0; i < terrainCloudElev->size(); i++) {
     auto& p = terrainCloudElev->points[i];
     float dis = sqrt((p.x - vehicleX)*(p.x - vehicleX) +
@@ -630,7 +636,6 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
   double total_process_duration = calcDurationMs(loop_start_time, Clock::now());
   return total_process_duration;
 }
-
 
 int main(int argc, char **argv) {
   // 初始化ROS 2节点

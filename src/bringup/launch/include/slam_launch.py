@@ -185,7 +185,7 @@ def generate_launch_description():
     terrain_node = Node(
         package="terrain_analysis",
         executable="terrainAnalysisExt",
-        name="terrain_analysis",
+        name="terrain_analysis_ext",
         output="screen",
         parameters=[configured_params],
         arguments=["--ros-args", "--log-level", log_level],

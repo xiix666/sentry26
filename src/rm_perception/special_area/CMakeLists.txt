@@ -7,7 +7,8 @@ find_package(tf2_ros REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
-
+find_package(geometry_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
 add_library(${PROJECT_NAME} SHARED
   src/special_area.cpp
 )
@@ -18,6 +19,8 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
   tf2_geometry_msgs
   rclcpp_components
+  geometry_msgs
+  nav2_msgs
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}

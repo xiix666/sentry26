@@ -123,7 +123,28 @@ private:
         pass.setFilterFieldName("z");
         pass.setFilterLimits(curr_z - limit_z_, curr_z + limit_z_);
         pass.filter(*cloud);
-        publishcloud(cloud);
+
+        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_normal(new pcl::PointCloud<pcl::PointXYZINormal>());
+        cloud_normal->reserve(cloud->size());
+
+        for (const auto& p : *cloud) {
+            pcl::PointXYZINormal np;
+            np.x = p.x;
+            np.y = p.y;
+            np.z = p.z;
+            np.intensity = p.intensity;
+
+            np.normal_x = 0.0f;
+            np.normal_y = 0.0f;
+            np.normal_z = 1.0f;
+            np.curvature = 0.0f;
+
+            cloud_normal->push_back(np);
+        }
+
+        publishcloud(cloud_normal);
+
+        // publishcloud(cloud);
         }
         catch (const tf2::TransformException& ex)
         {
@@ -147,7 +168,7 @@ private:
         // 3. 发布TF变换（ROS 2标准TF发布方式）
         tf_broadcaster_->sendTransform(tf_msg);
     }
-    void publishcloud(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud)
+    void publishcloud(pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud)
     {
         sensor_msgs::msg::PointCloud2 output_msg;
         pcl::toROSMsg(*cloud, output_msg);

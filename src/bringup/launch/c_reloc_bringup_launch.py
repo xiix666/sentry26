@@ -299,14 +299,14 @@ def generate_launch_description():
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)
     # ld.add_action(angle_pub_cmd)
-    # ld.add_action(delayed_omni_node)
+    ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
 
     ld.add_action(rviz_cmd)
     # ld.add_action(save_map_cmd)
     # 决策
     #ld.add_action(rm26_decision)
-    # ld.add_action(delayed_decision_node)
+    ld.add_action(delayed_decision_node)
     from launch.actions import ExecuteProcess
 
     audio_node = ExecuteProcess(

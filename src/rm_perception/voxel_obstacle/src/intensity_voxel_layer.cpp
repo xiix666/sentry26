@@ -217,10 +217,10 @@ void IntensityVoxelLayer::updateBounds(
       unsigned int voxel_idx = getVoxelIndex(mx, my, mz);
 
       // 原有过滤逻辑（高度、强度、距离）
-      // if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
-      // if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
-      // double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
-      // if (sq_dist <= sq_obstacle_min_range || sq_dist >= sq_obstacle_max_range) continue;
+      if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
+      if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
+      double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
+      if (sq_dist <= sq_obstacle_min_range || sq_dist >= sq_obstacle_max_range) continue;
       double gradient = 0.0;
   
       // bool has_gradient_field = (it_grad != it_grad.end());
@@ -270,18 +270,29 @@ void IntensityVoxelLayer::updateBounds(
       }
     }
 
-    if (!has_other_z_hit) {
-      continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
-    }
+    // if (!has_other_z_hit) {
+    //   continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
+    // }
     // 只有连续命中次数≥阈值 + 非孤立体素，才标记为致命障碍
 
-    // last_hit_time_grid_[voxel_idx] = sec; 
+    last_hit_time_grid_[voxel_idx] = sec; 
     if (hit_count_grid_[voxel_idx] >= continuous_hit_threshold_) {
       unsigned int index = getIndex(mx, my);
       costmap_[index] = LETHAL_OBSTACLE;
       double wx, wy;
       mapToWorld(mx, my, wx, wy);
-      active_obstacle_cells_.push_back({wx, wy, sec});
+        bool found = false;
+      for (auto& cell : active_obstacle_cells_) {
+        if (cell.wx == wx && cell.wy == wy) {
+          cell.last_hit_time = sec;  
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        active_obstacle_cells_.push_back({wx, wy, sec});
+      }
+      // active_obstacle_cells_.push_back({wx, wy, sec});
       touch(wx, wy, min_x, min_y, max_x, max_y);
     }
   }
@@ -298,7 +309,8 @@ void IntensityVoxelLayer::updateBounds(
       it = active_obstacle_cells_.erase(it);
       continue;
     }
-  
+    // std::cout << now_sec << std::endl;
+    // std::cout << it->last_hit_time << std::endl;
     unsigned int mx, my;
     if (worldToMap(it->wx, it->wy, mx, my)) {
       unsigned int index = getIndex(mx, my);

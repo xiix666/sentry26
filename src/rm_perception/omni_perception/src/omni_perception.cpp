@@ -463,7 +463,7 @@ public:
         rm_interfaces::msg::AngleMsg msg;
         msg.angle = static_cast<float>(angle_deg);
         angle_pub_->publish(msg);
-        clearLast3Frames(); 
+        // clearLast3Frames(); 
     }
 
     void PoseToLidar()
