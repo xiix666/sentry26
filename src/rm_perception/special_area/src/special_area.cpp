@@ -181,7 +181,7 @@ private:
         tf2::Matrix3x3(q).getEulerYPR(robot_yaw_map, pitch, roll);
 
           int c = parseCostmap(costmap, x, y);
-          if (c <= 200) {
+          if (c <= 220) {
             publishSelfSaveStatus(0);
             publishZeroVelocity();
             return;

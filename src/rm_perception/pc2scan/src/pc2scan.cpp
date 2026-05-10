@@ -52,8 +52,8 @@
  #include "tf2_sensor_msgs/tf2_sensor_msgs.hpp"
  #include "tf2_ros/create_timer_ros.h"
  
- namespace pc2scan
- {
+namespace pc2scan
+{
  
 pc2scan::pc2scan(const rclcpp::NodeOptions & options)
  : rclcpp::Node("pc2scan", options)
@@ -76,6 +76,9 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
    range_max_ = this->declare_parameter("range_max", std::numeric_limits<double>::max());
    inf_epsilon_ = this->declare_parameter("inf_epsilon", 1.0);
    use_inf_ = this->declare_parameter("use_inf", true);
+   
+   // 新增：梯度阈值参数
+   max_gradient_threshold_ = this->declare_parameter("max_gradient_threshold", 1.0);
  
    pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("scan", rclcpp::SensorDataQoS());
  
@@ -87,11 +90,11 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
        this->get_node_base_interface(), this->get_node_timers_interface());
      tf2_->setCreateTimerInterface(timer_interface);
      tf2_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf2_);
-     message_filter_ = std::make_unique<MessageFilter>(    //消息过滤器 sub订阅点云 查询到目标坐标系的变换 输入队列大小（缓存） 日志接口  时钟接口    收到点云消息后，先去 “仓库”（tf2_）查有没有 “点云坐标→目标坐标” 的变换。如果有，就放消息进去处理；如果没有，就暂时把消息存起来等，超时了就扔掉。
+     message_filter_ = std::make_unique<MessageFilter>(
        sub_, *tf2_, target_frame_, input_queue_size_,
        this->get_node_logging_interface(),
        this->get_node_clock_interface());
-     message_filter_->registerCallback(         //当匹配的TF到达，触发回调
+     message_filter_->registerCallback(
        std::bind(&pc2scan::cloudCallback, this, _1));
    } else {  // otherwise setup direct subscription
      sub_.registerCallback(std::bind(&pc2scan::cloudCallback, this, _1));
@@ -104,34 +107,34 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
  pc2scan::~pc2scan()
  {
    alive_.store(false);
-   subscription_listener_thread_.join();//等待线程结束并清理资源
+   subscription_listener_thread_.join();
  }
  
- void pc2scan::subscriptionListenerThreadLoop() //动态管理点云订阅节点
+ void pc2scan::subscriptionListenerThreadLoop()
  {
    rclcpp::Context::SharedPtr context = this->get_node_base_interface()->get_context();
  
    const std::chrono::milliseconds timeout(100);
    while (rclcpp::ok(context) && alive_.load()) {
      int subscription_count = pub_->get_subscription_count() +
-       pub_->get_intra_process_subscription_count(); //激光雷达扫描数据 /scan 的订阅者数量
+       pub_->get_intra_process_subscription_count();
      if (subscription_count > 0) {
-       if (!sub_.getSubscriber()) {  //点云订阅未启动，启动订阅
+       if (!sub_.getSubscriber()) {
          RCLCPP_INFO(
            this->get_logger(),
            "Got a subscriber to laserscan, starting pointcloud subscriber");
          rclcpp::SensorDataQoS qos;
-         qos.keep_last(input_queue_size_);  //最多存储个数
+         qos.keep_last(input_queue_size_);
          sub_.subscribe(this, "cloud_in", qos.get_rmw_qos_profile());
        }
-     } else if (sub_.getSubscriber()) { //无/scan订阅者，停止订阅点云
+     } else if (sub_.getSubscriber()) {
        RCLCPP_INFO(
          this->get_logger(),
          "No subscribers to laserscan, shutting down pointcloud subscriber");
        sub_.unsubscribe();
      }
-     rclcpp::Event::SharedPtr event = this->get_graph_event(); //监听 ROS 2 节点网络拓扑的变化
-     this->wait_for_graph_change(event, timeout); //阻塞线程，直到event触发
+     rclcpp::Event::SharedPtr event = this->get_graph_event();
+     this->wait_for_graph_change(event, timeout);
    }
    sub_.unsubscribe();
  }
@@ -160,7 +163,7 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
  
    // determine if laserscan rays with no obstacle data will evaluate to infinity or max_range
    if (use_inf_) {
-     scan_msg->ranges.assign(ranges_size, std::numeric_limits<double>::infinity());   //初始化赋值无穷
+     scan_msg->ranges.assign(ranges_size, std::numeric_limits<double>::infinity());
    } else {
      scan_msg->ranges.assign(ranges_size, scan_msg->range_max + inf_epsilon_);
    }
@@ -169,7 +172,7 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
    if (scan_msg->header.frame_id != cloud_msg->header.frame_id) {
      try {
        auto cloud = std::make_shared<sensor_msgs::msg::PointCloud2>();
-       tf2_->transform(*cloud_msg, *cloud, target_frame_, tf2::durationFromSec(tolerance_)); //将点云转换到目标坐标系
+       tf2_->transform(*cloud_msg, *cloud, target_frame_, tf2::durationFromSec(tolerance_));
        cloud_msg = cloud;
      } catch (tf2::TransformException & ex) {
        RCLCPP_ERROR_STREAM(this->get_logger(), "Transform failure: " << ex.what());
@@ -177,11 +180,39 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
      }
    }
  
+   // 检查点云是否包含 curvature 字段
+   bool has_curvature = false;
+   for (const auto & field : cloud_msg->fields) {
+     if (field.name == "curvature") {
+       has_curvature = true;
+       break;
+     }
+   }
+ 
    // Iterate through pointcloud
-   for (sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x"),
-     iter_y(*cloud_msg, "y"), iter_z(*cloud_msg, "z"), iter_i(*cloud_msg, "intensity");
-     iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_i)
+   // 注意：这里我们先不初始化 iter_grad，避免在没有字段时崩溃
+   sensor_msgs::PointCloud2ConstIterator<float> iter_x(*cloud_msg, "x");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_y(*cloud_msg, "y");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_z(*cloud_msg, "z");
+   sensor_msgs::PointCloud2ConstIterator<float> iter_i(*cloud_msg, "intensity");
+   
+   // 只有在确定有 curvature 字段时才创建迭代器
+   sensor_msgs::PointCloud2ConstIterator<float> iter_grad(*cloud_msg, "curvature");
+ 
+   for (; iter_x != iter_x.end(); ++iter_x, ++iter_y, ++iter_z, ++iter_i)
    {
+     // 如果有 curvature 字段，也需要递增它的迭代器
+     float gradient = std::numeric_limits<float>::max(); // 默认设为很大，即默认通过
+     if (has_curvature) {
+       gradient = *iter_grad;
+       ++iter_grad;
+       
+       // 新增：梯度判断逻辑
+       if (gradient <= max_gradient_threshold_) {
+         continue;
+       }
+     }
+ 
      if (std::isnan(*iter_x) || std::isnan(*iter_y) || std::isnan(*iter_z)) {
        RCLCPP_DEBUG(
          this->get_logger(),
@@ -198,11 +229,11 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
        continue;
      }
  
-    //  if (*iter_i < min_intensity_ || *iter_i > max_intensity_) {
-    //    continue;
-    //  }
+     if (*iter_i < min_intensity_ || *iter_i > max_intensity_) {
+       continue;
+     }
  
-     double range = hypot(*iter_x, *iter_y); //勾股定理
+     double range = hypot(*iter_x, *iter_y);
      if (range < range_min_) {
        RCLCPP_DEBUG(
          this->get_logger(),
@@ -233,7 +264,7 @@ pc2scan::pc2scan(const rclcpp::NodeOptions & options)
        scan_msg->ranges[index] = range;
      }
    }
-   pub_->publish(std::move(scan_msg)); //直接提交而非复制
+   pub_->publish(std::move(scan_msg));
  }
  
  }  // namespace pointcloud_to_laserscan

@@ -191,10 +191,11 @@ pc2scan:
   ros__parameters:
     use_sim_time: True
     target_frame: base_link
-    min_height: -0.5
+    min_height: 0.0
     max_height: 6.0
-    min_intensity: 0.1
+    min_intensity: 0.05
     max_intensity: 2.0
+    max_gradient_threshold: 0.5
     angle_min: -3.1415926                   # -M_PI/2
     angle_max: 3.1415926                    # M_PI/2
     angle_increment: 0.00872665             # M_PI/360.0
@@ -579,7 +580,7 @@ global_costmap:
           # '<robot_namespace>' keyword shall be replaced with 'namespace' where user defined.
           # It doesn't need to start with '/'
           topic: /terrain_map_ext
-          sensor_frame: lidar_link
+          sensor_frame: fake_base_link
           min_obstacle_height: 0.05
           max_obstacle_height: 2.0
           obstacle_max_range: 15.0
@@ -627,7 +628,7 @@ planner_server:
       # use_astar: false
       # allow_unknown: true
 
-      plugin: "nav2_theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
+      plugin: "theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
       how_many_corners: 8
       w_euc_cost: 1.0
       w_traversal_cost: 2.5

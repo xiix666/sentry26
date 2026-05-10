@@ -70,6 +70,8 @@ namespace xx_nav2_costmap_2d
     node->declare_parameter(name_ + ".neighborhood_min_voxels", 1);
     node->get_parameter(name_ + ".neighborhood_min_voxels", neighborhood_min_voxels_);
   
+    node->declare_parameter(name_ + ".obstacle_expand_size", 1);  // 膨胀格子数 1=3x3, 2=5x5
+    node->get_parameter(name_ + ".obstacle_expand_size", obstacle_expand_size_);
     if (publish_voxel_) {
       voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
     }
@@ -158,7 +160,26 @@ inline unsigned int IntensityVoxelLayer::countNeighborhoodVoxels(unsigned int mx
   }
   return count;
 }
+void IntensityVoxelLayer::markObstacleWithExpand(
+  unsigned int mx, unsigned int my, double wx, double wy,
+  double* min_x, double* min_y, double* max_x, double* max_y)
+{
 
+  for (int dx = -obstacle_expand_size_; dx <= obstacle_expand_size_; dx++) {
+    for (int dy = -obstacle_expand_size_; dy <= obstacle_expand_size_; dy++) {
+      int cx = static_cast<int>(mx) + dx;
+      int cy = static_cast<int>(my) + dy;
+
+      if (cx < 0 || cx >= static_cast<int>(size_x_) || cy < 0 || cy >= static_cast<int>(size_y_))
+        continue;
+
+      unsigned int idx = getIndex(static_cast<unsigned int>(cx), static_cast<unsigned int>(cy));
+      costmap_[idx] = LETHAL_OBSTACLE;
+    }
+  }
+
+  // touch(wx, wy, min_x, min_y, max_x, max_y);
+}
 void IntensityVoxelLayer::reset()
 {
   ObstacleLayer::reset();
@@ -304,21 +325,29 @@ void IntensityVoxelLayer::updateBounds(
       hit_count_grid_[i] = 0;
     }
   }
-  for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
-    if (now_sec - it->last_hit_time > obstacle_hold_time_) {
-      it = active_obstacle_cells_.erase(it);
-      continue;
-    }
-    // std::cout << now_sec << std::endl;
-    // std::cout << it->last_hit_time << std::endl;
-    unsigned int mx, my;
-    if (worldToMap(it->wx, it->wy, mx, my)) {
-      unsigned int index = getIndex(mx, my);
-      costmap_[index] = LETHAL_OBSTACLE;
-      touch(it->wx, it->wy, min_x, min_y, max_x, max_y);
-    }
+  // for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
+  //   if (now_sec - it->last_hit_time > obstacle_hold_time_) {
+  //     it = active_obstacle_cells_.erase(it);
+  //     continue;
+  //   }
+  //   // std::cout << now_sec << std::endl;
+  //   // std::cout << it->last_hit_time << std::endl;
+  //   unsigned int mx, my;
+  //   if (worldToMap(it->wx, it->wy, mx, my)) {
+  //     unsigned int index = getIndex(mx, my);
+  //     costmap_[index] = LETHAL_OBSTACLE;
+  //     touch(it->wx, it->wy, min_x, min_y, max_x, max_y);
+  //   }
   
-    ++it;
+  //   ++it;
+  // }
+  for (const auto& cell : active_obstacle_cells_) {
+    if (now_sec - cell.last_hit_time > obstacle_hold_time_) continue;
+
+    unsigned int mx, my;
+    if (worldToMap(cell.wx, cell.wy, mx, my)) {
+      markObstacleWithExpand(mx, my, cell.wx, cell.wy, min_x, min_y, max_x, max_y);
+    }
   }
   // 发布体素网格（原有逻辑）
   if (publish_voxel_) {

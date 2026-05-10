@@ -47,7 +47,9 @@ protected:
   void updateFootprint(
     double robot_x, double robot_y, double robot_yaw, double * min_x, double * min_y,
     double * max_x, double * max_y);
-
+  void markObstacleWithExpand(
+    unsigned int mx, unsigned int my, double wx, double wy,
+    double* min_x, double* min_y, double* max_x, double* max_y);
 private:
   struct ActiveObstacle
   {
@@ -74,7 +76,8 @@ private:
   int neighborhood_radius_ = 1;      // 邻域校验半径（网格数）
   int neighborhood_min_voxels_ = 2;  // 邻域内有效体素数阈值
   int voxel_min_points_ = 2;         // 单个体素最小点数阈值
-
+  int obstacle_expand_size_ = 1;
+  
   // 内联函数声明：计算3D体素的一维索引
   inline unsigned int getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz) const
   {

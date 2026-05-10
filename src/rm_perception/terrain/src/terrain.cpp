@@ -569,7 +569,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
 
     ne.setInputCloud(terrainCloud);
     ne.setSearchMethod(tree_full);
-    ne.setKSearch(20);
+    ne.setKSearch(15);
 
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_normals_full(new pcl::PointCloud<pcl::PointXYZINormal>());
     ne.compute(*cloud_normals_full);
