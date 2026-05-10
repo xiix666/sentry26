@@ -21,7 +21,7 @@ namespace fake_vel_transform
 {
 
 constexpr double EPSILON = 1e-5;
-constexpr double CONTROLLER_TIMEOUT = 0.5;
+constexpr double CONTROLLER_TIMEOUT = 0.2;
 
 FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
 : Node("fake_vel_transform", options)
@@ -33,6 +33,7 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
   this->declare_parameter<std::string>("odom_topic", "odom");
   this->declare_parameter<std::string>("input_cmd_vel_topic", "");
   this->declare_parameter<std::string>("output_cmd_vel_topic", "");
+  this->declare_parameter<std::string>("output_safe_cmd_vel_topic", "cmd_vel_safe");
     // this->declare_parameter<std::string>("local_plan_topic", "local_plan");
   // this->declare_parameter<float>("init_spin_speed", 0.0);
   // this->declare_parameter<std::string>("cmd_spin_topic", "cmd_spin");
@@ -41,15 +42,17 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
   this->get_parameter("odom_topic", odom_topic_);
   this->get_parameter("input_cmd_vel_topic", input_cmd_vel_topic_);
   this->get_parameter("output_cmd_vel_topic", output_cmd_vel_topic_);
+  this->get_parameter("output_safe_cmd_vel_topic", output_safe_cmd_vel_topic_);
   // this->get_parameter("local_plan_topic", local_plan_topic_);
   // this->get_parameter("cmd_spin_topic", cmd_spin_topic_);
   // this->get_parameter("init_spin_speed", spin_speed_);
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-
+ 
   cmd_vel_chassis_pub_ =
     this->create_publisher<geometry_msgs::msg::Twist>(output_cmd_vel_topic_, 1);
-
+  cmd_vel_safe_pub_ =
+    this->create_publisher<geometry_msgs::msg::Twist>(output_safe_cmd_vel_topic_, 1);
   // cmd_spin_sub_ = this->create_subscription<example_interfaces::msg::Float32>(
   //   cmd_spin_topic_, 1, std::bind(&FakeVelTransform::cmdSpinCallback, this, std::placeholders::_1));
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -59,14 +62,17 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
   odom_sub_filter_.subscribe(this, odom_topic_);
   odom_sub_filter_.registerCallback(
     std::bind(&FakeVelTransform::odometryCallback, this, std::placeholders::_1));
-
+  // 初始化缓存
+  last_cmd_vel_ = std::make_shared<geometry_msgs::msg::Twist>();
+  last_cmd_vel_time_ = this->get_clock()->now();
   // In Navigation2 Humble release, the velocity is published by the controller without timestamped.
   // We consider the velocity is published at the same time as local_plan.
   // Therefore, we use ApproximateTime policy to synchronize `cmd_vel` and `odometry`.
 
   // 50Hz Timer to send transform from `robot_base_frame` to `fake_robot_base_frame`
   timer_ = this->create_wall_timer(
-    std::chrono::milliseconds(20), std::bind(&FakeVelTransform::publishTransform, this));
+    std::chrono::milliseconds(20), std::bind(&FakeVelTransform::publishTransformAndSafeVel, this));
+
 }
 
 void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr & msg)
@@ -76,13 +82,28 @@ void FakeVelTransform::odometryCallback(const nav_msgs::msg::Odometry::ConstShar
 
 void FakeVelTransform::cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+    // std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+    // 缓存最新速度和时间
+    last_cmd_vel_ = msg;
+    last_cmd_vel_time_ = this->get_clock()->now();
     auto aft_tf_vel = transformVelocity(msg, current_robot_base_angle_);
     cmd_vel_chassis_pub_->publish(aft_tf_vel);
 }
 
-void FakeVelTransform::publishTransform()
+// void FakeVelTransform::publishTransform()
+// {
+//   geometry_msgs::msg::TransformStamped t;
+//   t.header.stamp = this->get_clock()->now();
+//   t.header.frame_id = robot_base_frame_;
+//   t.child_frame_id = fake_robot_base_frame_;
+//   tf2::Quaternion q;
+//   q.setRPY(0, 0, -current_robot_base_angle_);
+//   t.transform.rotation = tf2::toMsg(q);
+//   tf_broadcaster_->sendTransform(t);
+// }
+void FakeVelTransform::publishTransformAndSafeVel()
 {
+  // ========== 1. 发布TF变换 ==========
   geometry_msgs::msg::TransformStamped t;
   t.header.stamp = this->get_clock()->now();
   t.header.frame_id = robot_base_frame_;
@@ -91,8 +112,27 @@ void FakeVelTransform::publishTransform()
   q.setRPY(0, 0, -current_robot_base_angle_);
   t.transform.rotation = tf2::toMsg(q);
   tf_broadcaster_->sendTransform(t);
-}
 
+  // ========== 2. 发布安全速度 ==========
+  auto now = this->get_clock()->now();
+  geometry_msgs::msg::Twist safe_vel;
+
+  // std::lock_guard<std::mutex> lock(cmd_vel_mutex_);
+  // 判断：500ms内收到cmd_vel → 发布真实速度；否则发布0
+  if ((now - last_cmd_vel_time_).seconds() < CONTROLLER_TIMEOUT) {
+    safe_vel = *last_cmd_vel_;
+  } else {
+    // 超时 → 速度清零
+    safe_vel.linear.x = 0.0;
+    safe_vel.linear.y = 0.0;
+    safe_vel.linear.z = 0.0;
+    safe_vel.angular.x = 0.0;
+    safe_vel.angular.y = 0.0;
+    safe_vel.angular.z = 0.0;
+  }
+
+  cmd_vel_safe_pub_->publish(safe_vel);
+}
 geometry_msgs::msg::Twist FakeVelTransform::transformVelocity(
   const geometry_msgs::msg::Twist::SharedPtr & twist, float yaw_diff)
 {

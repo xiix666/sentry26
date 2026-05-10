@@ -49,7 +49,7 @@ private:
 
   void receiveData();
 
-  void angleData(const rm_interfaces::msg::AngleMsg::SharedPtr msg);
+  void angleData(const geometry_msgs::msg::Point32::SharedPtr msg);
 
   void shootData(const rm_interfaces::msg::ShootMsg::SharedPtr msg);
 
@@ -71,6 +71,10 @@ private:
 
   void spinData(const std_msgs::msg::Int32::SharedPtr msg);
 
+  void specialAreaAngleData(const std_msgs::msg::Float32::SharedPtr msg);
+
+  void areaStatusData(const std_msgs::msg::Int32::SharedPtr msg);
+
   void sendData();
 
   void timer_callback();
@@ -86,12 +90,15 @@ private:
   std::atomic<float> speed_save_y{0.0f};
   std::atomic<int> self_save_status{0};
   std::atomic<float> angle{0.0f};
+  std::atomic<float> pitch{0.0f};
   std::atomic<float> angle_sp{0.0f};
   std::atomic<uint8_t> shoot_mode{0};
   std::atomic<uint8_t> special_number{0};  
   std::atomic<uint8_t> spin_enable{1};
   std::atomic<uint8_t> nav_enable{1};
   std::atomic<uint8_t> sentry_stance{3};
+  std::atomic<uint8_t> area_status{0};
+  std::atomic<float> area_angle{0.0f};
   std::array<std::array<float, 2>, 5> send_enemy_poses_;
   std::mutex send_enemy_poses_mutex_;
   std::atomic<float> gimbal_angle{0.0f};
@@ -107,8 +114,11 @@ private:
   rclcpp::Publisher<rm_interfaces::msg::ReceiveLLC>::SharedPtr receiveLLC_pub_;
   rclcpp::Publisher<rm_interfaces::msg::LidarMsg>::SharedPtr lidar_pub_;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr pub_speed_pub_;
-
-  rclcpp::Subscription<rm_interfaces::msg::AngleMsg>::SharedPtr angle_sub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr special_area_angle_pub_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr area_status_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr decision_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::Point32>::SharedPtr angle_sub_;
   rclcpp::Subscription<rm_interfaces::msg::ShootMsg>::SharedPtr shoot_mode_sub_;
   rclcpp::Subscription<rm_interfaces::msg::AnglePubMsg>::SharedPtr angle_sp_sub_;
   rclcpp::Subscription<rm_interfaces::msg::NavMsg>::SharedPtr nav_enable_sub_;

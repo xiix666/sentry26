@@ -84,23 +84,39 @@ struct ReceivePacketUC
   uint8_t red_blue;              // 红蓝方（红方为1,蓝方为0）
              
   uint16_t self_hero_hp;            //英雄血量
-  uint16_t self_infantry_hp;        //步兵血量
+  uint16_t self_engineer_hp;        //工程血量
+  uint16_t self_infantry3_hp;        //步兵血量
+  uint16_t self_infantry4_hp;        //步兵血量
   uint16_t self_sentry_hp;          //自身血量
+  uint16_t self_outpost_hp;      //己方前哨站血量
+  uint16_t self_base_hp;         //己方基地血量
 
   float self_pose_x;                //自身位置
   float self_pose_y;
 
   uint16_t bullets_allowance;       //允许发弹量
 
-  float hero_pose_x;                //英雄位置
-  float hero_pose_y;
+  float self_hero_pose_x;                //英雄位置
+  float self_hero_pose_y;
 
-  float infantry_pose_x;            //步兵位置
-  float infantry_pose_y;
+  float self_engineer_pose_x;          //工程位置
+  float self_engineer_pose_y;
+  float self_infantry3_pose_x;            //步兵位置
+  float self_infantry3_pose_y;
+  float self_infantry4_pose_x;            //步兵位置
+  float self_infantry4_pose_y;
 
   uint16_t remain_gold;               //剩余金币
+  uint16_t recovery_buff;          //回血增益
+  uint16_t defence_buff;            //防御增益
+  uint16_t defence_debuff;          //防御debuff
+  uint16_t attack_buff;             //攻击增益
+
   float self_speed_x;                //自身速度
   float self_speed_y;
+  float operator_x;              //操作手标点
+  float operator_y;
+  uint8_t decision_node;           
   uint16_t checksum = 0;
 } __attribute__((packed));
 
@@ -120,9 +136,10 @@ struct SendPacket
   float speed_x;
   float speed_y;
   float angle;                                          //转头角度 
+  float pitch;                                          //抬头角度
   uint8_t shoot_mode;                                   //0为自瞄，1为打符，2为打前哨站
-  // uint8_t special_number;                            //特殊地形区域编号
-  uint8_t spin_enable;                                  //0关小陀螺过起伏路段 
+  uint8_t area_status;                               //特殊地形区域状态 1起伏路段 2前哨站 0默认
+  // uint8_t spin_enable;                                  //0关小陀螺过起伏路段 
   uint8_t nav_enable;                                   //默认0为不导航，发1为导航
   uint8_t sentry_stance;                                //1 为进攻姿态，2 为防御姿态，3 为移动姿态，默认为 3                                  
   std::array<std::array<float, 2>, 5> send_enemy_poses; //发给雷达补盲的消息(顺序：英雄、工程、步兵1、步兵2、哨兵)

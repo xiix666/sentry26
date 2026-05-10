@@ -414,6 +414,11 @@ private:
   {
       return Eigen::Vector2d(pose.pose.position.x, pose.pose.position.y);
   }
+  std::vector<geometry_msgs::msg::PoseStamped> smoothPathCorners(
+    const std::vector<geometry_msgs::msg::PoseStamped>& path,
+    double smooth_radius ,int num_interpolation,
+    double angle_tol_deg ,int skip_points
+  );
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string plugin_name_;
@@ -475,7 +480,7 @@ private:
     curvature_points_pub_;
   // rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr smoothed_path_pub_;
   // std::unique_ptr<minco_nav2::MincoTracker> minco_tracker_;
-  const double max_skip_distance = 2.0;
+  const double max_skip_distance = 4.0;
   
   // Dynamic parameters handler
   std::mutex mutex_;

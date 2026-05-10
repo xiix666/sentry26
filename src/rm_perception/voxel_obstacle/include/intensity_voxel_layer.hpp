@@ -41,15 +41,15 @@ public:
   virtual void matchSize();
   virtual void reset();
   virtual bool isClearable() { return false; }
-
+  void markObstacleWithExpand(
+    unsigned int mx, unsigned int my, double wx, double wy,
+    double* min_x, double* min_y, double* max_x, double* max_y);
 protected:
   virtual void resetMaps();
   void updateFootprint(
     double robot_x, double robot_y, double robot_yaw, double * min_x, double * min_y,
     double * max_x, double * max_y);
-  void markObstacleWithExpand(
-    unsigned int mx, unsigned int my, double wx, double wy,
-    double* min_x, double* min_y, double* max_x, double* max_y);
+
 private:
   struct ActiveObstacle
   {
@@ -66,8 +66,10 @@ private:
   rclcpp::Clock::SharedPtr clock_;
   double * last_hit_time_grid_ = nullptr;   // 每个体素最近一次命中时间
   double obstacle_hold_time_ = 0.5;         
-  double max_gradient_threshold_ = 1.0;    
+  double max_gradient_threshold_ = 1.0;   
+  double near_obstacle_radius_ = 0.6;   
   double z_hit_range_ = 0.2; 
+  double low_gradient_threshold_ = 0.1;
   std::vector<ActiveObstacle> active_obstacle_cells_;
 
   int * hit_count_grid_ = nullptr;  // 连续命中计数网格
@@ -77,7 +79,6 @@ private:
   int neighborhood_min_voxels_ = 2;  // 邻域内有效体素数阈值
   int voxel_min_points_ = 2;         // 单个体素最小点数阈值
   int obstacle_expand_size_ = 1;
-  
   // 内联函数声明：计算3D体素的一维索引
   inline unsigned int getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz) const
   {

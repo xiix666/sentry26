@@ -24,9 +24,11 @@ def generate_launch_description():
     # Get the launch directory
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
+ 
 
     # 决策
     rm_decision_dir = get_package_share_directory("rm2026_decision")
+    decisionparams_file = os.path.join(rm_decision_dir, "config", "rm2026_decision_params.yaml")
     rm_decision_decision_dir = os.path.join(rm_decision_dir, "launch")
 
     # Create the launch configuration variables
@@ -88,9 +90,9 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/25uc_final.yaml", description="Full path to map yaml file to load"
-        "map", default_value="/home/rps/sentry26/src/bringup/map/map_home.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/rps/sentry26/src/bringup/map/mapuc.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
-    )
+    )                                                                                                 
 
     declare_pcd_file_cmd = DeclareLaunchArgument(
         "pcd_file", default_value="", description="Full path to PCD file to load"
@@ -139,19 +141,7 @@ def generate_launch_description():
     declare_use_rviz_cmd = DeclareLaunchArgument(
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
-    save_map_cmd = Node(
-        package="map_save",
-        executable="map_save",
-        name="map_save",
-        output="screen",
-        parameters=[configured_params,
-        {
-            "save_interval": 20.0,
-            "save_path": "/home/rps/sentry26/map/map",
-            "map_topic": "/slam_map",
-        }
-        ],
-    )
+
     # Specify the actions
     bringup_cmd_group = GroupAction(
         [
@@ -245,8 +235,17 @@ def generate_launch_description():
             executable="rm2026_decision_node",
             name="rm2026_decision_node",
             output="screen",
+            parameters=[decisionparams_file],
         
     )
+    # sentry_exec = Node(
+    
+    #     package="sentry_executor",
+    #     executable="sentry_executor",
+    #     name="sentry_executor",
+    #     output="screen",
+        
+    # )
     rviz_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "rviz_launch.py")),
         condition=IfCondition(use_rviz),
@@ -260,14 +259,26 @@ def generate_launch_description():
     # decision_cmd = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(os.path.join(rm_decision_decision_dir, "rmuc_decision.launch.py")),
     # )
-
+    save_map_cmd = Node(
+        package="map_save",
+        executable="map_save",
+        name="map_save",
+        output="screen",
+        parameters=[configured_params,
+        {
+            "save_interval": 20.0,
+            "save_path": "/home/rps/sentry26/map/map",
+            "map_topic": "/slam_map",
+        }
+        ],
+    )
     delayed_omni_node = TimerAction(
         period=10.0,  
         actions=[omni_cmd]
     )
 
     delayed_decision_node = TimerAction(
-        period=8.0,  
+        period=10.0,  
         actions=[rm26_decision]
     )
     delayed_port =  TimerAction(
@@ -302,8 +313,10 @@ def generate_launch_description():
     ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
 
+    # ld.add_action(rviz_cmd)
+    ld.add_action(save_map_cmd)
     # 决策
-    # ld.add_action(rm26_decision)
+    #ld.add_action(rm26_decision)
     ld.add_action(delayed_decision_node)
 
     return ld

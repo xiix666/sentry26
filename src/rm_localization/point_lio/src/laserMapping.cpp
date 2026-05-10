@@ -286,6 +286,57 @@ void pointBodyLidarToIMU(PointType const * const pi, PointType * const po)
 //   po->z = p_global(2);
 //   po->intensity = pi->intensity;
 // }
+  tf2::Transform getOdomInitToCameraInit()
+  {
+    static bool initialized = false;
+    static bool got_reloc_tf = false;
+    static bool warned_once = false;
+    static tf2::Transform T_odom_init_camera_init;
+  
+    if (!initialized) {
+      T_odom_init_camera_init.setIdentity();
+      initialized = true;
+    }
+  
+    // 如果已经成功读到一次，就一直用这个变换
+    if (got_reloc_tf) {
+      return T_odom_init_camera_init;
+    }
+  
+    try {
+      auto tf_msg = tf_buffer_->lookupTransform(
+        "odom_init",
+        "camera_init",
+        tf2::TimePointZero);
+  
+      tf2::fromMsg(tf_msg.transform, T_odom_init_camera_init);
+      got_reloc_tf = true;
+  
+      const auto t = T_odom_init_camera_init.getOrigin();
+      const auto q = T_odom_init_camera_init.getRotation();
+  
+      RCLCPP_INFO(
+        LOGGER,
+        "Got relocalization TF odom_init -> camera_init: "
+        "t=[%.3f, %.3f, %.3f], q=[%.6f, %.6f, %.6f, %.6f]",
+        t.x(), t.y(), t.z(),
+        q.x(), q.y(), q.z(), q.w());
+  
+    } catch (const tf2::TransformException & ex) {
+      if (!warned_once) {
+        RCLCPP_WARN(
+          LOGGER,
+          "No TF odom_init -> camera_init yet, use identity temporarily: %s",
+          ex.what());
+        warned_once = true;
+      }
+  
+      // 没读到就保持单位变换
+      T_odom_init_camera_init.setIdentity();
+    }
+  
+    return T_odom_init_camera_init;
+  }
 void MapIncremental()
 {
   PointVector points_to_add;
@@ -356,8 +407,26 @@ void publish_frame_world(
   const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr & pubLaserCloudFullRes)
 {
   if (scan_pub_en) {
+
+    PointCloudXYZI::Ptr cloud_odom_init(new PointCloudXYZI());
+    cloud_odom_init->resize(feats_down_world->size());
+
+    tf2::Transform T_odom_init_camera_init = getOdomInitToCameraInit();
+
+    for (size_t i = 0; i < feats_down_world->size(); ++i) {
+      const auto& p = feats_down_world->points[i];
+
+      tf2::Vector3 pc(p.x, p.y, p.z);
+      tf2::Vector3 po = T_odom_init_camera_init * pc;
+
+      auto& q = cloud_odom_init->points[i];
+      q.x = po.x();
+      q.y = po.y();
+      q.z = po.z();
+      q.intensity = p.intensity;
+    }
     sensor_msgs::msg::PointCloud2 laserCloudmsg;
-    pcl::toROSMsg(*feats_down_world, laserCloudmsg);
+    pcl::toROSMsg(*cloud_odom_init, laserCloudmsg);
 
     laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
     // laserCloudmsg.header.frame_id = "lidar_odom";
@@ -379,22 +448,50 @@ void publish_frame_world(
       static int saved_this_run = 0;
       scan_wait_num++;
       if (!pcl_wait_save->empty() && pcd_save_interval > 0 && scan_wait_num >= pcd_save_interval) {
-        fs::path all_points_path;
 
-        // 找到下一个不存在的 pcd 文件，避免覆盖
-        do {
-          pcd_index++;
-    
-          if (saved_this_run >= 1000) {
-            RCLCPP_WARN(
-              rclcpp::get_logger("pcd_save"),
-              "This run has already saved 1000 PCD files, stop saving more.");
-            return;
-          }
-    
-          all_points_path = fs::path(save_path) / (std::to_string(pcd_index) + ".pcd");
-    
-        } while (fs::exists(all_points_path));
+      double px, py, pz;
+      V3D euler_rpy;
+
+      if (!use_imu_as_input) {
+        px = kf_output.x_.pos(0);
+        py = kf_output.x_.pos(1);
+        pz = kf_output.x_.pos(2);
+        euler_rpy = SO3ToEuler(kf_output.x_.rot);
+      } else {
+        px = kf_input.x_.pos(0);
+        py = kf_input.x_.pos(1);
+        pz = kf_input.x_.pos(2);
+        euler_rpy = SO3ToEuler(kf_input.x_.rot);
+      }
+
+      double roll  = euler_rpy(0);
+      double pitch = euler_rpy(1);
+      double yaw   = euler_rpy(2);
+
+      char pose_str[128];
+      snprintf(
+        pose_str,
+        sizeof(pose_str),
+        "%.2f-%.2f-%.2f-%.2f-%.2f-%.2f",
+        px, py, pz, roll, pitch, yaw);
+
+      fs::path all_points_path;
+
+      // 找到下一个不存在的 pcd 文件，避免覆盖
+      do {
+        pcd_index++;
+
+        if (saved_this_run >= 1000) {
+          RCLCPP_WARN(
+            rclcpp::get_logger("pcd_save"),
+            "This run has already saved 1000 PCD files, stop saving more.");
+          return;
+        }
+
+        all_points_path = fs::path(save_path) /
+          (std::to_string(pcd_index) + "_" + std::string(pose_str) + ".pcd");
+
+      } while (fs::exists(all_points_path));
         pcl::PCDWriter pcd_writer;
         std::cout << "current scan saved to /PCD/" << all_points_path.string() << '\n';
         pcd_writer.writeBinary(all_points_path.string(), *pcl_wait_save);
@@ -456,21 +553,71 @@ void set_posestamp(T & out)
   }
 }
 
-void publish_odometry(
-  const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr & pubOdomAftMapped,
-  std::shared_ptr<tf2_ros::TransformBroadcaster> & tf_br)
-{
-  // odomAftMapped.header.frame_id = "lidar_odom";
-  odomAftMapped.header.frame_id = init_frame;
-  odomAftMapped.child_frame_id = lidar_frame;
-  if (publish_odometry_without_downsample) {
-    odomAftMapped.header.stamp = get_ros_time(time_current);
-  } else {
-    odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
-  }
-  set_posestamp(odomAftMapped.pose.pose);
+void publish_odometry(const rclcpp::Publisher<
+  nav_msgs::msg::Odometry>::SharedPtr& pubOdomAftMapped,
+  std::shared_ptr<tf2_ros::TransformBroadcaster>& tf_br) {
+      odomAftMapped.header.frame_id = init_frame;
+      odomAftMapped.child_frame_id = "body";
+    if (publish_odometry_without_downsample) {
+      odomAftMapped.header.stamp = get_ros_time(time_current);
+    } else {
+      odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
+    }
+    // set_posestamp(odomAftMapped.pose.pose);
+    geometry_msgs::msg::Pose pose_camera_init_body;
+    set_posestamp(pose_camera_init_body);
 
-  pubOdomAftMapped->publish(odomAftMapped); //imu初始位下的位姿
+    tf2::Transform T_camera_init_body;
+    tf2::fromMsg(pose_camera_init_body, T_camera_init_body);
+
+    tf2::Transform T_odom_init_camera_init = getOdomInitToCameraInit();
+    tf2::Transform T_odom_init_body =
+    T_odom_init_camera_init * T_camera_init_body;
+    // 
+    const tf2::Vector3 trans = T_odom_init_body.getOrigin();
+    tf2::Quaternion q = T_odom_init_body.getRotation();
+    q.normalize();
+
+    odomAftMapped.pose.pose.position.x = trans.x();
+    odomAftMapped.pose.pose.position.y = trans.y();
+    odomAftMapped.pose.pose.position.z = trans.z();
+
+    odomAftMapped.pose.pose.orientation.x = q.x();
+    odomAftMapped.pose.pose.orientation.y = q.y();
+    odomAftMapped.pose.pose.orientation.z = q.z();
+    odomAftMapped.pose.pose.orientation.w = q.w();
+    Eigen::Vector3d vel_world;
+    Eigen::Vector3d omg_body;
+
+    if (!use_imu_as_input) {
+    vel_world = kf_output.x_.vel;
+    omg_body = kf_output.x_.omg;
+    } else {
+    vel_world = kf_input.x_.vel;
+
+    // use_imu_as_input 分支如果没有 x_.omg，就先置零
+    omg_body.setZero();
+    }
+
+    // 当前姿态：body/lidar 到 world 的旋转
+    Eigen::Matrix3d R_world_body;
+    if (!use_imu_as_input) {
+    R_world_body = kf_output.x_.rot;
+    } else {
+    R_world_body = kf_input.x_.rot;
+    }
+
+// 世界系线速度转到 child_frame_id 系
+    Eigen::Vector3d vel_body = R_world_body.transpose() * vel_world;
+
+    odomAftMapped.twist.twist.linear.x = vel_body.x();
+    odomAftMapped.twist.twist.linear.y = vel_body.y();
+    odomAftMapped.twist.twist.linear.z = vel_body.z();
+
+    odomAftMapped.twist.twist.angular.x = omg_body.x();
+    odomAftMapped.twist.twist.angular.y = omg_body.y();
+    odomAftMapped.twist.twist.angular.z = omg_body.z();
+    pubOdomAftMapped->publish(odomAftMapped);
 
   if (tf_send_en) {
     geometry_msgs::msg::TransformStamped transform;
@@ -536,6 +683,9 @@ int main(int argc, char ** argv)
   executor.add_node(nh);
 
   readParameters(nh);
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(nh->get_clock());
+  
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
   std::cout << "lidar_type: " << lidar_type << '\n';
   ivox_ = std::make_shared<IVoxType>(ivox_options_);
   //初始要发布的路径消息
@@ -607,20 +757,29 @@ int main(int argc, char ** argv)
       lid_topic, rclcpp::SensorDataQoS(),
       [](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { standard_pcl_cbk(msg); });
   }
-  auto sub_imu =
-    nh->create_subscription<sensor_msgs::msg::Imu>(imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
+  auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
+  qos.best_effort();
+  qos.durability_volatile();
+  auto odom_qos = rclcpp::QoS(rclcpp::KeepLast(5));
+  odom_qos.reliable();
+  odom_qos.durability_volatile();
+  auto sub_imu = nh->create_subscription<sensor_msgs::msg::Imu>(
+      imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
   auto pub_laser_cloud_full_res =
-    nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_registered", 20); //发布odom坐标系下点云，以及pcd
+      nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_registered",
+                                                          odom_qos);
   auto pub_laser_cloud_full_res_body =
-    nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_registered_body", 20);// 机体imu坐标系下点云
+      nh->create_publisher<sensor_msgs::msg::PointCloud2>(
+          "cloud_registered_body", 20);
   auto pub_laser_cloud_effect =
-    nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_effected", 20);
-  auto pub_laser_cloud_map = nh->create_publisher<sensor_msgs::msg::PointCloud2>("Laser_map", 20);
+      nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_effected", 20);
+  auto pub_laser_cloud_map =
+      nh->create_publisher<sensor_msgs::msg::PointCloud2>("Laser_map", 20);
   auto pub_odom_aft_mapped =
-    nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", 20);
+      nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", odom_qos);
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 20);
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
-
+  // checkTFRecordFile(pose_txt, tf_broadcaster); 
   //------------------------------------------------------------------------------------------------------
   signal(SIGINT, SigHandle);
   //500hz循环频率

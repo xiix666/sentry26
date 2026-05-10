@@ -22,7 +22,8 @@
 #include <algorithm>
 #include "rclcpp/rclcpp.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
-
+#include <limits>
+#include <cmath>
 const double INF_COST = DBL_MAX;
 const int UNKNOWN_COST = 255;
 const int OCCUPIED_COST = 254;
@@ -132,6 +133,7 @@ public:
   
     return false;
   }
+
   /**
    * @brief initialises the values of the start and goal points
    */
@@ -147,9 +149,12 @@ public:
   {
     return !(isSafe(src_.x, src_.y)) || !(isSafe(dst_.x, dst_.y));
   }
-
+  bool findNearestFreeCell(
+  const coordsM & src,
+  coordsM & result,
+  const int max_radius) const;
   int nodes_opened = 0;
-
+  bool moveStartAndGoalToNearestFreeCell(const int max_radius);
 protected:
   /// for the coordinates (x,y), it stores at node_position_[size_x_ * y + x],
   /// the pointer to the location at which the data of the node is present in nodes_data_

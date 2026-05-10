@@ -1,5 +1,6 @@
 #include "back_up_free_space.hpp"
-
+#include <limits>
+using ServiceResponseFuture = rclcpp::Client<nav2_msgs::srv::GetCostmap>::SharedFuture;
 namespace pb_nav2_behaviors
 {
 
@@ -48,14 +49,35 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
   }
 
   auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
-  auto result = costmap_client_->async_send_request(request);
-  if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-    RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
-    return nav2_behaviors::Status::FAILED;
-  }
+  // auto result = costmap_client_->async_send_request(request);
+  // if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+  //   RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
+  //   return nav2_behaviors::Status::FAILED;
+  // }
 
-  // get costmap
-  auto costmap = result.get()->map;
+  // // get costmap
+  // auto costmap = result.get()->map;
+  // using ServiceResponseFuture = rclcpp::Client<nav2_msgs::srv::GetCostmap>::SharedFuture;
+  auto response_callback = [this](ServiceResponseFuture future) {
+    try {
+      std::lock_guard<std::mutex> lock(costmap_mutex_);
+      latest_costmap_ = future.get()->map;
+      has_costmap_ = true;
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(logger_, "GetCostmap failed: %s", e.what());
+    }
+  };
+  costmap_client_->async_send_request(request, response_callback);
+  nav2_msgs::msg::Costmap costmap_copy;
+
+  {
+    std::lock_guard<std::mutex> lock(costmap_mutex_);
+    if (!has_costmap_) {
+      RCLCPP_WARN(logger_, "No costmap received yet");
+      return nav2_behaviors::Status::RUNNING;
+    }
+    costmap_copy = latest_costmap_;
+  }
 
   // if (!nav2_util::getCurrentPose(
   //       initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
@@ -80,22 +102,51 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
       ex.what());
     return nav2_behaviors::Status::FAILED;
   }
-  parseCostmapAndQuery(costmap);
-  float min_avg_cost = 255.0f;
+  parseCostmapAndQuery(costmap_copy);
+  // float min_avg_cost = 255.0f;
+  // float best_direction_rad = 0.0f;
+
+  int min_leading_obstacle_count = std::numeric_limits<int>::max();
+  float min_avg_cost = 256.0f;
   float best_direction_rad = 0.0f;
-
+  bool has_safe_direction = false;
+  
   for (int i = 0; i < self_save_sample_directions_; ++i) {
-      float direction_rad = 2.0f * static_cast<float>(M_PI) * i / self_save_sample_directions_;
-      std::vector<float> cost_list = getCostListInDirection(costmap, init_x, init_y, direction_rad);
-      if (isDirectionSafe(cost_list)) {
-          float avg_cost = calculateAvgCost(cost_list);
-          if (avg_cost < min_avg_cost) {
-              min_avg_cost = avg_cost;
-              best_direction_rad = direction_rad;
-
-          }
-      }
+    float direction_rad =
+      2.0f * static_cast<float>(M_PI) * i / self_save_sample_directions_;
+  
+    std::vector<float> cost_list =
+      getCostListInDirection(costmap_copy, init_x, init_y, direction_rad);
+  
+    if (cost_list.empty()) {
+      continue;
+    }
+  
+    int leading_obstacle_count = countLeadingObstacleCount(cost_list);
+    float avg_cost = calculateAvgCost(cost_list);
+  
+    if (!has_safe_direction ||
+        leading_obstacle_count < min_leading_obstacle_count ||
+        (leading_obstacle_count == min_leading_obstacle_count && avg_cost < min_avg_cost))
+    {
+      min_leading_obstacle_count = leading_obstacle_count;
+      min_avg_cost = avg_cost;
+      best_direction_rad = direction_rad;
+      has_safe_direction = true;
+    }
   }
+  
+  if (!has_safe_direction) {
+    RCLCPP_WARN(logger_, "BackUpFreeSpace failed to find any sampled direction.");
+    return nav2_behaviors::Status::FAILED;
+  }
+  
+  RCLCPP_WARN(
+    logger_,
+    "BackUpFreeSpace best direction: %.2f rad, leading_obstacles=%d, avg_cost=%.2f",
+    best_direction_rad,
+    min_leading_obstacle_count,
+    min_avg_cost);
 
   // Calculate move command
   twist_x_ = std::cos(best_direction_rad) * command->speed;
@@ -159,21 +210,85 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
     }
     RCLCPP_WARN(logger_, "service not available, waiting again...");
   }
+  requestCostmapAsync();
+  nav2_msgs::msg::Costmap costmap_copy;
+  {
+    std::lock_guard<std::mutex> lock(costmap_mutex_);
 
-  auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
-  auto result = costmap_client_->async_send_request(request);
-  if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-    RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
-    return nav2_behaviors::Status::FAILED;
+    if (!has_costmap_) {
+      RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "No costmap received yet, waiting...");
+      return nav2_behaviors::Status::RUNNING;
+    }
+
+    costmap_copy = latest_costmap_;
   }
 
-  auto costmap = result.get()->map;
-  int cost = parseCostmapAndQuery(costmap);
-  if (distance >= std::fabs(command_x_) || (cost >= 0 && cost <= 20)) {
+  // auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
+  // auto result = costmap_client_->async_send_request(request);
+  // if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+  //   RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
+  //   return nav2_behaviors::Status::FAILED;
+  // }
+
+  // auto costmap = result.get()->map;
+
+  int cost = parseCostmapAndQuery(costmap_copy);
+  if (distance >= std::fabs(command_x_) || (cost >= 0 && cost <= 150)) {
     stopRobot();
     return nav2_behaviors::Status::SUCCEEDED;
   }
+  if (!has_free_space_direction_) {
+    int min_leading_obstacle_count = std::numeric_limits<int>::max();
+    float min_avg_cost = 256.0f;
+    float best_direction_rad = 0.0f;
+    bool has_safe_direction = false;
 
+    for (int i = 0; i < self_save_sample_directions_; ++i) {
+      float direction_rad =
+        2.0f * static_cast<float>(M_PI) * i / self_save_sample_directions_;
+
+      std::vector<float> cost_list =
+        getCostListInDirection(costmap_copy, init_x, init_y, direction_rad);
+
+      if (cost_list.empty()) {
+        continue;
+      }
+
+      int leading_obstacle_count = countLeadingObstacleCount(cost_list);
+      float avg_cost = calculateAvgCost(cost_list);
+
+      if (!has_safe_direction ||
+          leading_obstacle_count < min_leading_obstacle_count ||
+          (leading_obstacle_count == min_leading_obstacle_count &&
+           avg_cost < min_avg_cost))
+      {
+        min_leading_obstacle_count = leading_obstacle_count;
+        min_avg_cost = avg_cost;
+        best_direction_rad = direction_rad;
+        has_safe_direction = true;
+      }
+    }
+
+    if (!has_safe_direction) {
+      RCLCPP_WARN(
+        logger_,
+        "BackUpFreeSpace failed to find any sampled direction.");
+      return nav2_behaviors::Status::FAILED;
+    }
+
+    twist_x_ = std::cos(best_direction_rad) * std::fabs(command_x_ >= 0.0 ? twist_x_ : twist_x_);
+    twist_y_ = std::sin(best_direction_rad) * std::fabs(twist_y_);
+    has_free_space_direction_ = true;
+
+    RCLCPP_WARN(
+      logger_,
+      "BackUpFreeSpace best direction: %.2f rad, leading_obstacles=%d, avg_cost=%.2f",
+      best_direction_rad,
+      min_leading_obstacle_count,
+      min_avg_cost);
+  }
   auto cmd_vel = std::make_unique<geometry_msgs::msg::Twist>();
   cmd_vel->linear.y = twist_y_;
   cmd_vel->linear.x = twist_x_;
@@ -182,7 +297,47 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
 
   return nav2_behaviors::Status::RUNNING;
 }
+void BackUpFreeSpace::requestCostmapAsync()
+{
+  if (!costmap_client_->service_is_ready()) {
+    RCLCPP_WARN_THROTTLE(
+      logger_, *clock_, 1000,
+      "GetCostmap service is not ready.");
+    return;
+  }
 
+  {
+    std::lock_guard<std::mutex> lock(costmap_mutex_);
+    if (costmap_request_in_flight_) {
+      return;
+    }
+    costmap_request_in_flight_ = true;
+  }
+
+  auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
+
+  auto response_callback = [this](ServiceResponseFuture future) {
+    try {
+      auto response = future.get();
+
+      std::lock_guard<std::mutex> lock(costmap_mutex_);
+      latest_costmap_ = response->map;
+      has_costmap_ = true;
+      costmap_request_in_flight_ = false;
+    } catch (const std::exception & e) {
+      {
+        std::lock_guard<std::mutex> lock(costmap_mutex_);
+        costmap_request_in_flight_ = false;
+      }
+
+      RCLCPP_ERROR(
+        logger_,
+        "GetCostmap failed: %s", e.what());
+    }
+  };
+
+  costmap_client_->async_send_request(request, response_callback);
+}
 int BackUpFreeSpace::parseCostmapAndQuery(const nav2_msgs::msg::Costmap& costmap) {
   const auto& metadata = costmap.metadata;
   float resolution = metadata.resolution;         
@@ -219,7 +374,21 @@ int BackUpFreeSpace::parseCostmapAndQuery(const nav2_msgs::msg::Costmap& costmap
   return c;
 
 }
+int BackUpFreeSpace::countLeadingObstacleCount(const std::vector<float>& cost_list) const
+{
+  const float OBSTACLE_THRESHOLD = 150.0f;
 
+  int count = 0;
+  for (float cost : cost_list) {
+    if (cost >= OBSTACLE_THRESHOLD) {
+      count++;
+    } else {
+      break;
+    }
+  }
+
+  return count;
+}
 void BackUpFreeSpace::visualize(
   geometry_msgs::msg::Pose2D pose, float radius, float first_safe_angle, float last_unsafe_angle)
 {

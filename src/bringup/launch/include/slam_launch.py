@@ -152,6 +152,17 @@ def generate_launch_description():
         ],
         arguments=["--ros-args", "--log-level", log_level],
     )
+    gicp_relocalization_node = Node(
+        package="small_gicp_relocalization",
+        executable="small_gicp_relocalization_node",
+        name="small_gicp_relocalization",
+        output="screen",
+        respawn=use_respawn,
+        respawn_delay=2.0,
+        parameters=[configured_params],
+        arguments=["--ros-args", "--log-level", log_level],
+    )
+
     start_pointcloud_to_laserscan_node = Node(
         package="pc2scan",
         executable="pc2scan_node",
@@ -247,6 +258,7 @@ def generate_launch_description():
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
     # ld.add_action(start_static_transform_node)
+    ld.add_action(gicp_relocalization_node)
     ld.add_action(special_area)
     ld.add_action(terrain_node)
 

@@ -119,11 +119,11 @@ protected:
   std::vector<geometry_msgs::msg::Point> gatherFreePoints(
     const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float radius);
   int parseCostmapAndQuery(const nav2_msgs::msg::Costmap& costmap) ;
-
+  void requestCostmapAsync();
   float findBestDirection(
     const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float start_angle,
     float end_angle, float radius, float angle_increment);
-
+    int countLeadingObstacleCount(const std::vector<float>& cost_list) const;
   void visualize(
     geometry_msgs::msg::Pose2D pose, float radius, float first_safe_angle, float last_unsafe_angle);
 
@@ -139,6 +139,12 @@ protected:
   bool visualize_;
   double self_save_sample_radius_ = 3.0;
   int self_save_sample_directions_ = 18;
+  nav2_msgs::msg::Costmap latest_costmap_;
+  bool has_costmap_ = false;
+  bool costmap_request_in_flight_{false};
+
+  bool has_free_space_direction_{false};
+  std::mutex costmap_mutex_;
 };
 
 }  // namespace pb_nav2_behaviors

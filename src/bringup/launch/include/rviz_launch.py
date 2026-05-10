@@ -2,12 +2,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
+# from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
+from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler, ExecuteProcess
 
 def generate_launch_description():
     # Get the launch directory
@@ -45,7 +45,10 @@ def generate_launch_description():
             ("/tf_static", "tf_static"),
         ],
     )
-
+    echo_cmd_vel_base_cmd = ExecuteProcess(
+        cmd=["ros2", "topic", "echo", "/cmd_vel_base"],
+        output="screen",
+    )
     exit_event_handler = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=start_rviz_cmd,
@@ -62,7 +65,7 @@ def generate_launch_description():
 
     # Add any conditioned actions
     ld.add_action(start_rviz_cmd)
-
+    ld.add_action(echo_cmd_vel_base_cmd)
     # Add other nodes and processes we need
     ld.add_action(exit_event_handler)
 

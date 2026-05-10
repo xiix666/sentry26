@@ -72,6 +72,12 @@ namespace xx_nav2_costmap_2d
   
     node->declare_parameter(name_ + ".obstacle_expand_size", 1);  // 膨胀格子数 1=3x3, 2=5x5
     node->get_parameter(name_ + ".obstacle_expand_size", obstacle_expand_size_);
+
+    node->declare_parameter(name_ + ".near_obstacle_radius", 0.6);
+    node->get_parameter(name_ + ".near_obstacle_radius", near_obstacle_radius_);
+
+    node->declare_parameter(name_ + ".low_gradient_threshold", 0.2);
+    node->get_parameter(name_ + ".low_gradient_threshold", low_gradient_threshold_);
     if (publish_voxel_) {
       voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
     }
@@ -218,7 +224,7 @@ void IntensityVoxelLayer::updateBounds(
   // 临时记录本次命中的体素
   std::unordered_set<unsigned int> hit_voxels;
   double now_sec = clock_->now().seconds();
-  // 第一步：遍历点云，更新体素命中计数
+
   for (const auto & obs : observations) {
     double sq_obstacle_max_range = obs.obstacle_max_range_ * obs.obstacle_max_range_;
     double sq_obstacle_min_range = obs.obstacle_min_range_ * obs.obstacle_min_range_;
@@ -237,7 +243,6 @@ void IntensityVoxelLayer::updateBounds(
       } else if (!worldToMap3D(px, py, pz, mx, my, mz)) continue;
       unsigned int voxel_idx = getVoxelIndex(mx, my, mz);
 
-      // 原有过滤逻辑（高度、强度、距离）
       if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
       if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
       double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
@@ -247,15 +252,36 @@ void IntensityVoxelLayer::updateBounds(
       // bool has_gradient_field = (it_grad != it_grad.end());
       // if (has_gradient_field) {
       gradient = *it_grad;
+      bool valid_gradient = std::isfinite(gradient) && gradient >= 0.0;
         // std::cout << "Point (" << px << ", " << py << ", " << pz << ") has gradient: " << gradient <<  "  " << max_gradient_threshold_ << std::endl;
-      if (gradient <= max_gradient_threshold_) continue;
+      double robot_dist = std::hypot(px - robot_x, py - robot_y);
+      bool gradient_obstacle = valid_gradient && gradient > max_gradient_threshold_;
+      // if (gradient <= max_gradient_threshold_) continue;
+      bool near_robot_obstacle = false;
+      if (!gradient_obstacle) {
+        near_robot_obstacle =
+          robot_dist <= near_obstacle_radius_ &&
+          pz >= min_obstacle_height_ &&
+          pz <= max_obstacle_height_ &&
+          *it_i > 0.3;
+      }
+      bool low_gradient_height_obstacle = false;
+      if (!gradient_obstacle && !near_robot_obstacle) {
+        low_gradient_height_obstacle =
+          valid_gradient &&
+          gradient >= low_gradient_threshold_ && gradient <= max_gradient_threshold_ &&
+          *it_i > 0.3 &&
+          *it_i < max_obstacle_intensity_ &&
+          pz >= 0.3 &&
+          pz <= 0.8;
+      }
+      if (!gradient_obstacle && !near_robot_obstacle && !low_gradient_height_obstacle) {
+        continue;
+      }
 
-      // }
-      // 增加连续命中计数
       hit_count_grid_[voxel_idx]++;
       hit_voxels.insert(voxel_idx);
 
-      // 标记体素到voxel_grid（原有逻辑）
       voxel_grid_.markVoxelInMap(mx, my, mz, mark_threshold_);
     }
   }
@@ -304,8 +330,10 @@ void IntensityVoxelLayer::updateBounds(
       mapToWorld(mx, my, wx, wy);
         bool found = false;
       for (auto& cell : active_obstacle_cells_) {
-        if (cell.wx == wx && cell.wy == wy) {
+        if (std::hypot(cell.wx - wx, cell.wy - wy) < resolution_ * 0.5) {
+          // std::cout << "Update obstacle cell (" << wx << ", " << wy << ") last hit time to " << cell.last_hit_time << "   " << sec <<"  ";
           cell.last_hit_time = sec;  
+          // std::cout << "New last hit time: " << cell.last_hit_time << std::endl;
           found = true;
           break;
         }
@@ -341,13 +369,21 @@ void IntensityVoxelLayer::updateBounds(
   
   //   ++it;
   // }
-  for (const auto& cell : active_obstacle_cells_) {
-    if (now_sec - cell.last_hit_time > obstacle_hold_time_) continue;
-
-    unsigned int mx, my;
-    if (worldToMap(cell.wx, cell.wy, mx, my)) {
-      markObstacleWithExpand(mx, my, cell.wx, cell.wy, min_x, min_y, max_x, max_y);
+  for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
+    if (now_sec - it->last_hit_time > obstacle_hold_time_) {
+      it = active_obstacle_cells_.erase(it);
+      continue;
     }
+  
+    unsigned int mx, my;
+    if (worldToMap(it->wx, it->wy, mx, my)) {
+      markObstacleWithExpand(
+        mx, my,
+        it->wx, it->wy,
+        min_x, min_y, max_x, max_y);
+    }
+  
+    ++it;
   }
   // 发布体素网格（原有逻辑）
   if (publish_voxel_) {

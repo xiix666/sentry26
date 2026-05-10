@@ -85,6 +85,8 @@ bool filter1(const LivoxCustomPoint& p)
     float d2 = p.x*p.x + p.y*p.y + p.z*p.z;
     if (d2 < L1_MIN_DIST)
         return false;
+    if (p.x > L1_X_MIN && p.x < L1_X_MAX)
+        return false;
     // Y 超出范围 → 丢掉
     if (p.x > L1_X_MIN && p.x < L1_X_MAX && p.y < L1_Y_MAX && p.y > L1_Y_MIN && p.z < L1_Z_MAX && p.z > L1_Z_MIN)
         return false;
@@ -105,8 +107,13 @@ bool filter2(const LivoxCustomPoint& p)
     float d2 = p.x*p.x + p.y*p.y + p.z*p.z;
     if (d2 < L2_MIN_DIST )
         return false;
+    // if (p.x > L2_X_MIN && p.x < L2_X_MAX)
+    //     return false;
     if (p.x > L2_X_MIN && p.x < L2_X_MAX && p.y < L2_Y_MAX && p.y > L2_Y_MIN && p.z < L2_Z_MAX && p.z > L2_Z_MIN)
         return false;
+
+    // if (p.z < L2_Z_MAX && p.z > L2_Z_MIN)
+    //     return false;
 
     return true;
 }

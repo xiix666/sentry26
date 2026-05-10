@@ -172,9 +172,23 @@ void ThetaStarPlanner::getPlan(nav_msgs::msg::Path & global_path)
 {
   std::vector<coordsW> path;
   if (planner_->isUnsafeToPlan()) {
-    RCLCPP_ERROR(logger_, "Either of the start or goal pose are an obstacle! ");
-    global_path.poses.clear();
-  } else if (planner_->generatePath(path)) {
+    RCLCPP_WARN(
+      logger_,
+      "Start or goal is in obstacle, trying to move it to nearest free cell..."
+    );
+
+    if (!planner_->moveStartAndGoalToNearestFreeCell(20)) {
+      RCLCPP_ERROR(
+        logger_,
+        "Could not find free cell around start or goal pose"
+      );
+      global_path.poses.clear();
+      global_path.header.stamp = clock_->now();
+      global_path.header.frame_id = global_frame_;
+      return;
+    }
+  }
+  if (planner_->generatePath(path)) {
     global_path = linearInterpolation(path, planner_->costmap_->getResolution());
   } else {
     RCLCPP_ERROR(logger_, "Could not generate path between the given poses");

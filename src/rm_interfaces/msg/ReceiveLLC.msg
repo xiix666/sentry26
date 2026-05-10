@@ -10,10 +10,15 @@ int32 stage_remain_time
 int32 red_blue
 
 # 己方信息
-# 己方机器人血量
 int32 self_hero_hp
-int32 self_infantry_hp
+int32 self_engineer_hp
+int32 self_infantry3_hp
+int32 self_infantry4_hp
 int32 self_sentry_hp
+int32 self_outpost_hp
+# 己方基地血量
+int32 self_base_hp
+
 
 # 哨兵位置
 float32 self_pose_x
@@ -21,14 +26,30 @@ float32 self_pose_y
 # 允许发弹量
 int32 bullets_allowance
 
-# 队友位置
-float32 hero_pose_x
-float32 hero_pose_y
-float32 infantry_pose_x
-float32 infantry_pose_y
+# 己方机器人位置（单位：m，场地坐标系）
+# 己方英雄机器人位置
+float32 self_hero_pose_x
+float32 self_hero_pose_y
+# 己方工程机器人位置
+float32 self_engineer_pose_x
+float32 self_engineer_pose_y
+# 己方 3 号步兵机器人位置
+float32 self_infantry3_pose_x
+float32 self_infantry3_pose_y
+# 己方 4 号步兵机器人位置
+float32 self_infantry4_pose_x
+float32 self_infantry4_pose_y
 
 # 联盟赛专用
-# 中心增益点占领情况
-int32 center_status
 # 剩余金币
 int32 remain_gold
+
+# 增益状态
+# 回血增益
+int32 recovery_buff
+# 防御增益
+int32 defence_buff
+# 防御 debuff
+int32 defence_debuff
+# 攻击增益
+int32 attack_buff

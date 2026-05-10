@@ -1,4 +1,4 @@
-<library path="nav2_theta_star_planner">
+<library path="theta_star_planner">
     <class name="theta_star_planner/ThetaStarPlanner" type="theta_star_planner::ThetaStarPlanner" base_class_type="nav2_core::GlobalPlanner">
         <description>An implementation of the Theta* Algorithm</description>
     </class>

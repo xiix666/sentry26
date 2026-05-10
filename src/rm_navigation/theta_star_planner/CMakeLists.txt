@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(nav2_theta_star_planner)
+project(theta_star_planner)
 
 find_package(ament_cmake REQUIRED)
 find_package(builtin_interfaces REQUIRED)

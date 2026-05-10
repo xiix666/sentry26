@@ -368,23 +368,16 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
   auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
 
-  // 核心改动：替换宏判断为参数判断
+  bool carrot_valid = std::isfinite(carrot_pose.pose.position.x) && 
+                      std::isfinite(carrot_pose.pose.position.y);
+  if (!carrot_valid) {
+    RCLCPP_WARN(logger_, "Carrot pose invalid (NaN/Inf), return zero vel");
+    return cmd_vel;
+  }
   if (!use_mpc_control_) {  
     carrot_pub_->publish (createCarrotMsg(carrot_pose));
   } else {
-    // 路径点筛选（PID/MPC通用，仅过滤不排序，保留原始路径顺序）
-    // double angular_vel = 0.0;
-    // for (const auto &p : transformed_plan.poses) {
-    //   double dist = hypot(p.pose.position.x, p.pose.position.y);
-    //   if (dist >= lookahead_dist * 0.5) {  
-    //     valid_path_poses.push_back(p);
-    //   }
-    // }
-    // if (valid_path_poses.empty()) {
-    //   RCLCPP_WARN(logger_, "Valid path poses is still empty, return zero velocity");
-    //   return cmd_vel;
-    // }
-    // lin_dist = hypot(valid_path_poses[0].pose.position.x, valid_path_poses[0].pose.position.y);
+
     for (const auto &p : transformed_plan.poses) {
 
       double dist_x = p.pose.position.x;
@@ -393,7 +386,6 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
       if (dist >= min_dist_ && dist <= lookahead_dist_) {
         valid_path_poses.push_back(p);
-        // std::cout << p.pose.position.x << " " << p.pose.position.y << std::endl;
       }
     }
     if(valid_path_poses.empty()) {
@@ -405,7 +397,6 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   
         if (dist > 0 && dist <= lookahead_dist_) {
           valid_path_poses.push_back(p);
-          // std::cout << p.pose.position.x << " " << p.pose.position.y << std::endl;
         }
       }
     }
@@ -415,40 +406,30 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
   }
 
-  // 核心改动：替换宏判断为参数判断
   if (!use_mpc_control_) {
-    // 计算平动距离、角度（PID/MPC通用）
     lin_dist = hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
     theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
     angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
 
     if (use_rotate_to_heading_) {
       if (fabs(angle_to_goal) > use_rotate_to_heading_treshold_) {
-        lin_dist = 0;  // 旋转阶段，平动速度为0
+        lin_dist = 0;  
       }
     }
-
-    // 初始化控制输出（PID模式）
-    auto angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
   }
 
   double cmd_vx = 0.0, cmd_vy = 0.0;
   double lin_vel = 0.0;
-  double angular_vel = 0.0;  // 统一声明angular_vel
+  double angular_vel = 0.0;  
 
   if (use_mpc_control_) {
-    // ==============================================
-    // MPC控制模式逻辑
-    // ==============================================
+
     Eigen::Vector2d u_opt(0.0, 0.0);
     if (lin_dist > 0 && !valid_path_poses.empty()) {
-      // 生成MPC参考序列
       std::vector<Eigen::Vector2d> mpc_ref_seq = samplePathToRefSeq(valid_path_poses, mpc_Np_);
-      // 打印MPC参考序列（调试用）
       for(int i=0;i<mpc_ref_seq.size();i++){
         std::cout << mpc_ref_seq[i](0) << " " << mpc_ref_seq[i](1) << std::endl;
       }
-      // MPC求解
       Eigen::Vector2d curr_x(0.0, 0.0);
       mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
       u_opt = mpc_controller_->solve(curr_x, mpc_ref_seq);
@@ -456,45 +437,38 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
       cmd_vy = u_opt(1);
     }
 
-    // MPC速度限制与缩放（曲率+接近目标点）
     if (lin_dist > 0) {
       applyCurvatureLimitation_mpc(transformed_plan, carrot_pose, cmd_vx, cmd_vy);
       applyApproachVelocityScaling_mpc(transformed_plan, cmd_vx, cmd_vy);
     }
 
-    // MPC模式下的旋转速度（复用PID）
     angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
     angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
 
   } else {
-    // ==============================================
-    // PID控制模式逻辑
-    // ==============================================
-    // 计算平动距离、角度
     lin_dist = hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
     theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
     angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
 
     if (use_rotate_to_heading_) {
       if (fabs(angle_to_goal) > use_rotate_to_heading_treshold_) {
-        lin_dist = 0;  // 旋转阶段，平动速度为0
+        lin_dist = 0;  
       }
     }
 
     if (lin_dist > 0) {
-      // PID计算平动速度
       lin_vel = move_pid_->calculate(lin_dist, 0);
-      // std::cout << " lin_vel (before limits): " << lin_vel << std::endl;
-      // PID速度限制与缩放（曲率+接近目标点）
+      if (!std::isfinite(lin_vel)) {
+        RCLCPP_WARN(logger_, "PID returned NaN/Inf, using zero vel");
+        lin_vel = 0.0;
+      }
       applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel);
       applyApproachVelocityScaling(transformed_plan, lin_vel);
-      // 全向机器人速度分解（极坐标→直角坐标）
       cmd_vx = lin_vel * cos(theta_dist);
       cmd_vy = lin_vel * sin(theta_dist);
       RCLCPP_DEBUG(logger_, "PID output: lin_vel=%.3f, vx=%.3f, vy=%.3f", lin_vel, cmd_vx, cmd_vy);
     }
 
-    // SG滤波（仅PID模式使用，可选）
     if (impl_->enable_sg_filter_ && lin_dist > 0) {
       double filtered_lin_vel = impl_->linear_vel_filter_->filter(lin_vel);
       cmd_vx = filtered_lin_vel * cos(theta_dist);
@@ -502,38 +476,40 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
       RCLCPP_DEBUG(logger_, "SG filtered vel: %.3f", filtered_lin_vel);
     }
 
-    // PID模式下的旋转速度
     angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
   }
-
-  // nav_msgs::msg::Path costmap_frame_local_plan;
-  // int sample_points = 10;
-  // int plan_size = transformed_plan.poses.size();
-  // for (int i = 0; i < sample_points; ++i) {
-  //   int index = std::min((i * plan_size) / sample_points, plan_size - 1);
-  //   geometry_msgs::msg::PoseStamped map_pose;
-  //   transformPose(costmap_ros_->getGlobalFrameID(), transformed_plan.poses[index], map_pose);
-  //   costmap_frame_local_plan.poses.push_back(map_pose);
-  // }
-
-  // // 若启用碰撞检测，检测到碰撞则停止机器人（PID/MPC通用）
-  // if (isCollisionDetected(costmap_frame_local_plan)) {
-  //   RCLCPP_WARN(logger_, "Collision detected! Stopping robot.");
-  //   impl_->linear_vel_filter_->reset();
-  //   impl_->angular_vel_filter_->reset();
-  //   cmd_vel.twist.linear.x = 0.0;
-  //   cmd_vel.twist.linear.y = 0.0;
-  //   cmd_vel.twist.angular.z = 0.0;
-  //   return cmd_vel;
-  // }
-
-  // 赋值最终控制指令
+  if (!std::isfinite(cmd_vx)) cmd_vx = 0.0;
+  if (!std::isfinite(cmd_vy)) cmd_vy = 0.0;
+  if (!std::isfinite(angular_vel)) angular_vel = 0.0;
+    if (has_prev_cmd_vel_) {
+    const double max_delta_v = acc_max_ * control_duration_;
+  
+    const double prev_vx = prev_cmd_vel_.twist.linear.x;
+    const double prev_vy = prev_cmd_vel_.twist.linear.y;
+  
+    const double dvx = cmd_vx - prev_vx;
+    const double dvy = cmd_vy - prev_vy;
+    const double delta_v_norm = std::hypot(dvx, dvy);
+  
+    if (delta_v_norm > max_delta_v && delta_v_norm > 1e-6) {
+      const double scale = max_delta_v / delta_v_norm;
+      cmd_vx = prev_vx + dvx * scale;
+      cmd_vy = prev_vy + dvy * scale;
+    }
+  }
+  double max_linear_vel = 4.0;   // 防止出意外再限制一下最大线速度
+  double speed_mag = std::hypot(cmd_vx, cmd_vy);
+  if (speed_mag > max_linear_vel) {
+    double scale = max_linear_vel / speed_mag;
+    cmd_vx *= scale;
+    cmd_vy *= scale;
+  }
   cmd_vel.twist.linear.x = cmd_vx;
   cmd_vel.twist.linear.y = cmd_vy;
   cmd_vel.twist.angular.z = angular_vel;
 
-  prev_cmd_vel_ = cmd_vel; // 存储本次输出的速度
-  has_prev_cmd_vel_ = true; // 标记已有缓存
+  prev_cmd_vel_ = cmd_vel; 
+  has_prev_cmd_vel_ = true; 
   return cmd_vel;
 }
 
@@ -815,7 +791,7 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
 std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCornerPts(
   const std::vector<geometry_msgs::msg::PoseStamped> &path) 
 {
-  if (path.size() < 2)
+  if (path.size() < 4)
       return path;
   const double OBSTACLE_NEAR_DISTANCE = 0.3;
   // cut zigzag segment
@@ -858,16 +834,165 @@ std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCor
       if (cost3 < cost1 + cost2) {
           cost1 = cost3;  
       } else {
-
           optimized_path.push_back(path[i]);
           cost1 = euclideanDistance(pose1, pose2);
           prev_pose = pose1;
-          
       }
   }
-
+  // for (size_t i = 0; i < optimized_path.size(); ++i) {
+  //   const auto &p = optimized_path[i].pose.position;
+  //   std::cout << "  [" << i << "]: (" 
+  //             << std::fixed << std::setprecision(3) 
+  //             << p.x << ", " << p.y << ")" << std::endl;
+  // }
   optimized_path.push_back(path.back());
+  // auto final_path = smoothPathCorners(
+  //   optimized_path,
+  //   0.3,    // 平滑半径（米）
+  //   10,       // 插5个点足够顺滑
+  //   150.0,    // 150度以内才认为是拐角
+  //   3
+  // );
+  // return final_path;
   return optimized_path;
+}
+std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::smoothPathCorners(
+  const std::vector<geometry_msgs::msg::PoseStamped>& path,
+  double smooth_radius = 0.25,
+  int num_interpolation = 5,
+  double angle_tol_deg = 150.0,
+  int skip_points = 5)
+{
+  if (path.size() < 3)
+      return path;
+
+  std::vector<geometry_msgs::msg::PoseStamped> smoothed;
+  const double ANGLE_TOL_RAD = angle_tol_deg * M_PI / 180.0;
+
+  std::vector<bool> in_corner_region(path.size(), false);
+  std::vector<bool> is_corner_center(path.size(), false);
+
+  for (size_t i = skip_points; i < path.size() - skip_points; ++i)
+  {
+    const auto& p0 = path[i - skip_points].pose.position;
+    const auto& p1 = path[i].pose.position;
+    const auto& p2 = path[i + skip_points].pose.position;
+
+    double dx1 = p0.x - p1.x;
+    double dy1 = p0.y - p1.y;
+    double dx2 = p2.x - p1.x;
+    double dy2 = p2.y - p1.y;
+
+    double len1 = hypot(dx1, dy1);
+    double len2 = hypot(dx2, dy2);
+    if (len1 < 0.01 || len2 < 0.01) continue;
+
+    double ux1 = dx1 / len1;
+    double uy1 = dy1 / len1;
+    double ux2 = dx2 / len2;
+    double uy2 = dy2 / len2;
+
+    double dot = ux1 * ux2 + uy1 * uy2;
+    dot = std::clamp(dot, -1.0, 1.0);
+    double angle = acos(dot);
+
+    if (angle < ANGLE_TOL_RAD)
+    {
+      is_corner_center[i] = true;
+      for (int j = -skip_points; j <= skip_points; ++j)
+      {
+        size_t idx = i + j;
+        if (idx >= 0 && idx < path.size())
+          in_corner_region[idx] = true;
+      }
+    }
+  }
+
+  size_t i = 0;
+  while (i < path.size())
+  {
+    // ==============================================
+    // ✅ 非拐点区域：直接保留所有原始点
+    // ==============================================
+    if (!in_corner_region[i])
+    {
+      smoothed.push_back(path[i]);
+      i++;
+      continue;
+    }
+
+    size_t corner_center = i;
+    while (corner_center < path.size() && !is_corner_center[corner_center])
+      corner_center++;
+
+    if (corner_center >= path.size() - skip_points)
+    {
+
+      while (i < path.size())
+      {
+        smoothed.push_back(path[i]);
+        i++;
+      }
+      break;
+    }
+
+    size_t idx0 = corner_center - skip_points;
+    size_t idx2 = corner_center + skip_points;
+
+    const auto& p0 = path[idx0].pose.position;
+    const auto& p1 = path[corner_center].pose.position;
+    const auto& p2 = path[idx2].pose.position;
+
+    double dx1 = p0.x - p1.x;
+    double dy1 = p0.y - p1.y;
+    double dx2 = p2.x - p1.x;
+    double dy2 = p2.y - p1.y;
+
+    double len1 = hypot(dx1, dy1);
+    double len2 = hypot(dx2, dy2);
+    if (len1 < 0.01 || len2 < 0.01)
+    {
+
+      while (i <= idx2 && i < path.size())
+      {
+        smoothed.push_back(path[i]);
+        i++;
+      }
+      continue;
+    }
+
+    double ux1 = dx1 / len1;
+    double uy1 = dy1 / len1;
+    double ux2 = dx2 / len2;
+    double uy2 = dy2 / len2;
+
+    double d = smooth_radius;
+
+    auto start = path[corner_center];
+    start.pose.position.x = p1.x - ux1 * d;
+    start.pose.position.y = p1.y - uy1 * d;
+
+    auto end = path[corner_center];
+    end.pose.position.x = p1.x + ux2 * d;
+    end.pose.position.y = p1.y + uy2 * d;
+
+    smoothed.push_back(path[idx0]);
+
+    for (int j = 1; j <= num_interpolation; ++j)
+    {
+      double t = (double)j / (num_interpolation + 1);
+      geometry_msgs::msg::PoseStamped pt;
+      pt.header = path[corner_center].header;
+      pt.pose.position.x = start.pose.position.x * (1 - t) + end.pose.position.x * t;
+      pt.pose.position.y = start.pose.position.y * (1 - t) + end.pose.position.y * t;
+      pt.pose.orientation = path[corner_center].pose.orientation;
+      smoothed.push_back(pt);
+    }
+
+    i = idx2 + 1;
+  }
+
+  return smoothed;
 }
 double OmniPidPursuitController::euclideanDistance(
   const geometry_msgs::msg::PoseStamped & p1,
@@ -935,10 +1060,10 @@ bool OmniPidPursuitController::checkLineCollision(
           if (index < static_cast<size_t>(size_x * size_y)) {
               unsigned char cost = costmap->getCharMap()[index]; 
               
-              RCLCPP_DEBUG(logger_, "Grid(%d, %d) -> cost=%d", x, y, (int)cost);
+              // RCLCPP_DEBUG(logger_, "Grid(%d, %d) -> cost=%d", x, y, (int)cost);
 
               if (cost >= 120) {
-                  RCLCPP_WARN(logger_, "COLLISION DETECTED at Grid(%d, %d), cost = %d", x, y, (int)cost);
+                  // RCLCPP_WARN(logger_, "COLLISION DETECTED at Grid(%d, %d), cost = %d", x, y, (int)cost);
                   return true;
               }
           }

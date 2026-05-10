@@ -55,18 +55,21 @@ public:
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+        auto odom_qos = rclcpp::QoS(rclcpp::KeepLast(5));
+        odom_qos.reliable();
+        odom_qos.durability_volatile();
         // 初始化发布者
         pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic_, 5);
         if (tran_odom_) {
             pub_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_out_, 5);
             sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-                odom_in_, 20, std::bind(&PointCloudFrameTrans::odomCallback, this, std::placeholders::_1));
+                odom_in_, odom_qos, std::bind(&PointCloudFrameTrans::odomCallback, this, std::placeholders::_1));
         }
         pub_base_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_base_out_, 5); // odom -> base
         std::cout << "tran节点启动" << std::endl;
         // 订阅原始点云消息
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            input_topic_, 20, std::bind(&PointCloudFrameTrans::pointCloudCallback, this, std::placeholders::_1));
+            input_topic_, odom_qos, std::bind(&PointCloudFrameTrans::pointCloudCallback, this, std::placeholders::_1));
         
     }
 

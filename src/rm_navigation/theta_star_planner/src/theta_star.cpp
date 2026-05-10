@@ -259,4 +259,86 @@ void ThetaStar::initializePosn(int size_inc)
     node_position_.push_back(nullptr);
   }
 }
+bool ThetaStar::moveStartAndGoalToNearestFreeCell(const int max_radius)
+{
+  if (!isSafe(src_.x, src_.y)) {
+    coordsM new_src{};
+
+    if (!findNearestFreeCell(src_, new_src, max_radius)) {
+      return false;
+    }
+
+    src_ = new_src;
+  }
+
+  if (!isSafe(dst_.x, dst_.y)) {
+    coordsM new_dst{};
+
+    if (!findNearestFreeCell(dst_, new_dst, max_radius)) {
+      return false;
+    }
+
+    dst_ = new_dst;
+  }
+
+  return true;
+}
+bool ThetaStar::findNearestFreeCell(
+  const coordsM & src,
+  coordsM & result,
+  const int max_radius) const
+{
+  const int size_x = static_cast<int>(costmap_->getSizeInCellsX());
+  const int size_y = static_cast<int>(costmap_->getSizeInCellsY());
+
+  if (src.x < 0 || src.y < 0 || src.x >= size_x || src.y >= size_y) {
+    return false;
+  }
+
+  if (isSafe(src.x, src.y)) {
+    result = src;
+    return true;
+  }
+
+  for (int r = 1; r <= max_radius; ++r) {
+    double best_dist_sq = std::numeric_limits<double>::max();
+    bool found = false;
+    coordsM best{};
+
+    for (int dx = -r; dx <= r; ++dx) {
+      for (int dy = -r; dy <= r; ++dy) {
+        // 只检查当前这一圈的边界，避免重复检查内圈
+        if (std::abs(dx) != r && std::abs(dy) != r) {
+          continue;
+        }
+
+        const int nx = src.x + dx;
+        const int ny = src.y + dy;
+
+        if (nx < 0 || ny < 0 || nx >= size_x || ny >= size_y) {
+          continue;
+        }
+
+        if (!isSafe(nx, ny)) {
+          continue;
+        }
+
+        const double dist_sq = static_cast<double>(dx * dx + dy * dy);
+
+        if (dist_sq < best_dist_sq) {
+          best_dist_sq = dist_sq;
+          best = coordsM{nx, ny};
+          found = true;
+        }
+      }
+    }
+
+    if (found) {
+      result = best;
+      return true;
+    }
+  }
+
+  return false;
+}
 }  //  namespace theta_star

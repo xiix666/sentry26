@@ -25,13 +25,18 @@ rosidl_generate_interfaces(
   "msg/LidarMsg.msg"
   "msg/NavMsg.msg"
   "msg/ReceiveMsg.msg"
-  "msg/SendToLidarMsg.msg"
   "msg/ShootMsg.msg"
   "msg/ShootOnly.msg"
   "msg/ShootPriority.msg"
   "msg/SpecialMsg.msg"
   "msg/ReceiveLLC.msg"
+  "msg/RadarProposedNavGoal.msg"
+  "msg/SentryNavFeedback.msg"
+  "msg/SentryLockEnemy.msg"
   "msg/StatusMsg.msg"
+  "msg/SendToLidarMsg.msg"
+  "msg/NoEngineer.msg"
+  "msg/EnemyInvincible.msg"
   DEPENDENCIES geometry_msgs
 )
 

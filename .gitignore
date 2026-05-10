@@ -17,3 +17,4 @@ rosbag2_*
 # 临时日志/缓存
 *.log
 *.cache
+.history

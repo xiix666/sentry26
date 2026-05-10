@@ -36,6 +36,9 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   receive_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveMsg>("/receive_pack",rclcpp::QoS(10));
   receiveLLC_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveLLC>("/receiveLLC_pack",rclcpp::QoS(10));
   lidar_pub_ = this->create_publisher<rm_interfaces::msg::LidarMsg>("/lidar_pack",rclcpp::QoS(10));
+  decision_pub_ = this->create_publisher<std_msgs::msg::Int32>("/decision_change", rclcpp::QoS(10));
+  // goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose_op",10);
+  goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose_op",10);
   pub_speed_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/self_speed", rclcpp::QoS(10));
   try {
     serial_driver_->init_port(device_name_, *device_config_);
@@ -51,7 +54,13 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   }
 
   // Create Subscription
-  angle_sub_ = this->create_subscription<rm_interfaces::msg::AngleMsg>(
+  special_area_angle_pub_ = this->create_subscription<std_msgs::msg::Float32>(
+    "/special_area_angle", rclcpp::QoS(10),
+    std::bind(&RMSerialDriver::specialAreaAngleData, this, std::placeholders::_1));
+  area_status_pub_ = this->create_subscription<std_msgs::msg::Int32>(
+    "/area_status", rclcpp::QoS(10),
+    std::bind(&RMSerialDriver::areaStatusData, this, std::placeholders::_1));
+  angle_sub_ = this->create_subscription<geometry_msgs::msg::Point32>(
     "/angle_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::angleData, this, std::placeholders::_1));
   shoot_mode_sub_ = this->create_subscription<rm_interfaces::msg::ShootMsg>(
@@ -180,7 +189,7 @@ void RMSerialDriver::receiveData()
           pub_pack.remain_gold = packet.remain_gold;
           pub_pack.operator_x = packet.operator_x;
           pub_pack.operator_y = packet.operator_y;
-          pub_pack.decision_code = packet.decision_code;
+          
           pub_pack.heat_flag = packet.heat_flag;
 
           receive_pub_->publish(pub_pack);
@@ -212,30 +221,47 @@ void RMSerialDriver::receiveData()
           // rclcpp::Time now_time = rclcpp::Clock().now() + rclcpp::Duration::from_seconds(timestamp_offset_);
           rm_interfaces::msg::ReceiveLLC pub_pack;
           geometry_msgs::msg::Point pub_speed;
-
+          geometry_msgs::msg::PoseStamped pose_pack;
+          std_msgs::msg::Int32 decision_pack;
           pub_pack.game_progress = packet.game_progress;
           pub_pack.stage_remain_time = packet.stage_remain_time;
           pub_pack.red_blue = packet.red_blue;
           pub_pack.self_hero_hp = packet.self_hero_hp;
-          pub_pack.self_infantry_hp = packet.self_infantry_hp;
+          pub_pack.self_engineer_hp = packet.self_engineer_hp;
+          pub_pack.self_infantry3_hp = packet.self_infantry3_hp;
+          pub_pack.self_infantry4_hp = packet.self_infantry4_hp;
           pub_pack.self_sentry_hp = packet.self_sentry_hp;
+          pub_pack.self_outpost_hp = packet.self_outpost_hp;
+          pub_pack.self_base_hp = packet.self_base_hp;
 
           pub_pack.self_pose_x = packet.self_pose_x;
           pub_pack.self_pose_y = packet.self_pose_y;
           pub_pack.bullets_allowance = packet.bullets_allowance;
-          pub_pack.hero_pose_x = packet.hero_pose_x;
-          pub_pack.hero_pose_y = packet.hero_pose_y;
-          pub_pack.infantry_pose_x = packet.infantry_pose_x;
-          pub_pack.infantry_pose_y = packet.infantry_pose_y;
+          pub_pack.self_hero_pose_x = packet.self_hero_pose_x;
+          pub_pack.self_hero_pose_y = packet.self_hero_pose_y;
+          pub_pack.self_engineer_pose_x = packet.self_engineer_pose_x;
+          pub_pack.self_engineer_pose_y = packet.self_engineer_pose_y;
+          pub_pack.self_infantry3_pose_x = packet.self_infantry3_pose_x;
+          pub_pack.self_infantry3_pose_y = packet.self_infantry3_pose_y;
+          pub_pack.self_infantry4_pose_x = packet.self_infantry4_pose_x;
+          pub_pack.self_infantry4_pose_y = packet.self_infantry4_pose_y;
           // pub_pack.center_status = packet.center_status;
-          pub_pack.center_status = 0;
+          // pub_pack.center_status = 0;
           pub_pack.remain_gold = packet.remain_gold;
-
+          pub_pack.recovery_buff = packet.recovery_buff;
+          pub_pack.defence_buff = packet.defence_buff;
+          pub_pack.defence_debuff = packet.defence_debuff;
+          pub_pack.attack_buff = packet.attack_buff;
           receiveLLC_pub_->publish(pub_pack);
           pub_speed.x = packet.self_speed_x;
           pub_speed.y = packet.self_speed_y;
           pub_speed.z = 0.0;
           pub_speed_pub_->publish(pub_speed);
+          pose_pack.pose.position.x = packet.operator_x;
+          pose_pack.pose.position.y = packet.operator_y;
+          decision_pack.data = packet.decision_node;
+          decision_pub_->publish(decision_pack);
+          goal_pub_->publish(pose_pack);
       }
         else {
         RCLCPP_ERROR(get_logger(), "A4 CRC error!");
@@ -329,9 +355,10 @@ else {
   }
 }
 
-void RMSerialDriver::angleData(const rm_interfaces::msg::AngleMsg::SharedPtr msg)
+void RMSerialDriver::angleData(const geometry_msgs::msg::Point32::SharedPtr msg)
 {
-    angle = msg->angle;
+    angle = msg->x;
+    pitch = msg->y;
 }
 void RMSerialDriver::stanceData(const rm_interfaces::msg::StatusMsg::SharedPtr msg)
 {
@@ -361,7 +388,14 @@ void RMSerialDriver::gimbalAngleData(const std_msgs::msg::Float32::SharedPtr msg
 {
     gimbal_angle = msg->data;
 }
-
+void RMSerialDriver::specialAreaAngleData(const std_msgs::msg::Float32::SharedPtr msg)
+{
+    area_angle = msg->data;
+}
+void RMSerialDriver::areaStatusData(const std_msgs::msg::Int32::SharedPtr msg)
+{
+    area_status = msg->data;
+}
 void RMSerialDriver::sendEnemyPosesData(const rm_interfaces::msg::SendToLidarMsg::SharedPtr msg)
 {
     std::lock_guard<std::mutex> lock(send_enemy_poses_mutex_);
@@ -404,12 +438,21 @@ void RMSerialDriver::sendData()
       packet.speed_y = speed_y;
     }
 
-    // packet.angle = (std::abs(angle_sp) > ANGLE_EPSILON) ? angle_sp : angle;
-    packet.angle = spin_enable ? angle : gimbal_angle;
+    if (area_status == 1) {
+      packet.angle = gimbal_angle;
+      packet.pitch = 0.0;
+    } else if (area_status == 2) {
+      packet.angle = area_angle;
+      packet.pitch = 0.0;
+    } else {
+      packet.angle = angle;
+      packet.pitch = pitch;
+    }
+    // packet.angle = spin_enable ? angle : gimbal_angle;
     // packet.angle = angle;
     packet.shoot_mode = shoot_mode;
-    // packet.special_number = special_number;
-    packet.spin_enable = spin_enable;
+    packet.area_status = area_status;
+    // packet.spin_enable = spin_enable;
     packet.nav_enable = nav_enable;
     packet.sentry_stance = sentry_stance;
     {
