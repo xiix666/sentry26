@@ -78,10 +78,36 @@ namespace xx_nav2_costmap_2d
 
     node->declare_parameter(name_ + ".low_gradient_threshold", 0.2);
     node->get_parameter(name_ + ".low_gradient_threshold", low_gradient_threshold_);
+    
+    node->declare_parameter(name_ + ".use_static_obstacle_area", false);
+    node->get_parameter(name_ + ".use_static_obstacle_area", use_static_obstacle_area_);
+
+    node->declare_parameter(name_ + ".static_obs_min_x", 0.0);
+    node->declare_parameter(name_ + ".static_obs_min_y", 0.0);
+    node->declare_parameter(name_ + ".static_obs_max_x", 0.0);
+    node->declare_parameter(name_ + ".static_obs_max_y", 0.0);
+    node->declare_parameter(name_ + ".static_obs2_min_x", 0.0);
+    node->declare_parameter(name_ + ".static_obs2_min_y", 0.0);
+    node->declare_parameter(name_ + ".static_obs2_max_x", 0.0);
+    node->declare_parameter(name_ + ".static_obs2_max_y", 0.0);
+    node->get_parameter(name_ + ".static_obs2_min_x", static_obs2_min_x_);
+    node->get_parameter(name_ + ".static_obs2_min_y", static_obs2_min_y_);
+    node->get_parameter(name_ + ".static_obs2_max_x", static_obs2_max_x_);
+    node->get_parameter(name_ + ".static_obs2_max_y", static_obs2_max_y_);
+    node->get_parameter(name_ + ".static_obs_min_x", static_obs_min_x_);
+    node->get_parameter(name_ + ".static_obs_min_y", static_obs_min_y_);
+    node->get_parameter(name_ + ".static_obs_max_x", static_obs_max_x_);
+    node->get_parameter(name_ + ".static_obs_max_y", static_obs_max_y_);
     if (publish_voxel_) {
       voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
     }
-  
+    rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
+    "/rm_task",
+    rclcpp::QoS(10),
+    [this](const std_msgs::msg::Int32::SharedPtr msg)
+    {
+      rm_task_.store(msg->data, std::memory_order_relaxed);
+    });
     matchSize();
   }
 
@@ -166,6 +192,132 @@ inline unsigned int IntensityVoxelLayer::countNeighborhoodVoxels(unsigned int mx
   }
   return count;
 }
+void IntensityVoxelLayer::markStaticObstacleArea(
+  double robot_x, double robot_y,
+  double * min_x, double * min_y,
+  double * max_x, double * max_y)
+{
+  if (!use_static_obstacle_area_) {
+    return;
+  }
+
+  const double x1 = 8.784;
+  const double y1 = 5.488;
+  const double x2 = 5.861;
+  const double y2 = 1.669;
+
+  const double px_limit = 6.021;
+  const double py_limit = -5.304;
+
+  const double vx = x1 - x2;
+  const double vy = y1 - y2;
+
+  const double qx = robot_x - x2;
+  const double qy = robot_y - y2;
+
+  const double cross = vx * qy - vy * qx;
+
+  const bool left_down_of_line = cross >= 0.0;
+  const bool left_down_of_point =
+    robot_x <= px_limit &&
+    robot_y >= py_limit;
+
+  const bool robot_in_trigger_region =
+    left_down_of_line || left_down_of_point;
+  const double block_px = 13.752;
+  const double block_py = 4.439;
+
+  const bool right_up_of_block_point =
+    robot_x >= block_px &&
+    robot_y <= block_py;
+
+  const double rx1 = 15.110;
+  const double ry1 = -2.326;
+  const double rx2 = 12.343;
+  const double ry2 = -6.385;
+
+  const double rvx = rx1 - rx2;
+  const double rvy = ry1 - ry2;
+
+  const double rqx = robot_x - rx2;
+  const double rqy = robot_y - ry2;
+
+  const double r_cross = rvx * rqy - rvy * rqx;
+
+  const bool right_up_of_block_line = r_cross <= 0.0;
+
+  const bool robot_in_block_region =
+    right_up_of_block_point ||
+    right_up_of_block_line;
+  if (!robot_in_trigger_region && !robot_in_block_region) {
+    return;
+  }
+  auto touch_rect_area = [&](
+    double rect_min_x, double rect_min_y,
+    double rect_max_x, double rect_max_y)
+  {
+    double min_wx = std::min(rect_min_x, rect_max_x);
+    double max_wx = std::max(rect_min_x, rect_max_x);
+    double min_wy = std::min(rect_min_y, rect_max_y);
+    double max_wy = std::max(rect_min_y, rect_max_y);
+
+    touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
+    touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
+  };
+
+  if (rm_task_.load(std::memory_order_relaxed) == 2) {
+    touch_rect_area(
+      static_obs_min_x_, static_obs_min_y_,
+      static_obs_max_x_, static_obs_max_y_);
+
+    touch_rect_area(
+      static_obs2_min_x_, static_obs2_min_y_,
+      static_obs2_max_x_, static_obs2_max_y_);
+
+    return;
+  }
+  auto mark_rect_obstacle = [&](
+    double rect_min_x, double rect_min_y,
+    double rect_max_x, double rect_max_y)
+  {
+    double min_wx = std::min(rect_min_x, rect_max_x);
+    double max_wx = std::max(rect_min_x, rect_max_x);
+    double min_wy = std::min(rect_min_y, rect_max_y);
+    double max_wy = std::max(rect_min_y, rect_max_y);
+
+    unsigned int min_mx, min_my, max_mx, max_my;
+
+    if (!worldToMap(min_wx, min_wy, min_mx, min_my)) {
+      return;
+    }
+
+    if (!worldToMap(max_wx, max_wy, max_mx, max_my)) {
+      return;
+    }
+
+    unsigned int start_x = std::min(min_mx, max_mx);
+    unsigned int end_x   = std::max(min_mx, max_mx);
+    unsigned int start_y = std::min(min_my, max_my);
+    unsigned int end_y   = std::max(min_my, max_my);
+
+    for (unsigned int mx = start_x; mx <= end_x; ++mx) {
+      for (unsigned int my = start_y; my <= end_y; ++my) {
+        unsigned int index = getIndex(mx, my);
+        costmap_[index] = LETHAL_OBSTACLE;
+      }
+    }
+
+    touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
+    touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
+  };
+  mark_rect_obstacle(
+    static_obs_min_x_, static_obs_min_y_,
+    static_obs_max_x_, static_obs_max_y_);
+  mark_rect_obstacle(
+    static_obs2_min_x_, static_obs2_min_y_,
+    static_obs2_max_x_, static_obs2_max_y_);
+
+}
 void IntensityVoxelLayer::markObstacleWithExpand(
   unsigned int mx, unsigned int my, double wx, double wy,
   double* min_x, double* min_y, double* max_x, double* max_y)
@@ -213,7 +365,7 @@ void IntensityVoxelLayer::updateBounds(
   if (!enabled_) {
     return;
   }
-
+  markStaticObstacleArea(robot_x, robot_y, min_x, min_y, max_x, max_y);
   useExtraBounds(min_x, min_y, max_x, max_y);
 
   bool current = true;

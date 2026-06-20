@@ -266,6 +266,13 @@ void OmniPidPursuitController::configure(
     "cmd_vel_nav2_result",
     rclcpp::SensorDataQoS(),
     std::bind(&OmniPidPursuitController::smoothedVelCallback, this, std::placeholders::_1));
+  rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
+    "/rm_task",
+    10,
+  [this](const std_msgs::msg::Int32::SharedPtr msg)
+  {
+    rm_task_value_.store(msg->data);
+  });
   local_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("local_plan", 1);
   carrot_pub_ = node->create_publisher<geometry_msgs::msg::PointStamped>("lookahead_point", 1);
   curvature_points_pub_ =
@@ -374,6 +381,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     RCLCPP_WARN(logger_, "Carrot pose invalid (NaN/Inf), return zero vel");
     return cmd_vel;
   }
+
   if (!use_mpc_control_) {  
     carrot_pub_->publish (createCarrotMsg(carrot_pose));
   } else {
@@ -421,8 +429,44 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   double cmd_vx = 0.0, cmd_vy = 0.0;
   double lin_vel = 0.0;
   double angular_vel = 0.0;  
+  const bool direct_drive_mode = (rm_task_value_.load() == 1);
 
-  if (use_mpc_control_) {
+  if (direct_drive_mode) {
+    const auto & target_pose = transformed_plan.poses.back();
+
+    const double target_x = target_pose.pose.position.x;
+    const double target_y = target_pose.pose.position.y;
+    const double lin_dist = std::hypot(target_x, target_y);
+
+    if (!std::isfinite(target_x) || !std::isfinite(target_y)) {
+      RCLCPP_WARN(logger_, "Direct drive target invalid, return zero vel");
+      return cmd_vel;
+    }
+
+    if (!isDirectPathSafeToTarget(target_pose)) {
+      RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "Direct drive blocked: path to target has cost > 200");
+      return cmd_vel;
+    }
+
+    if (lin_dist > 1e-6) {
+      double lin_vel = translation_kp_ * lin_dist;
+
+      // 和 PID 控制一样，使用 v_linear_max_ 限制最大线速度
+      lin_vel = std::clamp(lin_vel, 0.0, v_linear_max_);
+
+      const double theta_dist = std::atan2(target_y, target_x);
+
+      cmd_vx = lin_vel * std::cos(theta_dist);
+      cmd_vy = lin_vel * std::sin(theta_dist);
+    }
+
+    angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
+    angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
+
+  }
+  else if (use_mpc_control_) {
 
     Eigen::Vector2d u_opt(0.0, 0.0);
     if (lin_dist > 0 && !valid_path_poses.empty()) {
@@ -1203,7 +1247,64 @@ bool OmniPidPursuitController::isCollisionDetected(const nav_msgs::msg::Path & p
   }
   return false;
 }
+bool OmniPidPursuitController::isDirectPathSafeToTarget(
+  const geometry_msgs::msg::PoseStamped & target_pose) const
+{
+  auto costmap = costmap_ros_->getCostmap();
+  std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
 
+  const double resolution = costmap->getResolution();
+  const int size_x = static_cast<int>(costmap->getSizeInCellsX());
+  const int size_y = static_cast<int>(costmap->getSizeInCellsY());
+
+  const double x0 = 0.0;
+  const double y0 = 0.0;
+  const double x1 = target_pose.pose.position.x;
+  const double y1 = target_pose.pose.position.y;
+
+  const double distance = std::hypot(x1 - x0, y1 - y0);
+  if (distance < 1e-6) {
+    return true;
+  }
+
+  const double sample_step = resolution * 0.5;
+  const int sample_count = std::max(1, static_cast<int>(distance / sample_step));
+
+  auto base_to_grid = [&](double x, double y, int & gx, int & gy) -> bool {
+    gx = static_cast<int>(x / resolution + size_x / 2.0);
+    gy = static_cast<int>(y / resolution + size_y / 2.0);
+
+    return gx >= 0 && gx < size_x && gy >= 0 && gy < size_y;
+  };
+
+  for (int i = 0; i <= sample_count; ++i) {
+    const double ratio = static_cast<double>(i) / static_cast<double>(sample_count);
+    const double x = x0 + ratio * (x1 - x0);
+    const double y = y0 + ratio * (y1 - y0);
+
+    int gx = 0;
+    int gy = 0;
+
+    if (!base_to_grid(x, y, gx, gy)) {
+      return false;
+    }
+
+    const size_t index =
+      static_cast<size_t>(gy) * static_cast<size_t>(size_x) + static_cast<size_t>(gx);
+
+    if (index >= static_cast<size_t>(size_x * size_y)) {
+      return false;
+    }
+
+    const unsigned char cost = costmap->getCharMap()[index];
+
+    if (static_cast<int>(cost) > 200) {
+      return false;
+    }
+  }
+
+  return true;
+}
 double OmniPidPursuitController::getLookAheadDistance(const geometry_msgs::msg::Twist & speed)
 {
   // If using velocity-scaled look ahead distances, find and clamp the dist

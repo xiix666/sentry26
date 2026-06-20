@@ -11,7 +11,7 @@
 #include "tf2/utils.h"
 #include <cmath>
 #include <limits>
-
+#include <atomic>
 class SpecialArea : public rclcpp::Node
 {
 public:
@@ -100,7 +100,14 @@ public:
         special_hysteresis_max_x_ = special_max_x_ + special_hysteresis_margin_;
         special_hysteresis_min_y_ = special_min_y_ - special_hysteresis_margin_;
         special_hysteresis_max_y_ = special_max_y_ + special_hysteresis_margin_;
-
+        rm_task_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+            "/rm_task",
+            10,
+            [this](const std_msgs::msg::Int32::SharedPtr msg)
+            {
+                rm_task_value_.store(msg->data);
+            }
+        );
         area_status_pub_ =
         this->create_publisher<std_msgs::msg::Int32>("/area_status", 10);
 
@@ -188,7 +195,8 @@ private:
     double self_save_sample_radius_ = 3.0;
     int self_save_sample_directions_ = 18;
     double self_save_speed_ = 1.2;
-
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
+    std::atomic<int> rm_task_value_{0};
     int countLeadingObstacleCount(const std::vector<float>& cost_list) const
     {
         const float OBSTACLE_THRESHOLD = 240.0f;
@@ -314,14 +322,22 @@ private:
             }
             // ====================== 最终状态判断（关键修改） ======================
             int area_status = 0;
+            const int rm_task = rm_task_value_.load();
 
-            if (special_inside_active_) {
+            const bool force_area_status_1 = (rm_task == 1);
+            const bool force_area_status_3 = (rm_task == 2);
+            if (force_area_status_3) {
+                area_status = 3;            // rm_task == 2 时最高优先级，强制为 3
+            } else if (force_area_status_1) {
+                area_status = 1;            // rm_task == 1 时最高优先级，强制为 1
+            }else if (special_inside_active_) {
                 area_status = 2;            // 前哨 = 2
             } else if (inside_active || third_inside_active_) {
                 area_status = 1;            // 起伏 + 新增区域 = 1
             } else {
                 area_status = 0;            // 其他 = 0
             }
+
             // ====================================================================
 
             // 1. 先发布区域标志位（必须第一）
@@ -331,7 +347,7 @@ private:
 
             // 2. 再发布角度（严格后发）
             // 起伏区域角度
-            if (inside_active || third_inside_active_) {
+            if (inside_active || third_inside_active_ || force_area_status_1) {
                 std_msgs::msg::Float32 angle_msg;
                 angle_msg.data = current_gimbal_angle_;
                 gimbal_angle_pub_->publish(angle_msg);

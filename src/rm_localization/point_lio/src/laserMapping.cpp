@@ -15,7 +15,8 @@
 #include <filesystem>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include "li_initialization.h"
-
+#include <unordered_map>
+#include <cstdint>
 using namespace std;
 namespace fs = std::filesystem;
 #define PUBFRAME_PERIOD (20)
@@ -337,41 +338,145 @@ void pointBodyLidarToIMU(PointType const * const pi, PointType * const po)
   
     return T_odom_init_camera_init;
   }
-void MapIncremental()
+using PendingVoxelKey = std::int64_t;
+
+struct PendingVoxel
 {
+  PointType point;
+  int hit_count = 0;
+  std::uint64_t last_seen_frame = 0;
+};
+
+void MapIncremental() {
   PointVector points_to_add;
   int cur_pts = feats_down_world->size();
   points_to_add.reserve(cur_pts);
+  static std::unordered_map<PendingVoxelKey, PendingVoxel> pending_voxels;
+  static std::uint64_t map_incremental_frame_id = 0;
+  map_incremental_frame_id++;
 
+  const int confirm_frame_threshold = 2;       // 多帧看到 才加入正式地图
+  const std::uint64_t pending_expire_frames = 20;  // 超过 20 帧没再看到就丢弃候选点
+
+  auto makePendingKey = [&](const PointType & point, PendingVoxelKey & key) -> bool {
+    const double voxel_size = 0.5;
+    const int offset = 200;
+    Eigen::Vector3f p = point.getVector3fMap();
+
+    int ix = static_cast<int>(std::floor(p.x() / voxel_size));
+    int iy = static_cast<int>(std::floor(p.y() / voxel_size));
+    int iz = static_cast<int>(std::floor(p.z() / voxel_size));
+
+    const uint64_t x = static_cast<uint64_t>(ix + offset);
+    const uint64_t y = static_cast<uint64_t>(iy + offset);
+    const uint64_t z = static_cast<uint64_t>(iz + offset);
+
+    key = static_cast<std::int64_t>((x << 32) | (y << 16) | z);
+
+    return true;
+  };
+  auto addToPendingOrConfirm = [&](const PointType & point_world) {
+    PendingVoxelKey key = 0;
+
+    if (!makePendingKey(point_world, key)) {
+      return;
+    }
+
+    auto iter = pending_voxels.find(key);
+
+    if (iter == pending_voxels.end()) {
+      PendingVoxel pending;
+      pending.point = point_world;
+      pending.hit_count = 1;
+      pending.last_seen_frame = map_incremental_frame_id;
+      pending_voxels.emplace(key, pending);
+      return;
+    }
+
+    PendingVoxel & pending = iter->second;
+
+    // 同一帧内同一个 voxel 可能有多个点，只算一次 hit
+    if (pending.last_seen_frame != map_incremental_frame_id) {
+      pending.hit_count++;
+      pending.last_seen_frame = map_incremental_frame_id;
+
+      // 用最新点作为代表点，也可以改成平均点
+      pending.point = point_world;
+    }
+
+    if (pending.hit_count >= confirm_frame_threshold) {
+      points_to_add.emplace_back(pending.point);
+      pending_voxels.erase(iter);
+    }
+  };
   for (size_t i = 0; i < cur_pts; ++i) {
     /* decide if need add to map */
-    PointType & point_world = feats_down_world->points[i];
+    PointType& point_world = feats_down_world->points[i];
+    bool current_grid_exists = ivox_->TouchPoint(point_world);
+    bool need_add = true;
     if (!Nearest_Points[i].empty()) {
-      const PointVector & points_near = Nearest_Points[i];
+      const PointVector& points_near = Nearest_Points[i];
 
       Eigen::Vector3f center =
-        ((point_world.getVector3fMap() / filter_size_map_min).array().floor() + 0.5) *
-        filter_size_map_min;
-      bool need_add = true;
+          ((point_world.getVector3fMap() / filter_size_map_min)
+               .array()
+               .floor() +
+           0.5) *
+          filter_size_map_min;
+
       for (int readd_i = 0; readd_i < points_near.size(); readd_i++) {
-        Eigen::Vector3f dis_2_center = points_near[readd_i].getVector3fMap() - center;
-        if (
-          fabs(dis_2_center.x()) < 0.5 * filter_size_map_min &&
-          fabs(dis_2_center.y()) < 0.5 * filter_size_map_min &&
-          fabs(dis_2_center.z()) < 0.5 * filter_size_map_min) {
+        Eigen::Vector3f dis_2_center =
+            points_near[readd_i].getVector3fMap() - center;
+        if (fabs(dis_2_center.x()) < 0.5 * filter_size_map_min &&
+            fabs(dis_2_center.y()) < 0.5 * filter_size_map_min &&
+            fabs(dis_2_center.z()) < 0.5 * filter_size_map_min) {
           need_add = false;
           break;
         }
       }
-      if (need_add) {
-        points_to_add.emplace_back(point_world);
-      }
-    } else {
-      points_to_add.emplace_back(point_world);
+    }
+
+    if (need_add) {
+      addToPendingOrConfirm(point_world);
     }
   }
   ivox_->AddPoints(points_to_add);
 }
+// void MapIncremental()
+// {
+//   PointVector points_to_add;
+//   int cur_pts = feats_down_world->size();
+//   points_to_add.reserve(cur_pts);
+
+//   for (size_t i = 0; i < cur_pts; ++i) {
+//     /* decide if need add to map */
+//     PointType & point_world = feats_down_world->points[i];
+//     if (!Nearest_Points[i].empty()) {
+//       const PointVector & points_near = Nearest_Points[i];
+
+//       Eigen::Vector3f center =
+//         ((point_world.getVector3fMap() / filter_size_map_min).array().floor() + 0.5) *
+//         filter_size_map_min;
+//       bool need_add = true;
+//       for (int readd_i = 0; readd_i < points_near.size(); readd_i++) {
+//         Eigen::Vector3f dis_2_center = points_near[readd_i].getVector3fMap() - center;
+//         if (
+//           fabs(dis_2_center.x()) < 0.5 * filter_size_map_min &&
+//           fabs(dis_2_center.y()) < 0.5 * filter_size_map_min &&
+//           fabs(dis_2_center.z()) < 0.5 * filter_size_map_min) {
+//           need_add = false;
+//           break;
+//         }
+//       }
+//       if (need_add) {
+//         points_to_add.emplace_back(point_world);
+//       }
+//     } else {
+//       points_to_add.emplace_back(point_world);
+//     }
+//   }
+//   ivox_->AddPoints(points_to_add);
+// }
 
 void publish_init_map(
   const rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr & pubLaserCloudFullRes)
@@ -1426,7 +1531,7 @@ int main(int argc, char ** argv)
       if (feats_down_size > 4) {
         if (enable_prior_pcd) {
           sleep_time++;
-          if (sleep_time > 200) {
+          if (sleep_time > 10) {
             MapIncremental();
           }
         } else {

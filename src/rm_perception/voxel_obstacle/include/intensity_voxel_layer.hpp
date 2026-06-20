@@ -1,3 +1,17 @@
+// Copyright 2025 Lihan Chen
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef PB_NAV2_PLUGINS__LAYERS__INTENSITY_VOXEL_LAYER_HPP_
 #define PB_NAV2_PLUGINS__LAYERS__INTENSITY_VOXEL_LAYER_HPP_
 
@@ -17,6 +31,8 @@
 #include "tf2_ros/message_filter.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <atomic>
+#include "std_msgs/msg/int32.hpp"
 
 namespace xx_nav2_costmap_2d
 {
@@ -44,6 +60,10 @@ public:
   void markObstacleWithExpand(
     unsigned int mx, unsigned int my, double wx, double wy,
     double* min_x, double* min_y, double* max_x, double* max_y);
+  void markStaticObstacleArea(
+    double robot_x, double robot_y,
+    double * min_x, double * min_y,
+    double * max_x, double * max_y);
 protected:
   virtual void resetMaps();
   void updateFootprint(
@@ -57,6 +77,15 @@ private:
     double wy;
     double last_hit_time;
   };
+  bool use_static_obstacle_area_ = false;
+  double static_obs2_min_x_ = 0.0;
+  double static_obs2_min_y_ = 0.0;
+  double static_obs2_max_x_ = 0.0;
+  double static_obs2_max_y_ = 0.0;  
+  double static_obs_min_x_ = 0.0;
+  double static_obs_min_y_ = 0.0;
+  double static_obs_max_x_ = 0.0;
+  double static_obs_max_y_ = 0.0;
   bool publish_voxel_;
   rclcpp::Publisher<nav2_msgs::msg::VoxelGrid>::SharedPtr voxel_pub_;
   nav2_voxel_grid::VoxelGrid voxel_grid_;
@@ -79,6 +108,9 @@ private:
   int neighborhood_min_voxels_ = 2;  // 邻域内有效体素数阈值
   int voxel_min_points_ = 2;         // 单个体素最小点数阈值
   int obstacle_expand_size_ = 1;
+
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
+  std::atomic<int> rm_task_{0};
   // 内联函数声明：计算3D体素的一维索引
   inline unsigned int getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz) const
   {

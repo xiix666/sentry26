@@ -505,6 +505,17 @@ local_costmap:
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
+
+        # use_static_obstacle_area: true
+        # static_obs_min_x: 4.0
+        # static_obs_min_y: -6.1
+        # static_obs_max_x: 5.0
+        # static_obs_max_y: -5.75
+        # static_obs2_min_x: 15.489
+        # static_obs2_min_y: 4.75
+        # static_obs2_max_x: 16.956
+        # static_obs2_max_y: 4.9
+
         combination_method: 1
         mark_threshold: 0
         origin_z: 0.0
@@ -587,6 +598,16 @@ global_costmap:
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
+        use_static_obstacle_area: true
+        static_obs_min_x: 4.0
+        static_obs_min_y: -6.1
+        static_obs_max_x: 5.0
+        static_obs_max_y: -5.75
+        static_obs2_min_x: 15.489
+        static_obs2_min_y: 4.75
+        static_obs2_max_x: 16.956
+        static_obs2_max_y: 4.9
+
         combination_method: 1
         mark_threshold: 0
         origin_z: 0.0

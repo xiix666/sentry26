@@ -25,6 +25,8 @@
 #include "pb_omni_pid_pursuit_controller/pid.hpp"
 #include "pb_omni_pid_pursuit_controller/mpc.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
+#include "std_msgs/msg/int32.hpp"
+#include <atomic>
 
 namespace pb_omni_pid_pursuit_controller
 {
@@ -343,7 +345,8 @@ private:
   void applyCurvatureLimitation(
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
     double & linear_vel);
-
+  bool isDirectPathSafeToTarget(
+    const geometry_msgs::msg::PoseStamped & target_pose) const;
   /**
    * @brief Calculates curvature using three-point circle fitting
    * @param path Transformed local path
@@ -481,7 +484,11 @@ private:
   // rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr smoothed_path_pub_;
   // std::unique_ptr<minco_nav2::MincoTracker> minco_tracker_;
   const double max_skip_distance = 4.0;
-  
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
+  std::atomic<int> rm_task_value_{0};
+
+  double direct_drive_kp_ = 1.5;
+  double direct_drive_max_vel_ = 3.0;
   // Dynamic parameters handler
   std::mutex mutex_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;

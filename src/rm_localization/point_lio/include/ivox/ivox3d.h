@@ -10,7 +10,7 @@
 #include <list>
 #include <thread>
 #include <unordered_map>
-
+#include <cstdint>
 #include "eigen_types.h"
 #include "ivox3d_node.hpp"
 
@@ -63,7 +63,8 @@ public:
     float resolution_ = 0.2;                        // ivox resolution
     float inv_resolution_ = 10.0;                   // inverse resolution
     NearbyType nearby_type_ = NearbyType::NEARBY6;  // nearby range
-    std::size_t capacity_ = 1000000;                // capacity
+    // std::size_t capacity_ = 1000000;                // capacity
+    std::size_t capacity_ = 100000;    
   };
 
   /**
@@ -82,6 +83,7 @@ public:
      */
   void AddPoints(const PointVector & points_to_add);
 
+  bool TouchPoint(const PointType & pt);
   /// get nn
   bool GetClosestPoint(const PointType & pt, PointType & closest_pt);
 
@@ -118,14 +120,14 @@ private:
   // std::unordered_map<KeyType, typename std::list<std::pair<KeyType, NodeType>>::iterator, hash_vec<dim>>
   // grids_map_;                                        // voxel hash map
   std::list<std::pair<KeyType, NodeType>> grids_cache_;  // voxel cache
-  std::vector<KeyType> nearby_grids_;                    // nearbys    索引
+  std::vector<KeyType> nearby_grids_;                    // nearbys
 };
 
 template <int dim, IVoxNodeType node_type, typename PointType>
 bool IVox<dim, node_type, PointType>::GetClosestPoint(const PointType & pt, PointType & closest_pt)
 {
   std::vector<DistPoint> candidates;
-  auto key = Pos2Grid(ToEigen<float, dim>(pt));// 将输入点的三维坐标转换为体素网格的索引（KeyType）
+  auto key = Pos2Grid(ToEigen<float, dim>(pt));
   std::for_each(
     nearby_grids_.begin(), nearby_grids_.end(),
     [&key, &candidates, &pt, this](const KeyType & delta) {
@@ -296,14 +298,33 @@ void IVox<dim, node_type, PointType>::AddPoints(const PointVector & points_to_ad
         grids_map_.erase(grids_cache_.back().first);
         grids_cache_.pop_back();
       }
+      
     } else {
       iter->second->second.InsertPoint(points_to_add[i]);
-      grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);
+      grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);//把当前访问的节点移动到链表头部
       grids_map_[key] = grids_cache_.begin();
+      // std::cout << grids_map_.size() << std::endl;
     }
   }
 }
+template <int dim, IVoxNodeType node_type, typename PointType>
+bool IVox<dim, node_type, PointType>::TouchPoint(const PointType & pt)
+{
+  auto key = Pos2Grid(ToEigen<float, dim>(pt));
 
+  auto iter = grids_map_.find(key);
+  if (iter == grids_map_.end()) {
+    return false;
+  }
+
+  // 把这个 voxel 移到 grids_cache_ 最前面，表示最近被命中
+  grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);
+
+  // 更新 map 里保存的 iterator
+  iter->second = grids_cache_.begin();
+  // std::cout << grids_map_.size() << std::endl;
+  return true;
+}
 template <int dim, IVoxNodeType node_type, typename PointType>
 Eigen::Matrix<int, dim, 1> IVox<dim, node_type, PointType>::Pos2Grid(const IVox::PtType & pt) const
 {
