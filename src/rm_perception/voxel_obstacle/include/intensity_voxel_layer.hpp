@@ -71,12 +71,57 @@ protected:
     double * max_x, double * max_y);
 
 private:
+  struct PointClusterGridKey
+  {
+    int x;
+    int y;
+    int z;
+
+    bool operator==(const PointClusterGridKey & other) const
+    {
+      return x == other.x && y == other.y && z == other.z;
+    }
+  };
+
+  struct PointClusterGridKeyHash
+  {
+    std::size_t operator()(const PointClusterGridKey & key) const
+    {
+      const std::int64_t x = static_cast<std::int64_t>(key.x);
+      const std::int64_t y = static_cast<std::int64_t>(key.y);
+      const std::int64_t z = static_cast<std::int64_t>(key.z);
+
+      return static_cast<std::size_t>(
+        (x * 73856093LL) ^
+        (y * 19349663LL) ^
+        (z * 83492791LL));
+    }
+  };
   struct ActiveObstacle
   {
     double wx;
     double wy;
     double last_hit_time;
   };
+  struct CandidateObstaclePoint
+  {
+    double x;
+    double y;
+    double z;
+
+    unsigned int mx;
+    unsigned int my;
+    unsigned int mz;
+
+    unsigned int column_idx;
+  };
+
+  double point_cluster_tolerance_ = 0.15;  //点和点之间多近才认为属于同一个障碍簇
+  int min_cluster_points_ = 8;   //一个簇至少多少个点才认为是真障碍
+
+  void clusterCandidatePoints(
+    const std::vector<CandidateObstaclePoint> & points,
+    std::vector<std::vector<size_t>> & clusters);
   bool use_static_obstacle_area_ = false;
   double static_obs2_min_x_ = 0.0;
   double static_obs2_min_y_ = 0.0;
@@ -97,10 +142,11 @@ private:
   double obstacle_hold_time_ = 0.5;         
   double max_gradient_threshold_ = 1.0;   
   double near_obstacle_radius_ = 0.6;   
-  double z_hit_range_ = 0.2; 
+
   double low_gradient_threshold_ = 0.1;
   std::vector<ActiveObstacle> active_obstacle_cells_;
-
+  std::vector<unsigned int> column_hit_count_grid_;
+  std::vector<double> column_last_hit_time_grid_;
   int * hit_count_grid_ = nullptr;  // 连续命中计数网格
   int continuous_hit_threshold_ = 2; // 连续命中阈值
   int * voxel_point_count_ = nullptr; // 单批次体素点数统计网格
@@ -164,3 +210,4 @@ private:
 }  // namespace pb_nav2_costmap_2d
 
 #endif  // PB_NAV2_PLUGINS__LAYERS__INTENSITY_VOXEL_LAYER_HPP_
+

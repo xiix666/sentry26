@@ -64,7 +64,7 @@ public:
     float inv_resolution_ = 10.0;                   // inverse resolution
     NearbyType nearby_type_ = NearbyType::NEARBY6;  // nearby range
     // std::size_t capacity_ = 1000000;                // capacity
-    std::size_t capacity_ = 100000;    
+    std::size_t capacity_ = 300000;    
   };
 
   /**

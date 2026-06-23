@@ -98,6 +98,11 @@ namespace xx_nav2_costmap_2d
     node->get_parameter(name_ + ".static_obs_min_y", static_obs_min_y_);
     node->get_parameter(name_ + ".static_obs_max_x", static_obs_max_x_);
     node->get_parameter(name_ + ".static_obs_max_y", static_obs_max_y_);
+    node->declare_parameter(name_ + ".point_cluster_tolerance", 0.15);
+    node->declare_parameter(name_ + ".min_cluster_points", 8);
+
+    node->get_parameter(name_ + ".point_cluster_tolerance", point_cluster_tolerance_);
+    node->get_parameter(name_ + ".min_cluster_points", min_cluster_points_);
     if (publish_voxel_) {
       voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
     }
@@ -207,7 +212,7 @@ void IntensityVoxelLayer::markStaticObstacleArea(
   const double y2 = 1.669;
 
   const double px_limit = 6.021;
-  const double py_limit = -5.304;
+  const double py_limit = -5.504;
 
   const double vx = x1 - x2;
   const double vy = y1 - y2;
@@ -365,6 +370,15 @@ void IntensityVoxelLayer::updateBounds(
   if (!enabled_) {
     return;
   }
+  const unsigned int total_columns = size_x_ * size_y_;
+
+  if (column_hit_count_grid_.size() != total_columns) {
+    column_hit_count_grid_.assign(total_columns, 0);
+  }
+
+  if (column_last_hit_time_grid_.size() != total_columns) {
+    column_last_hit_time_grid_.assign(total_columns, 0.0);
+  }
   markStaticObstacleArea(robot_x, robot_y, min_x, min_y, max_x, max_y);
   useExtraBounds(min_x, min_y, max_x, max_y);
 
@@ -374,7 +388,13 @@ void IntensityVoxelLayer::updateBounds(
   current_ = current;
 
   // 临时记录本次命中的体素
-  std::unordered_set<unsigned int> hit_voxels;
+  // std::unordered_set<unsigned int> hit_voxels;
+  std::vector<CandidateObstaclePoint> candidate_points;
+  candidate_points.reserve(4096);
+
+  std::unordered_set<unsigned int> clustered_columns;
+  std::unordered_set<unsigned int> z_confirmed_columns;
+  std::unordered_set<unsigned int> final_obstacle_columns;
   double now_sec = clock_->now().seconds();
 
   for (const auto & obs : observations) {
@@ -415,111 +435,88 @@ void IntensityVoxelLayer::updateBounds(
           robot_dist <= near_obstacle_radius_ &&
           pz >= min_obstacle_height_ &&
           pz <= max_obstacle_height_ &&
-          *it_i > 0.3;
+          *it_i > 0.2;
       }
       bool low_gradient_height_obstacle = false;
       if (!gradient_obstacle && !near_robot_obstacle) {
         low_gradient_height_obstacle =
           valid_gradient &&
           gradient >= low_gradient_threshold_ && gradient <= max_gradient_threshold_ &&
-          *it_i > 0.3 &&
+          *it_i > 0.2 &&
           *it_i < max_obstacle_intensity_ &&
-          pz >= 0.3 &&
+          pz >= 0.2 &&
           pz <= 0.8;
       }
       if (!gradient_obstacle && !near_robot_obstacle && !low_gradient_height_obstacle) {
         continue;
       }
 
-      hit_count_grid_[voxel_idx]++;
-      hit_voxels.insert(voxel_idx);
+      unsigned int column_idx = getIndex(mx, my);
 
-      voxel_grid_.markVoxelInMap(mx, my, mz, mark_threshold_);
+      CandidateObstaclePoint candidate;
+      candidate.x = px;
+      candidate.y = py;
+      candidate.z = pz;
+      candidate.mx = mx;
+      candidate.my = my;
+      candidate.mz = mz;
+      candidate.column_idx = column_idx;
+
+      candidate_points.push_back(candidate);
+
+      bool column_marked = voxel_grid_.markVoxelInMap(mx, my, mz, mark_threshold_);
+
+      if (column_marked) {
+        z_confirmed_columns.insert(column_idx);
+      }
+  }
+}
+  std::vector<std::vector<size_t>> point_clusters;
+  clusterCandidatePoints(candidate_points, point_clusters);
+
+  for (const auto & cluster : point_clusters) {
+    for (size_t point_idx : cluster) {
+      const auto & p = candidate_points[point_idx];
+      clustered_columns.insert(p.column_idx);
+    }
+  }
+  for (const auto & column_idx : z_confirmed_columns) {
+    if (clustered_columns.find(column_idx) != clustered_columns.end()) {
+      final_obstacle_columns.insert(column_idx);
     }
   }
   double sec = clock_->now().seconds();
-  // 第二步：过滤孤立体素，仅标记非孤立且连续命中达标的体素为障碍
-  for (const auto & voxel_idx : hit_voxels) {
-    // 解析体素坐标
-    unsigned int mz = voxel_idx / (size_x_ * size_y_);
-    unsigned int rem = voxel_idx % (size_x_ * size_y_);
-    unsigned int my = rem / size_x_;
-    unsigned int mx = rem % size_x_;
 
-    // 核心：动态邻域校验（根据配置的半径统计有效体素）
-    unsigned int neighbor_count = countNeighborhoodVoxels(mx, my, mz);
-    if (neighbor_count < neighborhood_min_voxels_) {
-      continue; // 邻域有效体素不足，跳过障碍标记
-    }
-    bool has_other_z_hit = false;
-    int z_range = static_cast<int>(std::ceil(0.2 / z_resolution_));
+  for (const auto & column_idx : final_obstacle_columns) {
+    unsigned int mx = column_idx % size_x_;
+    unsigned int my = column_idx / size_x_;
 
-    for (int dz = -z_range; dz <= z_range; ++dz) {
-      if (dz == 0) continue;  // 跳过自己这一层
+    costmap_[column_idx] = LETHAL_OBSTACLE;
 
-      int nz = static_cast<int>(mz) + dz;
-      if (nz < 0 || nz >= static_cast<int>(size_z_)) {
-        continue;
-      }
+    double wx, wy;
+    mapToWorld(mx, my, wx, wy);
 
-      unsigned int neighbor_voxel_idx = getVoxelIndex(mx, my, static_cast<unsigned int>(nz));
-      if (hit_voxels.find(neighbor_voxel_idx) != hit_voxels.end()) {
-        has_other_z_hit = true;
+    bool found = false;
+    for (auto & cell : active_obstacle_cells_) {
+      if (std::hypot(cell.wx - wx, cell.wy - wy) < resolution_ * 0.5) {
+        cell.last_hit_time = sec;
+        found = true;
         break;
       }
     }
 
-    // if (!has_other_z_hit) {
-    //   continue;  // z方向0.2m内没有其他点云命中，跳过障碍标记
-    // }
-    // 只有连续命中次数≥阈值 + 非孤立体素，才标记为致命障碍
-
-    last_hit_time_grid_[voxel_idx] = sec; 
-    if (hit_count_grid_[voxel_idx] >= continuous_hit_threshold_) {
-      unsigned int index = getIndex(mx, my);
-      costmap_[index] = LETHAL_OBSTACLE;
-      double wx, wy;
-      mapToWorld(mx, my, wx, wy);
-        bool found = false;
-      for (auto& cell : active_obstacle_cells_) {
-        if (std::hypot(cell.wx - wx, cell.wy - wy) < resolution_ * 0.5) {
-          // std::cout << "Update obstacle cell (" << wx << ", " << wy << ") last hit time to " << cell.last_hit_time << "   " << sec <<"  ";
-          cell.last_hit_time = sec;  
-          // std::cout << "New last hit time: " << cell.last_hit_time << std::endl;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        active_obstacle_cells_.push_back({wx, wy, sec});
-      }
-      // active_obstacle_cells_.push_back({wx, wy, sec});
-      touch(wx, wy, min_x, min_y, max_x, max_y);
+    if (!found) {
+      active_obstacle_cells_.push_back({wx, wy, sec});
     }
+
+    touch(wx, wy, min_x, min_y, max_x, max_y);
   }
 
-  // 重置未命中体素的计数
-  unsigned int total_voxels = size_x_ * size_y_ * size_z_;
-  for (unsigned int i = 0; i < total_voxels; ++i) {
-    if (hit_voxels.find(i) == hit_voxels.end()) {
-      hit_count_grid_[i] = 0;
-    }
-  }
-  // for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
-  //   if (now_sec - it->last_hit_time > obstacle_hold_time_) {
-  //     it = active_obstacle_cells_.erase(it);
-  //     continue;
+  // // 重置未命中体素的计数
+  // for (unsigned int i = 0; i < total_columns; ++i) {
+  //   if (z_confirmed_columns.find(i) == z_confirmed_columns.end()) {
+  //     column_hit_count_grid_[i] = 0;
   //   }
-  //   // std::cout << now_sec << std::endl;
-  //   // std::cout << it->last_hit_time << std::endl;
-  //   unsigned int mx, my;
-  //   if (worldToMap(it->wx, it->wy, mx, my)) {
-  //     unsigned int index = getIndex(mx, my);
-  //     costmap_[index] = LETHAL_OBSTACLE;
-  //     touch(it->wx, it->wy, min_x, min_y, max_x, max_y);
-  //   }
-  
-  //   ++it;
   // }
   for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
     if (now_sec - it->last_hit_time > obstacle_hold_time_) {
@@ -561,7 +558,107 @@ void IntensityVoxelLayer::updateBounds(
 
   updateFootprint(robot_x, robot_y, robot_yaw, min_x, min_y, max_x, max_y);
 }
+void IntensityVoxelLayer::clusterCandidatePoints(
+  const std::vector<CandidateObstaclePoint> & points,
+  std::vector<std::vector<size_t>> & clusters)
+{
+  clusters.clear();
 
+  if (points.empty()) {
+    return;
+  }
+
+  const double tolerance = point_cluster_tolerance_;
+  const double tolerance_sq = tolerance * tolerance;
+
+  std::unordered_map<
+    PointClusterGridKey,
+    std::vector<size_t>,
+    PointClusterGridKeyHash> spatial_grid;
+
+  spatial_grid.reserve(points.size() * 2);
+
+  auto getClusterGridKey = [&](const CandidateObstaclePoint & p) {
+    return PointClusterGridKey{
+      static_cast<int>(std::floor(p.x / tolerance)),
+      static_cast<int>(std::floor(p.y / tolerance)),
+      static_cast<int>(std::floor(p.z / tolerance))
+    };
+  };
+
+  for (size_t i = 0; i < points.size(); ++i) {
+    spatial_grid[getClusterGridKey(points[i])].push_back(i);
+  }
+
+  std::vector<bool> visited(points.size(), false);
+
+  for (size_t start_i = 0; start_i < points.size(); ++start_i) {
+    if (visited[start_i]) {
+      continue;
+    }
+
+    std::vector<size_t> cluster;
+    std::queue<size_t> q;
+
+    visited[start_i] = true;
+    q.push(start_i);
+
+    while (!q.empty()) {
+      size_t cur_i = q.front();
+      q.pop();
+
+      cluster.push_back(cur_i);
+
+      const auto & cur_p = points[cur_i];
+      PointClusterGridKey cur_key = getClusterGridKey(cur_p);
+
+      for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+          for (int dz = -1; dz <= 1; ++dz) {
+            PointClusterGridKey neighbor_key{
+              cur_key.x + dx,
+              cur_key.y + dy,
+              cur_key.z + dz
+            };
+
+            auto grid_iter = spatial_grid.find(neighbor_key);
+            if (grid_iter == spatial_grid.end()) {
+              continue;
+            }
+
+            for (size_t next_i : grid_iter->second) {
+              if (visited[next_i]) {
+                continue;
+              }
+
+              const auto & next_p = points[next_i];
+
+              const double diff_x = cur_p.x - next_p.x;
+              const double diff_y = cur_p.y - next_p.y;
+              const double diff_z = cur_p.z - next_p.z;
+
+              const double dist_sq =
+                diff_x * diff_x +
+                diff_y * diff_y +
+                diff_z * diff_z;
+
+              if (dist_sq > tolerance_sq) {
+                continue;
+              }
+
+              visited[next_i] = true;
+              q.push(next_i);
+            }
+          }
+        }
+      }
+    }
+
+    if (cluster.size() >= min_cluster_points_) {
+      clusters.push_back(std::move(cluster));
+    }
+  }
+}
 void IntensityVoxelLayer::updateOrigin(double new_origin_x, double new_origin_y)
 {
   int cell_ox, cell_oy;
