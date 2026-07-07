@@ -111,8 +111,8 @@ public:
         area_status_pub_ =
         this->create_publisher<std_msgs::msg::Int32>("/area_status", 10);
 
-        special_area_angle_pub_ =
-            this->create_publisher<std_msgs::msg::Float32>("/special_area_angle", 10);
+        // special_area_angle_pub_ =
+        //     this->create_publisher<std_msgs::msg::Float32>("/special_area_angle", 10);
         costmap_client_ = this->create_client<nav2_msgs::srv::GetCostmap>(service_name_);
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -215,7 +215,16 @@ private:
     {
         return std::atan2(std::sin(angle), std::cos(angle));
     }
-
+    double normalizeAngleDeg(double angle_deg)
+    {
+        while (angle_deg > 180.0) {
+            angle_deg -= 360.0;
+        }
+        while (angle_deg < -180.0) {
+            angle_deg += 360.0;
+        }
+        return angle_deg;
+    }
     void publishSelfSaveStatus(int status)
     {
         std_msgs::msg::Int32 msg;
@@ -345,18 +354,35 @@ private:
             area_msg.data = area_status;
             area_status_pub_->publish(area_msg);
 
-            // 2. 再发布角度（严格后发）
-            // 起伏区域角度
-            if (inside_active || third_inside_active_ || force_area_status_1) {
-                std_msgs::msg::Float32 angle_msg;
-                angle_msg.data = current_gimbal_angle_;
-                gimbal_angle_pub_->publish(angle_msg);
+            // 2. 再发布云台角度
+
+            std_msgs::msg::Float32 angle_msg;
+            bool should_publish_angle = false;
+
+            if (area_status == 3) {
+                if (robot_x < 10.0) {
+                    angle_msg.data = static_cast<float>(
+                        normalizeAngleDeg(current_gimbal_angle_ + 90.0)
+                    );
+                } else {
+                    angle_msg.data = static_cast<float>(
+                        normalizeAngleDeg(current_gimbal_angle_ - 90.0)
+                    );
+                }
+
+                should_publish_angle = true;
             }
-            // 前哨区域角度
-            if (special_inside_active_) {
-                std_msgs::msg::Float32 special_angle_msg;
-                special_angle_msg.data = static_cast<float>(special_angle);
-                special_area_angle_pub_->publish(special_angle_msg);
+            else if (area_status == 2) {
+                angle_msg.data = static_cast<float>(special_angle);
+                should_publish_angle = true;
+            }
+            else if (area_status == 1) {
+                angle_msg.data = static_cast<float>(current_gimbal_angle_);
+                should_publish_angle = true;
+            }
+
+            if (should_publish_angle) {
+                gimbal_angle_pub_->publish(angle_msg);
             }
         } catch (const tf2::TransformException &ex) {
             RCLCPP_WARN(this->get_logger(), "Transform error: %s", ex.what());

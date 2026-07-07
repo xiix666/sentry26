@@ -250,9 +250,15 @@ protected:
     const std::string frame, const geometry_msgs::msg::PoseStamped & in_pose,
     geometry_msgs::msg::PoseStamped & out_pose) const;
 
-  std::vector<Eigen::Vector2d> samplePathToRefSeq(
-    const std::vector<geometry_msgs::msg::PoseStamped> &path_poses,
-    int Np);
+  // std::vector<OmniMpcController::State> samplePathToTimedMpcRefSeq(
+  //   const std::vector<geometry_msgs::msg::PoseStamped> & path_poses,
+  //   int Np,double v_ref) const;
+  std::vector<OmniMpcController::State> samplePathToTimedMpcRefSeq(
+    const std::vector<geometry_msgs::msg::PoseStamped> & path_poses,
+    int Np,
+    double v_des,
+    double * v_ref_eff_out = nullptr) const;
+  void updateMpcWeights();
   /**
    * @brief Gets the maximum extent of the costmap
    * @return Maximum costmap extent in meters
@@ -412,6 +418,10 @@ private:
   bool checkLineCollision(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & end);
+  bool checkLineCollisionWithThreshold(
+    const geometry_msgs::msg::PoseStamped & start,
+    const geometry_msgs::msg::PoseStamped & end,
+    unsigned char cost_threshold);
   Eigen::Vector2d poseToEigen(
     const geometry_msgs::msg::PoseStamped & pose)
   {
@@ -422,6 +432,33 @@ private:
     double smooth_radius ,int num_interpolation,
     double angle_tol_deg ,int skip_points
   );
+  std::vector<geometry_msgs::msg::PoseStamped> softSmoothPathCorners(
+    const std::vector<geometry_msgs::msg::PoseStamped> & path,
+    double max_smooth_radius,
+    int max_num_interpolation,
+    double min_turn_angle_deg,
+    double full_turn_angle_deg,
+    double judge_window_dist,
+    double min_point_spacing,
+    int min_interpolation_points);
+  struct LockedSmoothRegion
+  {
+    bool valid{false};
+
+    std::string frame_id;
+
+    geometry_msgs::msg::PoseStamped center;
+    geometry_msgs::msg::PoseStamped control;
+
+    int sign{0};
+    int miss_count{0};
+  };
+
+  std::vector<LockedSmoothRegion> locked_smooth_regions_;
+
+  double smooth_region_match_dist_{0.3};
+  int smooth_region_max_miss_{5};
+  int smooth_region_max_count_{5};   
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string plugin_name_;
@@ -431,7 +468,7 @@ private:
   rclcpp::Clock::SharedPtr clock_;
   double last_velocity_scaling_factor_;
   bool has_prev_cmd_vel_ = false;
-  
+  bool mpc_near_goal_pursuit_mode_{false};
   geometry_msgs::msg::TwistStamped prev_cmd_vel_;
 
   std::shared_ptr<PID> move_pid_;
@@ -439,7 +476,27 @@ private:
   std::unique_ptr<OmniMpcController> mpc_controller_;
   int mpc_Np_;         // MPC预测时域
   int mpc_Nc_;         // MPC控制时域
-  double mpc_Q_x,mpc_Q_y,mpc_R_vx,mpc_R_vy,mpc_Rdelta_vx,mpc_Rdelta_vy;
+  double mpc_ref_speed_{2.5};
+  double mpc_S_x{15.0};
+  double mpc_S_y{15.0};
+  double mpc_S_vx{0.0};
+  double mpc_S_vy{0.0};
+
+  double mpc_Q_x{5.0};
+  double mpc_Q_y{5.0};
+  double mpc_Q_vx{0.5};
+  double mpc_Q_vy{0.5};
+
+  double mpc_R_vx{0.5};
+  double mpc_R_vy{0.5};
+  double mpc_Rdelta_vx{0.5};
+  double mpc_Rdelta_vy{0.5};
+
+  double mpc_curve_a_lat_max_{1.0};
+  double mpc_curve_min_speed_{1.0};
+  double mpc_curve_lookahead_dist_{1.2};
+  double mpc_curve_kappa_eps_{1e-3};
+
   // Controller parameters
   double translation_kp_, translation_ki_, translation_kd_;
   bool enable_rotation_;
@@ -475,8 +532,10 @@ private:
   tf2::Duration transform_tolerance_;
   double smoothed_vel;
   bool slow = false;
+
   std::mutex sm_mutex;
   nav_msgs::msg::Path global_plan_;
+  int min_smooth_interpolation_points_{2};
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr carrot_pub_;
   rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr

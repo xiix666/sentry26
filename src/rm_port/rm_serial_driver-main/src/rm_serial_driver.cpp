@@ -252,6 +252,7 @@ void RMSerialDriver::receiveData()
           pub_pack.defence_buff = packet.defence_buff;
           pub_pack.defence_debuff = packet.defence_debuff;
           pub_pack.attack_buff = packet.attack_buff;
+          pub_pack.status_info = packet.status_info;
           receiveLLC_pub_->publish(pub_pack);
           pub_speed.x = packet.self_speed_x;
           pub_speed.y = packet.self_speed_y;
@@ -438,18 +439,23 @@ void RMSerialDriver::sendData()
       packet.speed_y = speed_y;
     }
 
-    if (area_status == 1) {
+    // if (area_status == 1) {
+    //   packet.angle = gimbal_angle;
+    //   packet.pitch = 0.0;
+    // } else if (area_status == 2) {
+    //   packet.angle = area_angle;
+    //   packet.pitch = 0.0;
+    // } else {
+    //   packet.angle = angle;
+    //   packet.pitch = pitch;
+    // }
+    if (area_status == 1 || area_status == 2 || area_status == 3) {
       packet.angle = gimbal_angle;
-      packet.pitch = 0.0;
-    } else if (area_status == 2) {
-      packet.angle = area_angle;
       packet.pitch = 0.0;
     } else {
       packet.angle = angle;
       packet.pitch = pitch;
     }
-    // packet.angle = spin_enable ? angle : gimbal_angle;
-    // packet.angle = angle;
     packet.shoot_mode = shoot_mode;
     packet.area_status = area_status;
     // packet.spin_enable = spin_enable;

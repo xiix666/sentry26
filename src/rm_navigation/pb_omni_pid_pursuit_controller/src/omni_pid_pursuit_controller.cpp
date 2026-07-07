@@ -79,24 +79,39 @@ void OmniPidPursuitController::configure(
 
   // ========== MPC参数：无论是否启用都声明（方便动态切换） ==========
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Np", rclcpp::ParameterValue(5)); 
+    node, plugin_name_ + ".mpc_Np", rclcpp::ParameterValue(5));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Nc", rclcpp::ParameterValue(3));  
+    node, plugin_name_ + ".mpc_Nc", rclcpp::ParameterValue(3));
+
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Q_x", rclcpp::ParameterValue(15.0)); 
+    node, plugin_name_ + ".mpc_S_x", rclcpp::ParameterValue(15.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Q_y", rclcpp::ParameterValue(15.0));  
+    node, plugin_name_ + ".mpc_S_y", rclcpp::ParameterValue(15.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_R_vx", rclcpp::ParameterValue(0.5)); 
+    node, plugin_name_ + ".mpc_S_vx", rclcpp::ParameterValue(0.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_R_vy", rclcpp::ParameterValue(0.5));  
+    node, plugin_name_ + ".mpc_S_vy", rclcpp::ParameterValue(0.0));
+
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Rdelta_vx", rclcpp::ParameterValue(0.5)); 
+    node, plugin_name_ + ".mpc_Q_x", rclcpp::ParameterValue(5.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".mpc_Rdelta_vy", rclcpp::ParameterValue(0.5));  
+    node, plugin_name_ + ".mpc_Q_y", rclcpp::ParameterValue(5.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".acc_max", rclcpp::ParameterValue(5.5));  
-  
+    node, plugin_name_ + ".mpc_Q_vx", rclcpp::ParameterValue(0.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_Q_vy", rclcpp::ParameterValue(0.5));
+
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_R_vx", rclcpp::ParameterValue(0.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_R_vy", rclcpp::ParameterValue(0.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_Rdelta_vx", rclcpp::ParameterValue(0.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_Rdelta_vy", rclcpp::ParameterValue(0.5));
+
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".acc_max", rclcpp::ParameterValue(5.5));
 
   // 公共参数声明（PID/MPC均需使用）
   declare_parameter_if_not_declared(
@@ -168,7 +183,9 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".min_dist", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".large_slow", rclcpp::ParameterValue(1.0));
-  // 公共参数读取（PID/MPC均需使用）
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_ref_speed", rclcpp::ParameterValue(2.5));
+    // 公共参数读取（PID/MPC均需使用）
   node->get_parameter(plugin_name_ + ".translation_kp", translation_kp_);
   node->get_parameter(plugin_name_ + ".translation_ki", translation_ki_);
   node->get_parameter(plugin_name_ + ".translation_kd", translation_kd_);
@@ -217,52 +234,75 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".use_mpc_control", use_mpc_control_);
 
   // MPC参数读取（无论是否启用都读取，方便动态切换）
+  node->get_parameter(plugin_name_ + ".mpc_S_x", mpc_S_x);
+  node->get_parameter(plugin_name_ + ".mpc_S_y", mpc_S_y);
+  node->get_parameter(plugin_name_ + ".mpc_S_vx", mpc_S_vx);
+  node->get_parameter(plugin_name_ + ".mpc_S_vy", mpc_S_vy);
+
   node->get_parameter(plugin_name_ + ".mpc_Q_x", mpc_Q_x);
   node->get_parameter(plugin_name_ + ".mpc_Q_y", mpc_Q_y);
+  node->get_parameter(plugin_name_ + ".mpc_Q_vx", mpc_Q_vx);
+  node->get_parameter(plugin_name_ + ".mpc_Q_vy", mpc_Q_vy);
+
   node->get_parameter(plugin_name_ + ".mpc_R_vx", mpc_R_vx);
   node->get_parameter(plugin_name_ + ".mpc_R_vy", mpc_R_vy);
   node->get_parameter(plugin_name_ + ".mpc_Rdelta_vx", mpc_Rdelta_vx);
   node->get_parameter(plugin_name_ + ".mpc_Rdelta_vy", mpc_Rdelta_vy);
+
   node->get_parameter(plugin_name_ + ".mpc_Np", mpc_Np_);
   node->get_parameter(plugin_name_ + ".mpc_Nc", mpc_Nc_);
   node->get_parameter(plugin_name_ + ".min_dist", min_dist_);
   node->get_parameter(plugin_name_ + ".acc_max", acc_max_);
+  node->get_parameter(plugin_name_ + ".mpc_ref_speed", mpc_ref_speed_);
 
-  control_duration_ = 1.0 / control_frequency;
+  declare_parameter_if_not_declared(
+  node, plugin_name_ + ".mpc_curve_a_lat_max", rclcpp::ParameterValue(1.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_curve_min_speed", rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_curve_lookahead_dist", rclcpp::ParameterValue(1.2));
+    control_duration_ = 1.0 / control_frequency;
+  node->get_parameter(plugin_name_ + ".mpc_curve_a_lat_max", mpc_curve_a_lat_max_);
+  node->get_parameter(plugin_name_ + ".mpc_curve_min_speed", mpc_curve_min_speed_);
+  node->get_parameter(plugin_name_ + ".mpc_curve_lookahead_dist", mpc_curve_lookahead_dist_);
   // minco_tracker_ = std::make_unique<minco_nav2::MincoTracker>();
   // minco_tracker_->setParams(v_linear_max_,acc_max_,control_duration_);
-  // ========== 核心改动：根据参数初始化对应控制器 ==========
   if (use_mpc_control_) {
     // MPC模式：初始化MPC控制器
     mpc_controller_ = std::make_unique<OmniMpcController>(
-        control_duration_,  // 控制周期Ts
-        mpc_Np_,            // 预测时域
-        mpc_Nc_,            // 控制时域
-        v_linear_min_,      // 线速度最小值
-        v_linear_max_       // 线速度最大值
+    control_duration_,   // Ts
+    mpc_Np_,             // Np
+    mpc_Nc_,             // Nc
+    -acc_max_,           // a_min
+    acc_max_,            // a_max
+    v_linear_min_,       // v_min
+    v_linear_max_        // v_max
     );
-    Eigen::Matrix2d Q, R, R_delta;
-    Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-    R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-    R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-    mpc_controller_->initWeights(Q, R, R_delta);
+
+    updateMpcWeights();
   } else {
-    // PID模式：初始化PID控制器
-    move_pid_ = std::make_shared<PID>(
-      control_duration_, v_linear_max_, v_linear_min_, translation_kp_, translation_kd_,
-      translation_ki_);
-    heading_pid_ = std::make_shared<PID>(
-      control_duration_, v_angular_max_, v_angular_min_, rotation_kp_, rotation_kd_, rotation_ki_);
-    // 更新滤波器参数
     impl_->linear_vel_filter_->setWindowSize(impl_->sg_window_size_);
     impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
     impl_->angular_vel_filter_->setWindowSize(impl_->sg_window_size_);
     impl_->angular_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
   }
-
+  move_pid_ = std::make_shared<PID>(
+    control_duration_, 
+    v_linear_max_, 
+    v_linear_min_, 
+    translation_kp_, 
+    translation_kd_,
+    translation_ki_);
+  heading_pid_ = std::make_shared<PID>(
+    control_duration_,
+    v_angular_max_,
+    v_angular_min_,
+    rotation_kp_,
+    rotation_kd_,
+    rotation_ki_);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   
-  smooth_vel_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(
+  smooth_vel_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(  //如果不用smooth_server的话，这个订阅可以去掉
     "cmd_vel_nav2_result",
     rclcpp::SensorDataQoS(),
     std::bind(&OmniPidPursuitController::smoothedVelCallback, this, std::placeholders::_1));
@@ -280,18 +320,38 @@ void OmniPidPursuitController::configure(
       ->create_publisher<visualization_msgs::msg::MarkerArray>(
         "curvature_points_marker_array", rclcpp::QoS(10));
 
-  // 初始化旋转PID（PID/MPC模式均需）
-  if (!use_mpc_control_) {
-    heading_pid_ = std::make_shared<PID>(
-      control_duration_, v_angular_max_, v_angular_min_, rotation_kp_, rotation_kd_, rotation_ki_);
-  }
 }
+void OmniPidPursuitController::updateMpcWeights()
+{
+  if (!mpc_controller_) {
+    return;
+  }
 
+  Eigen::Matrix4d S = Eigen::Matrix4d::Zero();
+  S(0, 0) = mpc_S_x;
+  S(1, 1) = mpc_S_y;
+  S(2, 2) = mpc_S_vx;
+  S(3, 3) = mpc_S_vy;
+
+  Eigen::Matrix4d Q = Eigen::Matrix4d::Zero();
+  Q(0, 0) = mpc_Q_x;
+  Q(1, 1) = mpc_Q_y;
+  Q(2, 2) = mpc_Q_vx;
+  Q(3, 3) = mpc_Q_vy;
+
+  Eigen::Matrix2d R = Eigen::Matrix2d::Zero();
+  R(0, 0) = mpc_R_vx;
+  R(1, 1) = mpc_R_vy;
+
+  Eigen::Matrix2d R_delta = Eigen::Matrix2d::Zero();
+  R_delta(0, 0) = mpc_Rdelta_vx;
+  R_delta(1, 1) = mpc_Rdelta_vy;
+
+  mpc_controller_->initWeights(S, Q, R, R_delta);
+}
 void OmniPidPursuitController::smoothedVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-  // 加锁保护共享变量，避免线程冲突
   std::lock_guard<std::mutex> lock(sm_mutex);
-  // 提取平滑后的线速度（x方向，全向机器人核心速度）
   double x = msg->linear.x;
   double y = msg->linear.y;
   smoothed_vel = std::sqrt(x*x+y*y);
@@ -319,7 +379,6 @@ void OmniPidPursuitController::cleanup()
 
 void OmniPidPursuitController::activate()
 {
-  // 核心改动：根据参数打印模式信息
   RCLCPP_INFO(
     logger_,
     "Activating controller: %s of type "
@@ -339,7 +398,6 @@ void OmniPidPursuitController::activate()
 
 void OmniPidPursuitController::deactivate()
 {
-  // 核心改动：根据参数打印模式信息
   RCLCPP_INFO(
     logger_,
     "Deactivating controller: %s of type "
@@ -354,206 +412,323 @@ void OmniPidPursuitController::deactivate()
 }
 
 geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityCommands(
-  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+  const geometry_msgs::msg::PoseStamped & pose,
+  const geometry_msgs::msg::Twist & velocity,
   nav2_core::GoalChecker * /*goal_checker*/)
 {
-  double lin_dist = 0.0, theta_dist = 0.0, angle_to_goal = 0.0;
+  double lin_dist = 0.0;
+  double theta_dist = 0.0;
+  double angle_to_goal = 0.0;
+
+  double cmd_vx = 0.0;
+  double cmd_vy = 0.0;
+  double lin_vel = 0.0;
+  double angular_vel = 0.0;
 
   std::vector<geometry_msgs::msg::PoseStamped> valid_path_poses;
+
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = pose.header;
-  // std::lock_guard<std::mutex> lock_reinit(mutex_);
 
-  nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
-  // std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
-
-  // Transform path to robot base frame
   auto transformed_plan = transformGlobalPlan(pose);
 
-  // Find look ahead distance and point on path and publish
-  double lookahead_dist = getLookAheadDistance(velocity);
-
+  const double lookahead_dist = getLookAheadDistance(velocity);
   auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
 
-  bool carrot_valid = std::isfinite(carrot_pose.pose.position.x) && 
-                      std::isfinite(carrot_pose.pose.position.y);
+  const bool carrot_valid =
+    std::isfinite(carrot_pose.pose.position.x) &&
+    std::isfinite(carrot_pose.pose.position.y);
+
   if (!carrot_valid) {
     RCLCPP_WARN(logger_, "Carrot pose invalid (NaN/Inf), return zero vel");
     return cmd_vel;
   }
 
-  if (!use_mpc_control_) {  
-    carrot_pub_->publish (createCarrotMsg(carrot_pose));
-  } else {
+  const bool direct_drive_request = (rm_task_value_.load() == 1);
+  bool direct_drive_mode = false;
 
-    for (const auto &p : transformed_plan.poses) {
+  if (direct_drive_request) {
+    const auto & target_pose = transformed_plan.poses.back();
 
-      double dist_x = p.pose.position.x;
-      double dist_y = p.pose.position.y;
-      double dist = hypot(dist_x, dist_y);
+    const double target_x = target_pose.pose.position.x;
+    const double target_y = target_pose.pose.position.y;
 
-      if (dist >= min_dist_ && dist <= lookahead_dist_) {
+    const bool target_valid =
+      std::isfinite(target_x) && std::isfinite(target_y);
+
+    if (target_valid && isDirectPathSafeToTarget(target_pose)) {
+      direct_drive_mode = true;
+    } else {
+      RCLCPP_WARN_THROTTLE(
+        logger_, *clock_, 1000,
+        "Direct drive path unsafe or target invalid, fallback to normal controller");
+    }
+  }
+
+  const auto * carrot_visual_pose =
+    direct_drive_mode ? &transformed_plan.poses.back() : &carrot_pose;
+
+  const bool should_publish_carrot =
+    !use_mpc_control_ || direct_drive_mode;
+
+  if (should_publish_carrot) {
+    carrot_pub_->publish(createCarrotMsg(*carrot_visual_pose));
+  }
+
+  if (use_mpc_control_ && !direct_drive_mode) {
+    for (const auto & p : transformed_plan.poses) {
+      const double dist = std::hypot(
+        p.pose.position.x,
+        p.pose.position.y);
+
+      if (dist >= min_dist_ && dist <= 8.0) {
         valid_path_poses.push_back(p);
       }
     }
-    if(valid_path_poses.empty()) {
-      for (const auto &p : transformed_plan.poses) {
 
-        double dist_x = p.pose.position.x;
-        double dist_y = p.pose.position.y;
-        double dist = hypot(dist_x, dist_y);
-  
-        if (dist > 0 && dist <= lookahead_dist_) {
+    if (valid_path_poses.empty()) {
+      for (const auto & p : transformed_plan.poses) {
+        const double dist = std::hypot(
+          p.pose.position.x,
+          p.pose.position.y);
+
+        if (dist > 0.0 && dist <= 8.0) {
           valid_path_poses.push_back(p);
         }
       }
     }
-    if(!valid_path_poses.empty()) {
-      lin_dist = hypot(valid_path_poses[0].pose.position.x, valid_path_poses[0].pose.position.y);
+
+    if (!valid_path_poses.empty()) {
+      lin_dist = std::hypot(
+        valid_path_poses[0].pose.position.x,
+        valid_path_poses[0].pose.position.y);
     }
-
   }
+  auto runProportionalPursuit = [&]() {
+    lin_dist = std::hypot(
+      carrot_pose.pose.position.x,
+      carrot_pose.pose.position.y);
 
-  if (!use_mpc_control_) {
-    lin_dist = hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
-    theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+    theta_dist = std::atan2(
+      carrot_pose.pose.position.y,
+      carrot_pose.pose.position.x);
+
     angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
 
     if (use_rotate_to_heading_) {
-      if (fabs(angle_to_goal) > use_rotate_to_heading_treshold_) {
-        lin_dist = 0;  
+      if (std::fabs(angle_to_goal) > use_rotate_to_heading_treshold_) {
+        lin_dist = 0.0;
       }
     }
-  }
 
-  double cmd_vx = 0.0, cmd_vy = 0.0;
-  double lin_vel = 0.0;
-  double angular_vel = 0.0;  
-  const bool direct_drive_mode = (rm_task_value_.load() == 1);
+    if (lin_dist > 0.0) {
 
+      lin_vel = move_pid_->calculate(lin_dist, 0);
+      if (!std::isfinite(lin_vel)) {
+        RCLCPP_WARN(logger_, "PID returned NaN/Inf, using zero vel");
+        lin_vel = 0.0;
+      }
+
+      applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel);
+      applyApproachVelocityScaling(transformed_plan, lin_vel);
+
+      cmd_vx = lin_vel * std::cos(theta_dist);
+      cmd_vy = lin_vel * std::sin(theta_dist);
+
+      RCLCPP_DEBUG(
+        logger_,
+        "Proportional/PID pursuit output: lin_vel=%.3f, vx=%.3f, vy=%.3f",
+        lin_vel, cmd_vx, cmd_vy);
+    }
+
+    if (impl_->enable_sg_filter_ && lin_dist > 0.0) {
+      const double filtered_lin_vel = impl_->linear_vel_filter_->filter(lin_vel);
+
+      cmd_vx = filtered_lin_vel * std::cos(theta_dist);
+      cmd_vy = filtered_lin_vel * std::sin(theta_dist);
+
+      RCLCPP_DEBUG(logger_, "SG filtered vel: %.3f", filtered_lin_vel);
+    }
+
+    angular_vel =
+      enable_rotation_ && heading_pid_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
+  };
   if (direct_drive_mode) {
     const auto & target_pose = transformed_plan.poses.back();
 
     const double target_x = target_pose.pose.position.x;
     const double target_y = target_pose.pose.position.y;
-    const double lin_dist = std::hypot(target_x, target_y);
 
-    if (!std::isfinite(target_x) || !std::isfinite(target_y)) {
-      RCLCPP_WARN(logger_, "Direct drive target invalid, return zero vel");
-      return cmd_vel;
-    }
-
-    if (!isDirectPathSafeToTarget(target_pose)) {
-      RCLCPP_WARN_THROTTLE(
-        logger_, *clock_, 1000,
-        "Direct drive blocked: path to target has cost > 200");
-      return cmd_vel;
-    }
+    lin_dist = std::hypot(target_x, target_y);
+    theta_dist = std::atan2(target_y, target_x);
 
     if (lin_dist > 1e-6) {
-      double lin_vel = translation_kp_ * lin_dist;
 
-      // 和 PID 控制一样，使用 v_linear_max_ 限制最大线速度
+      lin_vel = translation_kp_ * lin_dist;
+
       lin_vel = std::clamp(lin_vel, 0.0, v_linear_max_);
-
-      const double theta_dist = std::atan2(target_y, target_x);
 
       cmd_vx = lin_vel * std::cos(theta_dist);
       cmd_vy = lin_vel * std::sin(theta_dist);
     }
 
     angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
-    angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
-
+    angular_vel =
+      enable_rotation_ && heading_pid_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
   }
   else if (use_mpc_control_) {
+    const auto & target_pose = transformed_plan.poses.back();
 
-    Eigen::Vector2d u_opt(0.0, 0.0);
-    if (lin_dist > 0 && !valid_path_poses.empty()) {
-      std::vector<Eigen::Vector2d> mpc_ref_seq = samplePathToRefSeq(valid_path_poses, mpc_Np_);
-      for(int i=0;i<mpc_ref_seq.size();i++){
-        std::cout << mpc_ref_seq[i](0) << " " << mpc_ref_seq[i](1) << std::endl;
-      }
-      Eigen::Vector2d curr_x(0.0, 0.0);
-      mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
-      u_opt = mpc_controller_->solve(curr_x, mpc_ref_seq);
-      cmd_vx = u_opt(0);
-      cmd_vy = u_opt(1);
-    }
+    const double target_x = target_pose.pose.position.x;
+    const double target_y = target_pose.pose.position.y;
 
-    if (lin_dist > 0) {
-      applyCurvatureLimitation_mpc(transformed_plan, carrot_pose, cmd_vx, cmd_vy);
-      applyApproachVelocityScaling_mpc(transformed_plan, cmd_vx, cmd_vy);
-    }
+    const bool target_valid =
+      std::isfinite(target_x) &&
+      std::isfinite(target_y);
 
-    angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
-    angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
+    const double target_dist =
+      target_valid ? std::hypot(target_x, target_y) : std::numeric_limits<double>::infinity();
 
-  } else {
-    lin_dist = hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
-    theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
-    angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
+    const bool mpc_use_proportional_near_goal =
+      target_valid &&
+      target_dist <= approach_velocity_scaling_dist_;
+    const double enter_dist = approach_velocity_scaling_dist_;
+    const double exit_dist = approach_velocity_scaling_dist_ + 0.20;
 
-    if (use_rotate_to_heading_) {
-      if (fabs(angle_to_goal) > use_rotate_to_heading_treshold_) {
-        lin_dist = 0;  
+    if (!mpc_near_goal_pursuit_mode_ && target_dist <= enter_dist) {
+      mpc_near_goal_pursuit_mode_ = true;
+
+      if (mpc_controller_) {
+        mpc_controller_->reset();
       }
     }
+    if (mpc_near_goal_pursuit_mode_ && target_dist >= exit_dist) {
+      mpc_near_goal_pursuit_mode_ = false;
 
-    if (lin_dist > 0) {
-      lin_vel = move_pid_->calculate(lin_dist, 0);
-      if (!std::isfinite(lin_vel)) {
-        RCLCPP_WARN(logger_, "PID returned NaN/Inf, using zero vel");
-        lin_vel = 0.0;
+      if (mpc_controller_) {
+        mpc_controller_->reset();
       }
-      applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel);
-      applyApproachVelocityScaling(transformed_plan, lin_vel);
-      cmd_vx = lin_vel * cos(theta_dist);
-      cmd_vy = lin_vel * sin(theta_dist);
-      RCLCPP_DEBUG(logger_, "PID output: lin_vel=%.3f, vx=%.3f, vy=%.3f", lin_vel, cmd_vx, cmd_vy);
     }
+    if (mpc_near_goal_pursuit_mode_) {
+      runProportionalPursuit();
+    } 
+    else {
+      if (!transformed_plan.poses.empty() && mpc_controller_) {
+        OmniMpcController::State x0;
+        x0.setZero();
 
-    if (impl_->enable_sg_filter_ && lin_dist > 0) {
-      double filtered_lin_vel = impl_->linear_vel_filter_->filter(lin_vel);
-      cmd_vx = filtered_lin_vel * cos(theta_dist);
-      cmd_vy = filtered_lin_vel * sin(theta_dist);
-      RCLCPP_DEBUG(logger_, "SG filtered vel: %.3f", filtered_lin_vel);
+        x0(0) = 0.0;
+        x0(1) = 0.0;
+        x0(2) = velocity.linear.x;
+        x0(3) = velocity.linear.y;
+
+        if (!std::isfinite(x0(2))) {
+          x0(2) = 0.0;
+        }
+        if (!std::isfinite(x0(3))) {
+          x0(3) = 0.0;
+        }
+
+        double v_des = std::clamp(
+          mpc_ref_speed_,
+          min_approach_linear_velocity_,
+          v_linear_max_);
+
+        // auto mpc_ref_seq =
+        //   samplePathToTimedMpcRefSeq(
+        //     transformed_plan.poses,
+        //     mpc_Np_,
+        //     v_des);
+
+        // mpc_controller_->setAccelerationLimits(-acc_max_, acc_max_);
+        // mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
+        double v_ref_eff_for_constraint = v_des;
+
+        auto mpc_ref_seq =
+          samplePathToTimedMpcRefSeq(
+            transformed_plan.poses,
+            mpc_Np_,
+            v_des,
+            &v_ref_eff_for_constraint);
+
+        mpc_controller_->setAccelerationLimits(-acc_max_, acc_max_);
+
+        const double v_constraint_limit =
+          std::clamp(
+            v_ref_eff_for_constraint,
+            std::max(0.0, mpc_curve_min_speed_),
+            v_linear_max_);
+
+        mpc_controller_->setVelocityLimits(-v_constraint_limit, v_constraint_limit);
+        Eigen::Vector2d v_cmd =
+          mpc_controller_->solveVelocityCommand(x0, mpc_ref_seq);
+
+        cmd_vx = v_cmd.x();
+        cmd_vy = v_cmd.y();
+      }
+
+      if (std::hypot(cmd_vx, cmd_vy) > 1e-6) {
+        applyCurvatureLimitation_mpc(transformed_plan, carrot_pose, cmd_vx, cmd_vy);
+        // 不要再调用 applyApproachVelocityScaling_mpc()
+      }
+
+      angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
+      angular_vel =
+        enable_rotation_ && heading_pid_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
     }
-
-    angular_vel = enable_rotation_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
   }
-  if (!std::isfinite(cmd_vx)) cmd_vx = 0.0;
-  if (!std::isfinite(cmd_vy)) cmd_vy = 0.0;
-  if (!std::isfinite(angular_vel)) angular_vel = 0.0;
-    if (has_prev_cmd_vel_) {
+  else {
+    runProportionalPursuit();
+  }
+
+  if (!std::isfinite(cmd_vx)) {
+    cmd_vx = 0.0;
+  }
+  if (!std::isfinite(cmd_vy)) {
+    cmd_vy = 0.0;
+  }
+  if (!std::isfinite(angular_vel)) {
+    angular_vel = 0.0;
+  }
+
+  if (!use_mpc_control_ && has_prev_cmd_vel_) {
     const double max_delta_v = acc_max_ * control_duration_;
-  
+
     const double prev_vx = prev_cmd_vel_.twist.linear.x;
     const double prev_vy = prev_cmd_vel_.twist.linear.y;
-  
+
     const double dvx = cmd_vx - prev_vx;
     const double dvy = cmd_vy - prev_vy;
+
     const double delta_v_norm = std::hypot(dvx, dvy);
-  
+
     if (delta_v_norm > max_delta_v && delta_v_norm > 1e-6) {
       const double scale = max_delta_v / delta_v_norm;
+
       cmd_vx = prev_vx + dvx * scale;
       cmd_vy = prev_vy + dvy * scale;
     }
   }
-  double max_linear_vel = 4.0;   // 防止出意外再限制一下最大线速度
-  double speed_mag = std::hypot(cmd_vx, cmd_vy);
-  if (speed_mag > max_linear_vel) {
-    double scale = max_linear_vel / speed_mag;
+
+  const double max_linear_vel = 4.0;
+  const double speed_mag = std::hypot(cmd_vx, cmd_vy);
+
+  if (speed_mag > max_linear_vel && speed_mag > 1e-6) {
+    const double scale = max_linear_vel / speed_mag;
+
     cmd_vx *= scale;
     cmd_vy *= scale;
   }
+
   cmd_vel.twist.linear.x = cmd_vx;
   cmd_vel.twist.linear.y = cmd_vy;
+  // cmd_vel.twist.linear.x = 0.0;
+  // cmd_vel.twist.linear.y = 0.0;
   cmd_vel.twist.angular.z = angular_vel;
 
-  prev_cmd_vel_ = cmd_vel; 
-  has_prev_cmd_vel_ = true; 
+  prev_cmd_vel_ = cmd_vel;
+  has_prev_cmd_vel_ = true;
+
   return cmd_vel;
 }
 
@@ -606,140 +781,6 @@ nav_msgs::msg::Path OmniPidPursuitController::cropGlobalPlanToLocal(
 
   return local_plan;
 }
-// geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityCommands(
-//   const geometry_msgs::msg::PoseStamped & pose,
-//   const geometry_msgs::msg::Twist & velocity,
-//   nav2_core::GoalChecker * /*goal_checker*/)
-// {
-//   std::lock_guard<std::mutex> lock_reinit(mutex_);
-//   geometry_msgs::msg::TwistStamped cmd_vel;
-//   cmd_vel.header = pose.header;
-
-//   // 1. 获取 Nav2 标准局部路径
-//   auto local_plan = cropGlobalPlanToLocal(pose);
-//   if (global_plan_.poses.empty()) {
-//     return cmd_vel;
-//   }
-
-//   static bool first_plan = true;
-//   static rclcpp::Time last_path_stamp;
-  
-//   rclcpp::Time current_path_stamp(global_plan_.header.stamp);
-//   // bool path_is_new = (first_plan) || 
-//   //                    (fabs((current_path_stamp - last_path_stamp).seconds()) > 0.5);
-//   bool path_is_new = first_plan || minco_tracker_->isFinished();
-//   if (path_is_new) {
-//     RCLCPP_INFO(logger_, "Generating new MINCO trajectory (map frame)...");
-    
-//     bool success = minco_tracker_->setPath(local_plan, velocity);
-//     if (!success) {
-//       RCLCPP_WARN(logger_, "MINCO setPath failed!");
-//       return cmd_vel;
-//     }
-//     last_path_stamp = global_plan_.header.stamp;
-//     first_plan = false;
-//     minco_tracker_->resetTime();
-//   }
-
-//   double dt = control_duration_; 
-//   Eigen::Vector2d des_vel_map, des_acc_map;
-//   minco_tracker_->advanceAndGetCmd(dt, des_vel_map, des_acc_map);
-//   double t = minco_tracker_->getCurrentTime();
-//   double total_t = minco_tracker_->getTotalTime(); // 你需要在 MincoTracker 里加这个函数
-//   std::cout << "[DEBUG] 时间: t=" << t << " / total_t=" << total_t << std::endl;
-
-//   t = std::min(t, total_t);
-
-//   Eigen::Vector2d des_pos_map = minco_tracker_->getDesiredPos(t);
-//   std::cout << "pos" << des_pos_map << std::endl;
-
-//   double robot_x = pose.pose.position.x;
-//   double robot_y = pose.pose.position.y;
-
-//   tf2::Quaternion q(pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w);
-//   tf2::Matrix3x3 m(q);
-//   double roll, pitch, yaw;
-//   m.getRPY(roll, pitch, yaw);
-
-//   // 1. 计算 map 下的误差
-//   double dx_map = des_pos_map.x() - robot_x;
-//   double dy_map = des_pos_map.y() - robot_y;
-
-//   // 2. 旋转到 base_link
-//   double c = cos(yaw);
-//   double s = sin(yaw);
-//   double des_x_robot =  c * dx_map + s * dy_map;
-//   double des_y_robot = -s * dx_map + c * dy_map;
-
-//   // 3. 速度也旋转
-//   double des_vx_robot =  c * des_vel_map.x() + s * des_vel_map.y();
-//   double des_vy_robot = -s * des_vel_map.x() + c * des_vel_map.y();
-
-//   // ==============================
-//   // 现在 des_x_robot / des_y_robot 是正常的小数值！
-//   // ==============================
-//   std::cout << "[正常] Robot frame: x=" << des_x_robot << ", y=" << des_y_robot << std::endl;
-
-//   // 反馈控制
-//   double kp = 1.0;
-//   double fb_vx = kp * des_x_robot;
-//   double fb_vy = kp * des_y_robot;
-
-//   double final_vx = des_vx_robot + fb_vx;
-//   double final_vy = des_vy_robot + fb_vy;
-
-//   // 6. 简单限速
-//   double speed = std::hypot(final_vx, final_vy);
-//   if (speed > v_linear_max_) {
-//     double scale = v_linear_max_ / speed;
-//     final_vx *= scale;
-//     final_vy *= scale;
-//   }
-
-//   auto smooth_path = minco_tracker_->getSmoothedPath();
-//   smooth_path.header.stamp = clock_->now();
-//   smoothed_path_pub_->publish(smooth_path);
-
-//   // 7. 赋值输出
-//   // cmd_vel.twist.linear.x = final_vx;
-//   // cmd_vel.twist.linear.y = final_vy;
-//   cmd_vel.twist.angular.z = 0.0; // 全向车不需要旋转车头
-
-//   return cmd_vel;
-// }
-std::vector<Eigen::Vector2d> OmniPidPursuitController::samplePathToRefSeq(
-  const std::vector<geometry_msgs::msg::PoseStamped> &path_poses,
-  int Np)
-{
-  std::vector<Eigen::Vector2d> ref_seq;
-  // 1. 将ROS路径点转换为Eigen向量，同时记录每个点到机器人的距离（本体帧原点(0,0)）
-  std::vector<std::pair<Eigen::Vector2d, double>> pose_with_dist;
-  for (const auto &p : path_poses) {
-    Eigen::Vector2d pt(p.pose.position.x, p.pose.position.y);
-    double dist = pt.norm();  // 本体帧下到原点的欧式距离（hypot(x,y)等价，更简洁）
-    pose_with_dist.emplace_back(pt, dist);
-  }
-
-  // 2. 按距离**升序排序**：近→远，匹配机器人前进路径顺序
-  std::sort(pose_with_dist.begin(), pose_with_dist.end(),
-            [](const auto &a, const auto &b) { return a.second < b.second; });
-
-  // 3. 截取前Np个点，填充到参考序列
-  int take_num = std::min((int)pose_with_dist.size(), Np);
-  for (int i = 0; i < take_num; ++i) {
-    ref_seq.push_back(pose_with_dist[i].first);
-  }
-
-  // 4. 鲁棒处理：若路径点不足Np，补最后一个点（保证参考序列长度为Np）
-  if (ref_seq.size() < Np && !ref_seq.empty()) {
-    Eigen::Vector2d last_pt = ref_seq.back();
-    while (ref_seq.size() < Np) {
-      ref_seq.push_back(last_pt);
-    }
-  }
-
-  return ref_seq;
-}
 
 void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path) { 
   global_plan_ = path; 
@@ -784,52 +825,101 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
   auto transformation_end = std::find_if(
     transformation_begin, global_plan_.poses.end(),
     [&](const auto & pose) { return euclidean_distance(pose, robot_pose) > max_costmap_extent; });
+  
+  nav_msgs::msg::Path global_segment;
+  global_segment.header = global_plan_.header;
+  global_segment.header.stamp = robot_pose.header.stamp;
+
+  global_segment.poses.reserve(std::distance(transformation_begin, transformation_end));
 
   // Lambda to transform a PoseStamped from global frame to local
-  auto transform_global_pose_to_local = [&](const auto & global_plan_pose) {
-    geometry_msgs::msg::PoseStamped stamped_pose, transformed_pose;
-    stamped_pose.header.frame_id = global_plan_.header.frame_id;
-    stamped_pose.header.stamp = robot_pose.header.stamp;
-    stamped_pose.pose = global_plan_pose.pose;
-    transformPose(costmap_ros_->getBaseFrameID(), stamped_pose, transformed_pose);
-    transformed_pose.pose.position.z = 0.0;
-    return transformed_pose;
-  };
+  // auto transform_global_pose_to_local = [&](const auto & global_plan_pose) {
+  //   geometry_msgs::msg::PoseStamped stamped_pose, transformed_pose;
+  //   stamped_pose.header.frame_id = global_plan_.header.frame_id;
+  //   stamped_pose.header.stamp = robot_pose.header.stamp;
+  //   stamped_pose.pose = global_plan_pose.pose;
+  //   transformPose(costmap_ros_->getBaseFrameID(), stamped_pose, transformed_pose);
+  //   transformed_pose.pose.position.z = 0.0;
+  //   return transformed_pose;
+  // };
+  for (auto it = transformation_begin; it != transformation_end; ++it) {
+    geometry_msgs::msg::PoseStamped p = *it;
+    p.header.frame_id = global_plan_.header.frame_id;
+    p.header.stamp = robot_pose.header.stamp;
+    p.pose.position.z = 0.0;
+    global_segment.poses.push_back(p);
+  }
 
+  if (global_segment.poses.empty()) {
+    throw nav2_core::PlannerException("Resulting global segment has 0 poses in it.");
+  }
   // Transform the near part of the global plan into the robot's frame of reference.
-  nav_msgs::msg::Path transformed_plan;
-  std::transform(
-    transformation_begin, transformation_end, std::back_inserter(transformed_plan.poses),
-    transform_global_pose_to_local);
-  transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
-  transformed_plan.header.stamp = robot_pose.header.stamp;
+  // nav_msgs::msg::Path transformed_plan;
+  // std::transform(
+  //   transformation_begin, transformation_end, std::back_inserter(transformed_plan.poses),
+  //   transform_global_pose_to_local);
+  // transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
+  // transformed_plan.header.stamp = robot_pose.header.stamp;
   // std::cout << "Original transformed plan size: " << transformed_plan.poses.size() << std::endl;
   bool robot_in_obstacle = false;
   {
     auto costmap = costmap_ros_->getCostmap();
     std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
-    unsigned int mx, my;
-    if (costmap->worldToMap(0.0, 0.0, mx, my)) {
-      unsigned char robot_cost = costmap->getCost(mx, my);
-      robot_in_obstacle = (robot_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+
+    geometry_msgs::msg::PoseStamped robot_costmap_pose;
+    if (transformPose(costmap_ros_->getGlobalFrameID(), pose, robot_costmap_pose)) {
+      unsigned int mx = 0;
+      unsigned int my = 0;
+
+      if (costmap->worldToMap(
+            robot_costmap_pose.pose.position.x,
+            robot_costmap_pose.pose.position.y,
+            mx,
+            my))
+      {
+        const unsigned char robot_cost = costmap->getCost(mx, my);
+        robot_in_obstacle =
+          robot_cost >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
+      }
     }
   }
 
-  if (!robot_in_obstacle && transformed_plan.poses.size() > 2) {
-    transformed_plan.poses = removeCornerPts(transformed_plan.poses);
-    // std::cout << "Removed corner points, remaining poses: " << transformed_plan.poses.size() << std::endl;
+  if (!robot_in_obstacle && global_segment.poses.size() > 2) {
+      global_segment.poses = removeCornerPts(global_segment.poses);
   }
-  // std::cout << "Transformed plan size: " << transformed_plan.poses.size() << std::endl;
-  // Remove the portion of the global plan that we've already passed so we don't
-  // process it on the next iteration (this is called path pruning)
-  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
+
+  auto transform_global_pose_to_local =
+    [&](const geometry_msgs::msg::PoseStamped & global_plan_pose) {
+      geometry_msgs::msg::PoseStamped stamped_pose;
+      geometry_msgs::msg::PoseStamped transformed_pose;
+
+      stamped_pose.header.frame_id = global_plan_.header.frame_id;
+      stamped_pose.header.stamp = robot_pose.header.stamp;
+      stamped_pose.pose = global_plan_pose.pose;
+
+      transformPose(costmap_ros_->getBaseFrameID(), stamped_pose, transformed_pose);
+      transformed_pose.pose.position.z = 0.0;
+
+      return transformed_pose;
+  };
+  nav_msgs::msg::Path transformed_plan;
+  transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
+  transformed_plan.header.stamp = robot_pose.header.stamp;
+  transformed_plan.poses.reserve(global_segment.poses.size());
+
+  std::transform(
+    global_segment.poses.begin(),
+    global_segment.poses.end(),
+    std::back_inserter(transformed_plan.poses),
+    transform_global_pose_to_local);
+
+  global_plan_.poses.erase(global_plan_.poses.begin(), transformation_begin);
+
   local_path_pub_->publish(transformed_plan);
 
   if (transformed_plan.poses.empty()) {
-    std::cout << "Transformed plan is empty after pruning. Returning zero velocity." << std::endl;
-    throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
+    throw nav2_core::PlannerException("Resulting transformed plan has 0 poses in it.");
   }
-
   return transformed_plan;
 }
 std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCornerPts(
@@ -890,153 +980,824 @@ std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCor
   //             << p.x << ", " << p.y << ")" << std::endl;
   // }
   optimized_path.push_back(path.back());
-  // auto final_path = smoothPathCorners(
-  //   optimized_path,
-  //   0.3,    // 平滑半径（米）
-  //   10,       // 插5个点足够顺滑
-  //   150.0,    // 150度以内才认为是拐角
-  //   3
-  // );
-  // return final_path;
-  return optimized_path;
+  auto final_path = softSmoothPathCorners(
+    optimized_path,
+    0.20,   // 最大平滑半径
+    8,      // 最大插值点数量
+    15.0,    // 小于 15 度认为基本直线，不插
+    60.0,   // 大于 60 度认为明显转弯，满权重
+    0.25,   // 固定距离窗口，前后各看 0.35m
+    0.05,   // 插值点最小间距
+    2       // 少于 2 个插值点就不插
+  );
+  return final_path;
+  // return optimized_path;
 }
-std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::smoothPathCorners(
-  const std::vector<geometry_msgs::msg::PoseStamped>& path,
-  double smooth_radius = 0.25,
-  int num_interpolation = 5,
-  double angle_tol_deg = 150.0,
-  int skip_points = 5)
+
+std::vector<geometry_msgs::msg::PoseStamped>
+OmniPidPursuitController::softSmoothPathCorners(
+  const std::vector<geometry_msgs::msg::PoseStamped> & path,
+  double max_smooth_radius,
+  int max_num_interpolation,
+  double min_turn_angle_deg,
+  double full_turn_angle_deg,
+  double judge_window_dist,
+  double min_point_spacing,
+  int min_interpolation_points)
 {
-  if (path.size() < 3)
-      return path;
-
-  std::vector<geometry_msgs::msg::PoseStamped> smoothed;
-  const double ANGLE_TOL_RAD = angle_tol_deg * M_PI / 180.0;
-
-  std::vector<bool> in_corner_region(path.size(), false);
-  std::vector<bool> is_corner_center(path.size(), false);
-
-  for (size_t i = skip_points; i < path.size() - skip_points; ++i)
-  {
-    const auto& p0 = path[i - skip_points].pose.position;
-    const auto& p1 = path[i].pose.position;
-    const auto& p2 = path[i + skip_points].pose.position;
-
-    double dx1 = p0.x - p1.x;
-    double dy1 = p0.y - p1.y;
-    double dx2 = p2.x - p1.x;
-    double dy2 = p2.y - p1.y;
-
-    double len1 = hypot(dx1, dy1);
-    double len2 = hypot(dx2, dy2);
-    if (len1 < 0.01 || len2 < 0.01) continue;
-
-    double ux1 = dx1 / len1;
-    double uy1 = dy1 / len1;
-    double ux2 = dx2 / len2;
-    double uy2 = dy2 / len2;
-
-    double dot = ux1 * ux2 + uy1 * uy2;
-    dot = std::clamp(dot, -1.0, 1.0);
-    double angle = acos(dot);
-
-    if (angle < ANGLE_TOL_RAD)
-    {
-      is_corner_center[i] = true;
-      for (int j = -skip_points; j <= skip_points; ++j)
-      {
-        size_t idx = i + j;
-        if (idx >= 0 && idx < path.size())
-          in_corner_region[idx] = true;
-      }
-    }
+  if (path.size() < 3) {
+    return path;
   }
 
-  size_t i = 0;
-  while (i < path.size())
+  const double min_turn_angle =
+    min_turn_angle_deg * M_PI / 180.0;
+
+  const double full_turn_angle =
+    full_turn_angle_deg * M_PI / 180.0;
+
+  const double min_valid_len = 0.03;
+  const double min_smooth_distance = 0.04;
+  const double min_output_s_gap = 0.02;
+
+  const unsigned char smooth_collision_cost_threshold =
+    static_cast<unsigned char>(nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE);
+
+  std::vector<double> cum_s(path.size(), 0.0);
+
+  for (size_t i = 1; i < path.size(); ++i) {
+    const auto & p0 = path[i - 1].pose.position;
+    const auto & p1 = path[i].pose.position;
+
+    cum_s[i] =
+      cum_s[i - 1] +
+      std::hypot(p1.x - p0.x, p1.y - p0.y);
+  }
+
+  const double total_s = cum_s.back();
+
+  if (total_s < 1e-4) {
+    return path;
+  }
+
+  auto dist2d = [](
+    const geometry_msgs::msg::PoseStamped & a,
+    const geometry_msgs::msg::PoseStamped & b)
   {
-    // ==============================================
-    // ✅ 非拐点区域：直接保留所有原始点
-    // ==============================================
-    if (!in_corner_region[i])
+    const double dx = a.pose.position.x - b.pose.position.x;
+    const double dy = a.pose.position.y - b.pose.position.y;
+    return std::hypot(dx, dy);
+  };
+
+  auto make_pose = [&](
+    const geometry_msgs::msg::PoseStamped & ref,
+    double x,
+    double y)
+  {
+    geometry_msgs::msg::PoseStamped p = ref;
+    p.pose.position.x = x;
+    p.pose.position.y = y;
+    p.pose.position.z = 0.0;
+    return p;
+  };
+
+  auto smoothstep = [](double x)
+  {
+    x = std::clamp(x, 0.0, 1.0);
+    return x * x * (3.0 - 2.0 * x);
+  };
+
+  auto pose_at_s = [&](double target_s)
+  {
+    target_s = std::clamp(target_s, 0.0, total_s);
+
+    if (target_s <= 0.0) {
+      return path.front();
+    }
+
+    if (target_s >= total_s) {
+      return path.back();
+    }
+
+    auto it = std::lower_bound(cum_s.begin(), cum_s.end(), target_s);
+    size_t idx = static_cast<size_t>(std::distance(cum_s.begin(), it));
+
+    if (idx == 0) {
+      return path.front();
+    }
+
+    const double s0 = cum_s[idx - 1];
+    const double s1 = cum_s[idx];
+
+    const double ratio =
+      (target_s - s0) / std::max(1e-6, s1 - s0);
+
+    const auto & p0 = path[idx - 1].pose.position;
+    const auto & p1 = path[idx].pose.position;
+
+    return make_pose(
+      path[idx],
+      p0.x + ratio * (p1.x - p0.x),
+      p0.y + ratio * (p1.y - p0.y));
+  };
+
+  auto calc_interpolation_count = [&](
+    double weight,
+    double smooth_span)
+  {
+    if (weight < 0.05) {
+      return 0;
+    }
+
+    const double min_required_span =
+      static_cast<double>(min_interpolation_points + 1) *
+      min_point_spacing;
+
+    if (smooth_span < min_required_span) {
+      return 0;
+    }
+
+    const double full_interp_span =
+      std::max(0.35, 2.0 * max_smooth_radius);
+
+    const double length_ratio =
+      std::clamp(smooth_span / full_interp_span, 0.0, 1.0);
+
+    const double score =
+      static_cast<double>(max_num_interpolation) *
+      (0.35 + 0.65 * weight) *
+      length_ratio;
+
+    int n_by_score =
+      static_cast<int>(std::ceil(score));
+
+    int n_by_spacing =
+      static_cast<int>(std::floor(smooth_span / min_point_spacing)) - 1;
+
+    n_by_score = std::max(0, n_by_score);
+    n_by_spacing = std::max(0, n_by_spacing);
+
+    int n = std::min({
+      max_num_interpolation,
+      n_by_score,
+      n_by_spacing
+    });
+
+    if (n < min_interpolation_points) {
+      return 0;
+    }
+
+    return n;
+  };
+
+  struct SmoothCandidate
+  {
+    size_t index{0};
+
+    double si{0.0};
+    double start_s{0.0};
+    double end_s{0.0};
+    double score{0.0};
+
+    int sign{0};
+    int n{0};
+
+    geometry_msgs::msg::PoseStamped start;
+    geometry_msgs::msg::PoseStamped control;
+    geometry_msgs::msg::PoseStamped end;
+  };
+
+  auto make_candidate_points = [&](
+    const SmoothCandidate & c,
+    std::vector<geometry_msgs::msg::PoseStamped> & candidate,
+    std::vector<double> & candidate_s)
+  {
+    candidate.clear();
+    candidate_s.clear();
+
+    const double smooth_span = c.end_s - c.start_s;
+
+    candidate.reserve(c.n + 2);
+    candidate_s.reserve(c.n + 2);
+
+    candidate.push_back(c.start);
+    candidate_s.push_back(c.start_s);
+
+    const auto & p1 = c.control.pose.position;
+
+    for (int k = 1; k <= c.n; ++k) {
+      const double t =
+        static_cast<double>(k) /
+        static_cast<double>(c.n + 1);
+
+      const double omt = 1.0 - t;
+
+      const double x =
+        omt * omt * c.start.pose.position.x +
+        2.0 * omt * t * p1.x +
+        t * t * c.end.pose.position.x;
+
+      const double y =
+        omt * omt * c.start.pose.position.y +
+        2.0 * omt * t * p1.y +
+        t * t * c.end.pose.position.y;
+
+      candidate.push_back(make_pose(c.control, x, y));
+      candidate_s.push_back(c.start_s + t * smooth_span);
+    }
+
+    candidate.push_back(c.end);
+    candidate_s.push_back(c.end_s);
+  };
+
+  auto is_candidate_safe = [&](
+    const SmoothCandidate & c)
+  {
+    std::vector<geometry_msgs::msg::PoseStamped> candidate;
+    std::vector<double> candidate_s;
+
+    make_candidate_points(c, candidate, candidate_s);
+
+    if (candidate.size() < 2) {
+      return false;
+    }
+
+    geometry_msgs::msg::PoseStamped last = candidate.front();
+
+    for (size_t k = 1; k < candidate.size(); ++k) {
+      if (checkLineCollisionWithThreshold(
+            last,
+            candidate[k],
+            smooth_collision_cost_threshold))
+      {
+        return false;
+      }
+
+      last = candidate[k];
+    }
+
+    return true;
+  };
+
+  // ============================================================
+  // 第一步：扫描所有“可插值候选点”
+  // ============================================================
+  std::vector<SmoothCandidate> candidates;
+  candidates.reserve(path.size());
+
+  for (size_t i = 1; i + 1 < path.size(); ++i) {
+    const double si = cum_s[i];
+
+    const auto & curr = path[i];
+    const auto & p1 = curr.pose.position;
+
+    const double before_s =
+      std::max(0.0, si - judge_window_dist);
+
+    const double after_s =
+      std::min(total_s, si + judge_window_dist);
+
+    if (si - before_s < min_valid_len ||
+        after_s - si < min_valid_len)
     {
-      smoothed.push_back(path[i]);
-      i++;
       continue;
     }
 
-    size_t corner_center = i;
-    while (corner_center < path.size() && !is_corner_center[corner_center])
-      corner_center++;
+    const auto before = pose_at_s(before_s);
+    const auto after = pose_at_s(after_s);
 
-    if (corner_center >= path.size() - skip_points)
-    {
+    const auto & pb = before.pose.position;
+    const auto & pa = after.pose.position;
 
-      while (i < path.size())
-      {
-        smoothed.push_back(path[i]);
-        i++;
+    const double in_x = p1.x - pb.x;
+    const double in_y = p1.y - pb.y;
+
+    const double out_x = pa.x - p1.x;
+    const double out_y = pa.y - p1.y;
+
+    const double len_in = std::hypot(in_x, in_y);
+    const double len_out = std::hypot(out_x, out_y);
+
+    if (len_in < min_valid_len || len_out < min_valid_len) {
+      continue;
+    }
+
+    const double uin_x = in_x / len_in;
+    const double uin_y = in_y / len_in;
+
+    const double uout_x = out_x / len_out;
+    const double uout_y = out_y / len_out;
+
+    double dot = uin_x * uout_x + uin_y * uout_y;
+    dot = std::clamp(dot, -1.0, 1.0);
+
+    const double turn_angle = std::acos(dot);
+
+    if (turn_angle < min_turn_angle) {
+      continue;
+    }
+
+    const double cross =
+      uin_x * uout_y - uin_y * uout_x;
+
+    const int sign = cross >= 0.0 ? 1 : -1;
+
+    const double raw =
+      (turn_angle - min_turn_angle) /
+      std::max(1e-6, full_turn_angle - min_turn_angle);
+
+    const double weight = smoothstep(raw);
+
+    if (weight <= 1e-4) {
+      continue;
+    }
+
+    double d =
+      max_smooth_radius * (0.45 + 0.55 * weight);
+
+    d = std::min({
+      d,
+      0.45 * (si - before_s),
+      0.45 * (after_s - si),
+      si - min_output_s_gap,
+      total_s - si - min_output_s_gap
+    });
+
+    if (d < min_smooth_distance) {
+      continue;
+    }
+
+    const double start_s = si - d;
+    const double end_s = si + d;
+
+    if (end_s <= start_s + min_output_s_gap) {
+      continue;
+    }
+
+    const double smooth_span = end_s - start_s;
+
+    const int n =
+      calc_interpolation_count(weight, smooth_span);
+
+    if (n < min_interpolation_points) {
+      continue;
+    }
+
+    SmoothCandidate c;
+    c.index = i;
+    c.si = si;
+    c.start_s = start_s;
+    c.end_s = end_s;
+    c.score = turn_angle * (0.5 + 0.5 * weight);
+    c.sign = sign;
+    c.n = n;
+    c.start = pose_at_s(start_s);
+    c.control = curr;
+    c.end = pose_at_s(end_s);
+
+    if (!is_candidate_safe(c)) {
+      continue;
+    }
+
+    candidates.push_back(c);
+  }
+
+  if (candidates.empty()) {
+    std::vector<LockedSmoothRegion> new_locks;
+    new_locks.reserve(locked_smooth_regions_.size());
+
+    for (auto lock : locked_smooth_regions_) {
+      if (!lock.valid) {
+        continue;
       }
+
+      lock.miss_count++;
+
+      if (lock.miss_count <= smooth_region_max_miss_) {
+        new_locks.push_back(lock);
+      }
+    }
+
+    locked_smooth_regions_.swap(new_locks);
+
+    return path;
+  }
+
+  // ============================================================
+  // 第二步：把连续候选点聚成“弯道区间”
+  // sign 不同必须分开，避免 S 弯两个方向混成一个区间
+  // ============================================================
+  struct SmoothRegion
+  {
+    std::vector<size_t> candidate_indices;
+
+    double start_s{0.0};
+    double end_s{0.0};
+    double center_s{0.0};
+
+    int sign{0};
+
+    geometry_msgs::msg::PoseStamped center;
+  };
+
+  std::vector<SmoothRegion> regions;
+
+  const double region_group_gap =
+    std::max(0.15, judge_window_dist * 1.2);
+
+  for (size_t ci = 0; ci < candidates.size(); ++ci) {
+    const auto & c = candidates[ci];
+
+    const bool need_new_region =
+      regions.empty() ||
+      regions.back().sign != c.sign ||
+      c.si - regions.back().end_s > region_group_gap;
+
+    if (need_new_region) {
+      SmoothRegion r;
+      r.candidate_indices.push_back(ci);
+      r.start_s = c.start_s;
+      r.end_s = c.end_s;
+      r.center_s = 0.5 * (r.start_s + r.end_s);
+      r.sign = c.sign;
+      r.center = pose_at_s(r.center_s);
+      regions.push_back(r);
+    } else {
+      auto & r = regions.back();
+      r.candidate_indices.push_back(ci);
+      r.start_s = std::min(r.start_s, c.start_s);
+      r.end_s = std::max(r.end_s, c.end_s);
+      r.center_s = 0.5 * (r.start_s + r.end_s);
+      r.center = pose_at_s(r.center_s);
+    }
+  }
+
+  if (regions.empty()) {
+    return path;
+  }
+
+// ============================================================
+// 第三步：为每个弯道区间选择一个稳定的插值候选点
+// ============================================================
+
+  struct SelectedSmoothRegion
+  {
+    size_t region_idx{0};
+    size_t candidate_idx{0};
+    int matched_lock_idx{-1};
+  };
+
+  std::vector<SelectedSmoothRegion> selected_regions;
+  selected_regions.reserve(regions.size());
+
+  std::vector<bool> lock_used(locked_smooth_regions_.size(), false);
+
+  for (size_t ri = 0; ri < regions.size(); ++ri) {
+    const auto & r = regions[ri];
+
+    if (selected_regions.size() >= static_cast<size_t>(smooth_region_max_count_)) {
       break;
     }
 
-    size_t idx0 = corner_center - skip_points;
-    size_t idx2 = corner_center + skip_points;
+    int matched_lock_idx = -1;
+    double best_lock_dist = std::numeric_limits<double>::infinity();
 
-    const auto& p0 = path[idx0].pose.position;
-    const auto& p1 = path[corner_center].pose.position;
-    const auto& p2 = path[idx2].pose.position;
+    // 1. 当前 region 尝试匹配旧锁定区间
+    for (size_t li = 0; li < locked_smooth_regions_.size(); ++li) {
+      const auto & lock = locked_smooth_regions_[li];
 
-    double dx1 = p0.x - p1.x;
-    double dy1 = p0.y - p1.y;
-    double dx2 = p2.x - p1.x;
-    double dy2 = p2.y - p1.y;
-
-    double len1 = hypot(dx1, dy1);
-    double len2 = hypot(dx2, dy2);
-    if (len1 < 0.01 || len2 < 0.01)
-    {
-
-      while (i <= idx2 && i < path.size())
-      {
-        smoothed.push_back(path[i]);
-        i++;
+      if (!lock.valid) {
+        continue;
       }
+
+      if (li < lock_used.size() && lock_used[li]) {
+        continue;
+      }
+
+      if (lock.sign != r.sign) {
+        continue;
+      }
+
+      if (!lock.frame_id.empty() &&
+          lock.frame_id != r.center.header.frame_id)
+      {
+        continue;
+      }
+
+      const double d = dist2d(lock.center, r.center);
+
+      if (d < smooth_region_match_dist_ && d < best_lock_dist) {
+        best_lock_dist = d;
+        matched_lock_idx = static_cast<int>(li);
+      }
+    }
+
+    // 2. 在当前 region 内选一个控制点
+    size_t selected_candidate_idx = r.candidate_indices.front();
+
+    if (matched_lock_idx >= 0) {
+      // 如果这个区间上次已经锁定过，则优先选离上次 control 最近的候选点
+      // 这样同一个弯内部不会 path[i] / path[i+1] 来回跳
+      const auto & lock =
+        locked_smooth_regions_[static_cast<size_t>(matched_lock_idx)];
+
+      double best_control_dist = std::numeric_limits<double>::infinity();
+
+      for (size_t ci : r.candidate_indices) {
+        const double d = dist2d(candidates[ci].control, lock.control);
+
+        if (d < best_control_dist) {
+          best_control_dist = d;
+          selected_candidate_idx = ci;
+        }
+      }
+
+      lock_used[static_cast<size_t>(matched_lock_idx)] = true;
+    } else {
+      // 新区间：选 score 最大的点
+      double best_score = -1.0;
+
+      for (size_t ci : r.candidate_indices) {
+        if (candidates[ci].score > best_score) {
+          best_score = candidates[ci].score;
+          selected_candidate_idx = ci;
+        }
+      }
+    }
+
+    SelectedSmoothRegion selected;
+    selected.region_idx = ri;
+    selected.candidate_idx = selected_candidate_idx;
+    selected.matched_lock_idx = matched_lock_idx;
+
+    selected_regions.push_back(selected);
+  }
+
+  if (selected_regions.empty()) {
+    // 没有可插值区间，旧锁定区间计数递增
+    std::vector<LockedSmoothRegion> new_locks;
+    new_locks.reserve(locked_smooth_regions_.size());
+
+    for (auto lock : locked_smooth_regions_) {
+      if (!lock.valid) {
+        continue;
+      }
+
+      lock.miss_count++;
+
+      if (lock.miss_count <= smooth_region_max_miss_) {
+        new_locks.push_back(lock);
+      }
+    }
+
+    locked_smooth_regions_.swap(new_locks);
+
+    return path;
+  }
+
+  // ============================================================
+  // 第四步：输出路径
+  // 多个 selected region 按 start_s 顺序依次插入
+  // ============================================================
+
+  std::vector<geometry_msgs::msg::PoseStamped> smoothed;
+  smoothed.reserve(path.size() + selected_regions.size() * (max_num_interpolation + 2) + 4);
+
+  double last_output_s = 0.0;
+
+  auto append_no_duplicate = [&](
+    const geometry_msgs::msg::PoseStamped & p)
+  {
+    if (!smoothed.empty() && dist2d(smoothed.back(), p) < 1e-4) {
+      return false;
+    }
+
+    smoothed.push_back(p);
+    return true;
+  };
+
+  auto append_at_s = [&](
+    const geometry_msgs::msg::PoseStamped & p,
+    double s)
+  {
+    if (!smoothed.empty() && s <= last_output_s + min_output_s_gap) {
+      return false;
+    }
+
+    if (append_no_duplicate(p)) {
+      last_output_s = s;
+      return true;
+    }
+
+    return false;
+  };
+
+  smoothed.push_back(path.front());
+  last_output_s = 0.0;
+
+  size_t next_selected_idx = 0;
+
+  for (size_t i = 1; i < path.size(); ++i) {
+    const double si = cum_s[i];
+
+    // 当前路径点已经被上一个平滑段覆盖
+    if (si <= last_output_s + min_output_s_gap) {
       continue;
     }
 
-    double ux1 = dx1 / len1;
-    double uy1 = dy1 / len1;
-    double ux2 = dx2 / len2;
-    double uy2 = dy2 / len2;
+    // 可能有多个平滑区间的 start_s 都已经到达
+    while (next_selected_idx < selected_regions.size()) {
+      const auto & selected_meta = selected_regions[next_selected_idx];
+      const auto & selected =
+        candidates[selected_meta.candidate_idx];
 
-    double d = smooth_radius;
+      if (si < selected.start_s) {
+        break;
+      }
 
-    auto start = path[corner_center];
-    start.pose.position.x = p1.x - ux1 * d;
-    start.pose.position.y = p1.y - uy1 * d;
+      // 如果这个区间和上一个插值区间重叠太多，就跳过，避免插值段互相覆盖
+      if (selected.start_s <= last_output_s + min_output_s_gap) {
+        next_selected_idx++;
+        continue;
+      }
 
-    auto end = path[corner_center];
-    end.pose.position.x = p1.x + ux2 * d;
-    end.pose.position.y = p1.y + uy2 * d;
+      std::vector<geometry_msgs::msg::PoseStamped> candidate;
+      std::vector<double> candidate_s;
 
-    smoothed.push_back(path[idx0]);
+      make_candidate_points(selected, candidate, candidate_s);
 
-    for (int j = 1; j <= num_interpolation; ++j)
-    {
-      double t = (double)j / (num_interpolation + 1);
-      geometry_msgs::msg::PoseStamped pt;
-      pt.header = path[corner_center].header;
-      pt.pose.position.x = start.pose.position.x * (1 - t) + end.pose.position.x * t;
-      pt.pose.position.y = start.pose.position.y * (1 - t) + end.pose.position.y * t;
-      pt.pose.orientation = path[corner_center].pose.orientation;
-      smoothed.push_back(pt);
+      for (size_t k = 0; k < candidate.size(); ++k) {
+        append_at_s(candidate[k], candidate_s[k]);
+      }
+
+      last_output_s =
+        std::max(last_output_s, selected.end_s);
+
+      next_selected_idx++;
     }
 
-    i = idx2 + 1;
+    if (si <= last_output_s + min_output_s_gap) {
+      continue;
+    }
+
+    append_at_s(path[i], si);
   }
 
+  const auto & last_p = path.back();
+
+  if (smoothed.empty() || dist2d(smoothed.back(), last_p) > 1e-4) {
+    smoothed.push_back(last_p);
+  }
+
+  // ============================================================
+  // 第五步：更新多区间锁定缓存
+  // selected region 变成新的有效锁；没有匹配到的旧锁 miss_count++
+  // ============================================================
+
+  std::vector<LockedSmoothRegion> new_locks;
+  new_locks.reserve(selected_regions.size() + locked_smooth_regions_.size());
+
+  // 1. 先写入本帧选中的所有 region
+  for (const auto & selected_meta : selected_regions) {
+    const auto & r =
+      regions[selected_meta.region_idx];
+
+    const auto & c =
+      candidates[selected_meta.candidate_idx];
+
+    LockedSmoothRegion lock;
+
+    if (selected_meta.matched_lock_idx >= 0 &&
+        static_cast<size_t>(selected_meta.matched_lock_idx) < locked_smooth_regions_.size())
+    {
+      lock =
+        locked_smooth_regions_[static_cast<size_t>(selected_meta.matched_lock_idx)];
+    }
+
+    lock.valid = true;
+    lock.frame_id = r.center.header.frame_id;
+    lock.center = r.center;
+    lock.control = c.control;
+    lock.sign = r.sign;
+    lock.miss_count = 0;
+
+    new_locks.push_back(lock);
+  }
+
+  // 2. 没有匹配到的旧锁保留几帧，避免 region 短暂消失后立刻丢锁
+  for (size_t li = 0; li < locked_smooth_regions_.size(); ++li) {
+    if (li < lock_used.size() && lock_used[li]) {
+      continue;
+    }
+
+    auto lock = locked_smooth_regions_[li];
+
+    if (!lock.valid) {
+      continue;
+    }
+
+    lock.miss_count++;
+
+    if (lock.miss_count <= smooth_region_max_miss_) {
+      new_locks.push_back(lock);
+    }
+  }
+
+  locked_smooth_regions_.swap(new_locks);
+
+  RCLCPP_DEBUG(
+    logger_,
+    "Smooth multi-region: regions=%zu, selected=%zu, locks=%zu",
+    regions.size(),
+    selected_regions.size(),
+    locked_smooth_regions_.size());
+
   return smoothed;
+  }
+bool OmniPidPursuitController::checkLineCollisionWithThreshold(
+  const geometry_msgs::msg::PoseStamped & start,
+  const geometry_msgs::msg::PoseStamped & end,
+  unsigned char cost_threshold)
+{
+  auto costmap = costmap_ros_->getCostmap();
+  std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
+
+  const std::string costmap_frame = costmap_ros_->getGlobalFrameID();
+
+  geometry_msgs::msg::PoseStamped start_cm;
+  geometry_msgs::msg::PoseStamped end_cm;
+
+  if (!transformPose(costmap_frame, start, start_cm) ||
+      !transformPose(costmap_frame, end, end_cm))
+  {
+    return true;
+  }
+
+  unsigned int mx0 = 0;
+  unsigned int my0 = 0;
+  unsigned int mx1 = 0;
+  unsigned int my1 = 0;
+
+  if (!costmap->worldToMap(start_cm.pose.position.x, start_cm.pose.position.y, mx0, my0) ||
+      !costmap->worldToMap(end_cm.pose.position.x, end_cm.pose.position.y, mx1, my1))
+  {
+    return true;
+  }
+
+  const int size_x = static_cast<int>(costmap->getSizeInCellsX());
+  const int size_y = static_cast<int>(costmap->getSizeInCellsY());
+
+  int x0 = static_cast<int>(mx0);
+  int y0 = static_cast<int>(my0);
+  int x1 = static_cast<int>(mx1);
+  int y1 = static_cast<int>(my1);
+
+  const int dx = std::abs(x1 - x0);
+  const int dy = std::abs(y1 - y0);
+
+  const int sx = x0 < x1 ? 1 : -1;
+  const int sy = y0 < y1 ? 1 : -1;
+
+  int err = dx - dy;
+  int x = x0;
+  int y = y0;
+
+  const int max_iter = std::max(300, dx + dy + 10);
+  int iter = 0;
+
+  while (iter++ < max_iter) {
+    if (x < 0 || x >= size_x || y < 0 || y >= size_y) {
+      return true;
+    }
+
+    const unsigned char cost =
+      costmap->getCost(static_cast<unsigned int>(x), static_cast<unsigned int>(y));
+
+    if (cost == nav2_costmap_2d::NO_INFORMATION) {
+      return true;
+    }
+
+    if (cost >= cost_threshold) {
+      return true;
+    }
+
+    if (x == x1 && y == y1) {
+      break;
+    }
+
+    const int e2 = 2 * err;
+
+    if (e2 > -dy) {
+      err -= dy;
+      x += sx;
+    }
+
+    if (e2 < dx) {
+      err += dx;
+      y += sy;
+    }
+  }
+
+  return false;
 }
 double OmniPidPursuitController::euclideanDistance(
   const geometry_msgs::msg::PoseStamped & p1,
@@ -1051,86 +1812,291 @@ bool OmniPidPursuitController::checkLineCollision(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & end)
 {
-  auto costmap = costmap_ros_->getCostmap();
-  std::lock_guard<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(costmap->getMutex()));
-
-  const double resolution = costmap->getResolution();
-  const int size_x = static_cast<int>(costmap->getSizeInCellsX());
-  const int size_y = static_cast<int>(costmap->getSizeInCellsY());
-
-  double x0 = start.pose.position.x;
-  double y0 = start.pose.position.y;
-  double x1 = end.pose.position.x;
-  double y1 = end.pose.position.y;
-
-  auto world_to_grid_base_link = [&](double x, double y) -> std::pair<int, int> {
-      int mx = static_cast<int>(x / resolution + size_x / 2.0);
-      int my = static_cast<int>(y / resolution + size_y / 2.0);
-      return {mx, my};
-  };
-
-  auto [grid_x0, grid_y0] = world_to_grid_base_link(x0, y0);
-  auto [grid_x1, grid_y1] = world_to_grid_base_link(x1, y1);
-
-  // 范围检查
-  auto is_in_range = [&](int gx, int gy) {
-      return (gx >= 0 && gx < size_x && gy >= 0 && gy < size_y);
-  };
-
-  if (!is_in_range(grid_x0, grid_y0) || !is_in_range(grid_x1, grid_y1)) {
-      RCLCPP_DEBUG(logger_, "Point out of range -> skip check");
-      return true; // 越界认为无碰撞
-  }
-
-  // Bresenham 算法
-  int dx = std::abs(grid_x1 - grid_x0);
-  int dy = std::abs(grid_y1 - grid_y0);
-  int sx = (grid_x0 < grid_x1) ? 1 : -1;
-  int sy = (grid_y0 < grid_y1) ? 1 : -1;
-  int err = dx - dy;
-
-  int x = grid_x0;
-  int y = grid_y0;
-
-  const int max_iter = 200;
-  int iter = 0;
-
-  while (iter < max_iter) {
-      iter++;
-
-      if (is_in_range(x, y)) {
-          size_t index = static_cast<size_t>(y) * static_cast<size_t>(size_x) + static_cast<size_t>(x);
-          
-          if (index < static_cast<size_t>(size_x * size_y)) {
-              unsigned char cost = costmap->getCharMap()[index]; 
-              
-              // RCLCPP_DEBUG(logger_, "Grid(%d, %d) -> cost=%d", x, y, (int)cost);
-
-              if (cost >= 120) {
-                  // RCLCPP_WARN(logger_, "COLLISION DETECTED at Grid(%d, %d), cost = %d", x, y, (int)cost);
-                  return true;
-              }
-          }
-      }
-
-      if (x == grid_x1 && y == grid_y1) {
-          break;
-      }
-
-      int e2 = 2 * err;
-      if (e2 > -dy) {
-          err -= dy;
-          x += sx;
-      }
-      if (e2 < dx) {
-          err += dx;
-          y += sy;
-      }
-  }
-
-  return false;
+  return checkLineCollisionWithThreshold(start, end, 120);
 }
+std::vector<OmniMpcController::State>
+OmniPidPursuitController::samplePathToTimedMpcRefSeq(
+  const std::vector<geometry_msgs::msg::PoseStamped> & path_poses,
+  int Np,
+  double v_des,
+  double * v_ref_eff_out) const
+{
+  std::vector<OmniMpcController::State> ref_seq;
 
+  if (Np <= 0 || path_poses.empty()) {
+    return ref_seq;
+  }
+
+  ref_seq.reserve(Np);
+
+  if (path_poses.size() == 1) {
+    OmniMpcController::State ref;
+    ref.setZero();
+    ref(0) = path_poses.front().pose.position.x;
+    ref(1) = path_poses.front().pose.position.y;
+
+    while (static_cast<int>(ref_seq.size()) < Np) {
+      ref_seq.push_back(ref);
+    }
+
+    return ref_seq;
+  }
+
+  std::vector<double> cum_s(path_poses.size(), 0.0);
+
+  for (size_t i = 1; i < path_poses.size(); ++i) {
+    const auto & p0 = path_poses[i - 1].pose.position;
+    const auto & p1 = path_poses[i].pose.position;
+
+    cum_s[i] =
+      cum_s[i - 1] +
+      std::hypot(p1.x - p0.x, p1.y - p0.y);
+  }
+
+  const double total_s = cum_s.back();
+
+  if (total_s < 1e-6) {
+    OmniMpcController::State ref;
+    ref.setZero();
+    ref(0) = path_poses.back().pose.position.x;
+    ref(1) = path_poses.back().pose.position.y;
+
+    while (static_cast<int>(ref_seq.size()) < Np) {
+      ref_seq.push_back(ref);
+    }
+
+    return ref_seq;
+  }
+
+  double best_dist = std::numeric_limits<double>::infinity();
+  double start_s = 0.0;
+
+  const double start_s_deadband = 0.1;      
+  const double projection_trust_dist = 0.50; 
+
+  if (path_poses.size() >= 2) {
+    const auto & p0 = path_poses[0].pose.position;
+    const auto & p1 = path_poses[1].pose.position;
+
+    const double x0 = p0.x;
+    const double y0 = p0.y;
+    const double x1 = p1.x;
+    const double y1 = p1.y;
+
+    const double dx = x1 - x0;
+    const double dy = y1 - y0;
+
+    const double len2 = dx * dx + dy * dy;
+
+    if (len2 > 1e-10) {
+      double t = -(x0 * dx + y0 * dy) / len2;
+      t = std::clamp(t, 0.0, 1.0);
+
+      const double proj_x = x0 + t * dx;
+      const double proj_y = y0 + t * dy;
+      const double proj_dist = std::hypot(proj_x, proj_y);
+
+      const double seg_len = std::sqrt(len2);
+      double projected_start_s = t * seg_len;
+
+      if (proj_dist > projection_trust_dist) {
+        start_s = 0.0;
+      }
+      else if (projected_start_s < start_s_deadband) {
+        start_s = 0.0;
+      }
+      else {
+        start_s = projected_start_s;
+      }
+    }
+  }
+
+  start_s = std::clamp(start_s, 0.0, total_s);
+  const double remaining_s = total_s - start_s;
+
+  if (remaining_s < 1e-6) {
+    OmniMpcController::State ref;
+    ref.setZero();
+    ref(0) = path_poses.back().pose.position.x;
+    ref(1) = path_poses.back().pose.position.y;
+
+    while (static_cast<int>(ref_seq.size()) < Np) {
+      ref_seq.push_back(ref);
+    }
+
+    return ref_seq;
+  }
+
+  auto pose_at_s = [&](double target_s)
+  {
+    target_s = std::clamp(target_s, 0.0, total_s);
+
+    auto it = std::lower_bound(cum_s.begin(), cum_s.end(), target_s);
+    size_t idx = static_cast<size_t>(std::distance(cum_s.begin(), it));
+
+    if (idx == 0) {
+      return path_poses.front();
+    }
+
+    if (idx >= path_poses.size()) {
+      return path_poses.back();
+    }
+
+    const double s0 = cum_s[idx - 1];
+    const double s1 = cum_s[idx];
+
+    const double ratio =
+      (target_s - s0) / std::max(1e-6, s1 - s0);
+
+    const auto & p0 = path_poses[idx - 1].pose.position;
+    const auto & p1 = path_poses[idx].pose.position;
+
+    geometry_msgs::msg::PoseStamped out = path_poses[idx];
+
+    out.pose.position.x = p0.x + ratio * (p1.x - p0.x);
+    out.pose.position.y = p0.y + ratio * (p1.y - p0.y);
+    out.pose.position.z = 0.0;
+
+    return out;
+  };
+
+  const double horizon_time =
+    control_duration_ * static_cast<double>(Np);
+
+  double v_ref_eff = 0.0;
+
+  if (horizon_time > 1e-6) {
+    v_ref_eff = std::min(v_des, remaining_s / horizon_time);
+  }
+
+  v_ref_eff = std::max(0.0, v_ref_eff);
+
+  double max_kappa_ahead = 0.0;
+
+  const double curve_check_dist =
+    std::clamp(
+      mpc_curve_lookahead_dist_,
+      0.2,
+      std::max(0.2, remaining_s));
+
+  const double ds = 0.10;
+
+  for (double s = start_s; s <= std::min(total_s, start_s + curve_check_dist); s += ds) {
+    const double s_back = std::max(0.0, s - curvature_backward_dist_);
+    const double s_mid = std::clamp(s, 0.0, total_s);
+    const double s_fwd = std::min(total_s, s + curvature_forward_dist_);
+
+    if (s_fwd - s_back < 0.05) {
+      continue;
+    }
+
+    const auto p_back = pose_at_s(s_back);
+    const auto p_mid = pose_at_s(s_mid);
+    const auto p_fwd = pose_at_s(s_fwd);
+
+    const auto & a = p_back.pose.position;
+    const auto & b = p_mid.pose.position;
+    const auto & c = p_fwd.pose.position;
+
+    const double ab = std::hypot(b.x - a.x, b.y - a.y);
+    const double bc = std::hypot(c.x - b.x, c.y - b.y);
+    const double ca = std::hypot(a.x - c.x, a.y - c.y);
+
+    if (ab < 1e-4 || bc < 1e-4 || ca < 1e-4) {
+      continue;
+    }
+
+    // 三点曲率：
+    // kappa = 4 * triangle_area / (ab * bc * ca)
+    const double cross =
+      std::abs(
+        (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x));
+
+    const double kappa =
+      2.0 * cross / std::max(1e-9, ab * bc * ca);
+
+    if (std::isfinite(kappa)) {
+      max_kappa_ahead = std::max(max_kappa_ahead, kappa);
+    }
+  }
+
+  double v_curve_limit = v_des;
+
+  if (max_kappa_ahead > mpc_curve_kappa_eps_) {
+    v_curve_limit =
+      std::sqrt(
+        std::max(0.0, mpc_curve_a_lat_max_) /
+        std::max(max_kappa_ahead, mpc_curve_kappa_eps_));
+  }
+
+  v_curve_limit =
+    std::clamp(
+      v_curve_limit,
+      std::max(0.0, mpc_curve_min_speed_),
+      v_des);
+
+  v_ref_eff = std::min(v_ref_eff, v_curve_limit);
+
+  if (v_ref_eff_out != nullptr) {
+    *v_ref_eff_out = v_ref_eff;
+  }
+
+  std::vector<Eigen::Vector2d> ref_pos;
+  ref_pos.reserve(Np);
+
+  for (int i = 1; i <= Np; ++i) {
+    const double target_s =
+      std::min(
+        total_s,
+        start_s + v_ref_eff * control_duration_ * static_cast<double>(i));
+
+    const auto sampled_pose = pose_at_s(target_s);
+
+    ref_pos.emplace_back(
+      sampled_pose.pose.position.x,
+      sampled_pose.pose.position.y);
+  }
+
+  for (int i = 0; i < Np; ++i) {
+    OmniMpcController::State ref;
+    ref.setZero();
+
+    ref(0) = ref_pos[i].x();
+    ref(1) = ref_pos[i].y();
+
+    double vx_ref = 0.0;
+    double vy_ref = 0.0;
+
+    if (i + 1 < Np) {
+      vx_ref = (ref_pos[i + 1].x() - ref_pos[i].x()) / control_duration_;
+      vy_ref = (ref_pos[i + 1].y() - ref_pos[i].y()) / control_duration_;
+    } else if (i > 0) {
+      vx_ref = (ref_pos[i].x() - ref_pos[i - 1].x()) / control_duration_;
+      vy_ref = (ref_pos[i].y() - ref_pos[i - 1].y()) / control_duration_;
+    }
+
+    const double v_norm = std::hypot(vx_ref, vy_ref);
+
+    if (v_norm > v_ref_eff && v_norm > 1e-6) {
+      const double scale = v_ref_eff / v_norm;
+      vx_ref *= scale;
+      vy_ref *= scale;
+    }
+
+    ref(2) = vx_ref;
+    ref(3) = vy_ref;
+
+    ref_seq.push_back(ref);
+  }
+  std::cout << "total_s: " << total_s
+          << " start_s: " << start_s
+          << " remaining_s: " << remaining_s
+          << " v_des: " << v_des
+          << " v_ref_eff: " << v_ref_eff
+          << std::endl;
+  return ref_seq;
+}
 std::unique_ptr<geometry_msgs::msg::PointStamped> OmniPidPursuitController::createCarrotMsg(
   const geometry_msgs::msg::PoseStamped & carrot_pose)
 {
@@ -1440,6 +2406,9 @@ void OmniPidPursuitController::applyCurvatureLimitation_mpc(
 {
   double linear_vel = hypot(vx, vy);
   double original_linear_vel = linear_vel;
+  if (original_linear_vel < 1e-6) {
+    return;
+  }
   double curvature =
     calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
   RCLCPP_DEBUG(logger_, "Curvature: %.3f", curvature);
@@ -1720,59 +2689,65 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         lower_speed_ = parameter.as_double();
       }
       // MPC权重参数动态更新
-      else if (name == plugin_name_ + ".mpc_Q_x") {
+      else if (name == plugin_name_ + ".mpc_S_x") {
+        mpc_S_x = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_S_y") {
+        mpc_S_y = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_S_vx") {
+        mpc_S_vx = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_S_vy") {
+        mpc_S_vy = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_Q_x") {
         mpc_Q_x = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
         }
       } else if (name == plugin_name_ + ".mpc_Q_y") {
         mpc_Q_y = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_Q_vx") {
+        mpc_Q_vx = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
+        }
+      } else if (name == plugin_name_ + ".mpc_Q_vy") {
+        mpc_Q_vy = parameter.as_double();
+        if (use_mpc_control_ && mpc_controller_) {
+          updateMpcWeights();
         }
       } else if (name == plugin_name_ + ".mpc_R_vx") {
         mpc_R_vx = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
         }
       } else if (name == plugin_name_ + ".mpc_R_vy") {
         mpc_R_vy = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
         }
       } else if (name == plugin_name_ + ".mpc_Rdelta_vx") {
         mpc_Rdelta_vx = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
         }
       } else if (name == plugin_name_ + ".mpc_Rdelta_vy") {
         mpc_Rdelta_vy = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
-          Eigen::Matrix2d Q, R, R_delta;
-          Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-          R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-          R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-          mpc_controller_->initWeights(Q, R, R_delta);
+          updateMpcWeights();
         }
       }
     } else if (type == ParameterType::PARAMETER_BOOL) {
@@ -1810,17 +2785,17 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         impl_->angular_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
       }
       // MPC预测/控制时域
-      else if (name == plugin_name_ + ".mpc_Np") {
-        mpc_Np_ = parameter.as_int();
-        if (use_mpc_control_ && mpc_controller_) {
-          mpc_controller_->setNp(mpc_Np_);
-        }
-      } else if (name == plugin_name_ + ".mpc_Nc") {
-        mpc_Nc_ = parameter.as_int();
-        if (use_mpc_control_ && mpc_controller_) {
-          mpc_controller_->setNc(mpc_Nc_);
-        }
+    else if (name == plugin_name_ + ".mpc_Np") {
+      mpc_Np_ = parameter.as_int();
+      if (use_mpc_control_ && mpc_controller_) {
+        mpc_controller_->setHorizon(mpc_Np_, mpc_Nc_);
       }
+    } else if (name == plugin_name_ + ".mpc_Nc") {
+      mpc_Nc_ = parameter.as_int();
+      if (use_mpc_control_ && mpc_controller_) {
+        mpc_controller_->setHorizon(mpc_Np_, mpc_Nc_);
+      }
+    }
     }
   }
 
@@ -1841,19 +2816,16 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
 
       move_pid_.reset();
 
-      mpc_controller_ = std::make_unique<OmniMpcController>(
-        control_duration_,  
-        mpc_Np_,            
-        mpc_Nc_,          
-        v_linear_min_,      
-        v_linear_max_       
-      );
+    mpc_controller_ = std::make_unique<OmniMpcController>(
+      control_duration_,
+      mpc_Np_,
+      mpc_Nc_,
+      -acc_max_,
+      acc_max_,
+      v_linear_min_,
+      v_linear_max_);
       // 重新设置MPC权重
-      Eigen::Matrix2d Q, R, R_delta;
-      Q << mpc_Q_x, 0.0, 0.0, mpc_Q_y;
-      R << mpc_R_vx, 0.0, 0.0, mpc_R_vy;
-      R_delta << mpc_Rdelta_vx, 0.0, 0.0, mpc_Rdelta_vy;
-      mpc_controller_->initWeights(Q, R, R_delta);
+    updateMpcWeights();
       RCLCPP_INFO(logger_, "Successfully switched to MPC control mode");
     } else {
       // 切换到PID模式：释放MPC资源，初始化PID
