@@ -53,5 +53,5 @@ int32 defence_buff
 int32 defence_debuff
 # 攻击增益
 int32 attack_buff
-# 后3bit 占堡垒（1被占） 中镖（1中） 
+# 后3bit 占堡垒 中镖（1中） 
 int32 status_info

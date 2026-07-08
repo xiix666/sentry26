@@ -1,17 +1,3 @@
-// Copyright 2025 Lihan Chen
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #include "pb_omni_pid_pursuit_controller/omni_pid_pursuit_controller.hpp"
 
 #include "nav2_core/exceptions.hpp"
@@ -2041,8 +2027,212 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
   if (v_ref_eff_out != nullptr) {
     *v_ref_eff_out = v_ref_eff;
   }
+  auto estimate_tangent_by_center_diff =
+    [&](double target_s, Eigen::Vector2d & tangent) -> bool
+  {
+    tangent.setZero();
 
+    const double ref_step_s =
+      std::max(v_ref_eff * control_duration_, 0.05);
+
+    const double tangent_sample_dist =
+      std::clamp(2.0 * ref_step_s, 0.12, 0.30);
+
+    double s_back = std::max(0.0, target_s - tangent_sample_dist);
+    double s_fwd = std::min(total_s, target_s + tangent_sample_dist);
+
+    if (s_fwd - s_back < 1e-4) {
+      return false;
+    }
+
+    const auto p_back = pose_at_s(s_back);
+    const auto p_fwd = pose_at_s(s_fwd);
+
+    const auto & pb = p_back.pose.position;
+    const auto & pf = p_fwd.pose.position;
+
+    const double dx = pf.x - pb.x;
+    const double dy = pf.y - pb.y;
+
+    const double norm = std::hypot(dx, dy);
+
+    if (norm < 1e-6 || !std::isfinite(norm)) {
+      return false;
+    }
+
+    tangent.x() = dx / norm;
+    tangent.y() = dy / norm;
+    return true;
+  };
+
+  auto estimate_tangent_by_local_poly =
+    [&](double target_s, Eigen::Vector2d & tangent) -> bool
+  {
+    tangent.setZero();
+
+    // 用 5 个等弧长采样点做三次局部拟合。
+    // 注意：这里只用多项式求导，不改变 ref(0), ref(1) 的位置参考。
+    const int sample_count = 5;
+    const int max_order = 3;
+
+    auto it = std::lower_bound(cum_s.begin(), cum_s.end(), target_s);
+    size_t idx = static_cast<size_t>(std::distance(cum_s.begin(), it));
+
+    if (idx >= cum_s.size()) {
+      idx = cum_s.size() - 1;
+    }
+
+    const size_t left_idx =
+      idx > 3 ? idx - 3 : 0;
+
+    const size_t right_idx =
+      std::min(cum_s.size() - 1, idx + 3);
+
+    double spacing_sum = 0.0;
+    int spacing_count = 0;
+
+    for (size_t k = left_idx + 1; k <= right_idx; ++k) {
+      const double seg_len = cum_s[k] - cum_s[k - 1];
+
+      if (seg_len > 1e-4 && std::isfinite(seg_len)) {
+        spacing_sum += seg_len;
+        spacing_count++;
+      }
+    }
+
+    const double local_spacing =
+      spacing_count > 0 ?
+      spacing_sum / static_cast<double>(spacing_count) :
+      0.10;
+
+    const double ref_step_s =
+      std::max(v_ref_eff * control_duration_, 0.05);
+
+    double half_window =
+      std::max({
+        2.0 * ref_step_s,
+        3.0 * local_spacing,
+        0.12
+      });
+
+    half_window = std::clamp(half_window, 0.12, 0.35);
+
+    half_window = std::min(half_window, 0.5 * total_s);
+
+    if (half_window < 1e-3) {
+      return false;
+    }
+
+    double left_s = target_s - half_window;
+    double right_s = target_s + half_window;
+
+    if (left_s < 0.0) {
+      right_s = std::min(total_s, right_s - left_s);
+      left_s = 0.0;
+    }
+
+    if (right_s > total_s) {
+      left_s = std::max(0.0, left_s - (right_s - total_s));
+      right_s = total_s;
+    }
+
+    if (right_s - left_s < 0.08) {
+      return false;
+    }
+
+    struct PolySample
+    {
+      double s{0.0};
+      double x{0.0};
+      double y{0.0};
+    };
+
+    std::vector<PolySample> samples;
+    samples.reserve(sample_count);
+
+    for (int k = 0; k < sample_count; ++k) {
+      const double ratio =
+        static_cast<double>(k) /
+        static_cast<double>(sample_count - 1);
+
+      const double s =
+        left_s + ratio * (right_s - left_s);
+
+      const auto p = pose_at_s(s);
+      const auto & pp = p.pose.position;
+
+      if (!std::isfinite(pp.x) || !std::isfinite(pp.y)) {
+        continue;
+      }
+
+      PolySample sample;
+      sample.s = s;
+      sample.x = pp.x;
+      sample.y = pp.y;
+      samples.push_back(sample);
+    }
+
+    if (samples.size() < 2) {
+      return false;
+    }
+
+    const int order =
+      std::min<int>(
+        max_order,
+        static_cast<int>(samples.size()) - 1);
+
+    if (order < 1) {
+      return false;
+    }
+
+    Eigen::MatrixXd A(samples.size(), order + 1);
+    Eigen::VectorXd bx(samples.size());
+    Eigen::VectorXd by(samples.size());
+
+    for (size_t r = 0; r < samples.size(); ++r) {
+      const double u =
+        (samples[r].s - target_s) / std::max(half_window, 1e-6);
+
+      double uk = 1.0;
+      for (int c = 0; c <= order; ++c) {
+        A(static_cast<int>(r), c) = uk;
+        uk *= u;
+      }
+
+      bx(static_cast<int>(r)) = samples[r].x;
+      by(static_cast<int>(r)) = samples[r].y;
+    }
+
+    const auto qr = A.colPivHouseholderQr();
+
+    const Eigen::VectorXd coeff_x = qr.solve(bx);
+    const Eigen::VectorXd coeff_y = qr.solve(by);
+
+    if (coeff_x.size() < 2 || coeff_y.size() < 2) {
+      return false;
+    }
+
+    const double dx_ds =
+      coeff_x(1) / std::max(half_window, 1e-6);
+
+    const double dy_ds =
+      coeff_y(1) / std::max(half_window, 1e-6);
+
+    const double norm = std::hypot(dx_ds, dy_ds);
+
+    if (norm < 1e-6 || !std::isfinite(norm)) {
+      return false;
+    }
+
+    tangent.x() = dx_ds / norm;
+    tangent.y() = dy_ds / norm;
+
+    return true;
+  };
+  std::vector<double> ref_s;
   std::vector<Eigen::Vector2d> ref_pos;
+
+  ref_s.reserve(Np);
   ref_pos.reserve(Np);
 
   for (int i = 1; i <= Np; ++i) {
@@ -2053,10 +2243,60 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
 
     const auto sampled_pose = pose_at_s(target_s);
 
+    ref_s.push_back(target_s);
     ref_pos.emplace_back(
       sampled_pose.pose.position.x,
       sampled_pose.pose.position.y);
   }
+
+  auto normalize_vec = [](
+    const Eigen::Vector2d & v,
+    Eigen::Vector2d & out) -> bool
+  {
+    const double n = v.norm();
+
+    if (n < 1e-6 || !std::isfinite(n)) {
+      out.setZero();
+      return false;
+    }
+
+    out = v / n;
+    return true;
+  };
+
+  auto estimate_tangent_by_ref_pos_diff =
+    [&](int i, Eigen::Vector2d & tangent) -> bool
+  {
+    tangent.setZero();
+
+    if (ref_pos.empty()) {
+      return false;
+    }
+
+    Eigen::Vector2d d;
+    d.setZero();
+
+    if (i == 0) {
+      // 第一个点：直接用机器人原点 -> 第一个参考点方向
+      // 因为 path 已经在 base_link 下，机器人就是 (0,0)
+      d = ref_pos[0];
+
+      if (d.norm() < 1e-4 && ref_pos.size() >= 2) {
+        d = ref_pos[1] - ref_pos[0];
+      }
+    } else if (i + 1 < static_cast<int>(ref_pos.size())) {
+      // 后面的点：用中心差分
+      d = ref_pos[i + 1] - ref_pos[i - 1];
+    } else if (i > 0) {
+      // 最后一个点：用后向差分
+      d = ref_pos[i] - ref_pos[i - 1];
+    }
+
+    return normalize_vec(d, tangent);
+  };
+
+  const double max_poly_weight = 0.5;  // 先小一点，避免多项式导数滞后拖尾
+  const double min_poly_weight = 0.0;
 
   for (int i = 0; i < Np; ++i) {
     OmniMpcController::State ref;
@@ -2068,12 +2308,64 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
     double vx_ref = 0.0;
     double vy_ref = 0.0;
 
-    if (i + 1 < Np) {
-      vx_ref = (ref_pos[i + 1].x() - ref_pos[i].x()) / control_duration_;
-      vy_ref = (ref_pos[i + 1].y() - ref_pos[i].y()) / control_duration_;
-    } else if (i > 0) {
-      vx_ref = (ref_pos[i].x() - ref_pos[i - 1].x()) / control_duration_;
-      vy_ref = (ref_pos[i].y() - ref_pos[i - 1].y()) / control_duration_;
+    Eigen::Vector2d diff_dir;
+    Eigen::Vector2d poly_dir;
+    Eigen::Vector2d dir;
+
+    diff_dir.setZero();
+    poly_dir.setZero();
+    dir.setZero();
+
+    const bool diff_ok =
+      estimate_tangent_by_ref_pos_diff(i, diff_dir);
+
+    const bool poly_ok =
+      estimate_tangent_by_local_poly(ref_s[i], poly_dir);
+
+    if (i == 0) {
+      // 第一个点必须快速响应当前路径，不用多项式
+      if (diff_ok) {
+        dir = diff_dir;
+      }
+    } else {
+      if (diff_ok && poly_ok) {
+        // 越靠后的预测点，多项式权重越大
+        const double horizon_ratio =
+          static_cast<double>(i) /
+          std::max(1.0, static_cast<double>(Np - 1));
+
+        const double poly_weight =
+          std::clamp(
+            min_poly_weight +
+            (max_poly_weight - min_poly_weight) * horizon_ratio,
+            min_poly_weight,
+            max_poly_weight);
+
+        dir =
+          (1.0 - poly_weight) * diff_dir +
+          poly_weight * poly_dir;
+      } else if (diff_ok) {
+        dir = diff_dir;
+      } else if (poly_ok) {
+        dir = poly_dir;
+      }
+    }
+
+    const double dir_norm = dir.norm();
+
+    if (dir_norm > 1e-6 && std::isfinite(dir_norm)) {
+      dir /= dir_norm;
+
+      vx_ref = v_ref_eff * dir.x();
+      vy_ref = v_ref_eff * dir.y();
+    }
+
+    if (!std::isfinite(vx_ref)) {
+      vx_ref = 0.0;
+    }
+
+    if (!std::isfinite(vy_ref)) {
+      vy_ref = 0.0;
     }
 
     const double v_norm = std::hypot(vx_ref, vy_ref);
