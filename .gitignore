@@ -18,3 +18,5 @@ rosbag2_*
 *.log
 *.cache
 .history
+rm2026_decision/
+*.pcd

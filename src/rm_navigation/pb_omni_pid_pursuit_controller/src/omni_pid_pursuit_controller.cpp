@@ -24,8 +24,6 @@ OmniPidPursuitController::OmniPidPursuitController()
   // 初始化SG滤波器
   impl_->linear_vel_filter_ = std::make_unique<SavitzkyGolayFilter>(
     impl_->sg_window_size_, impl_->sg_poly_order_);
-  impl_->angular_vel_filter_ = std::make_unique<SavitzkyGolayFilter>(
-    impl_->sg_window_size_, impl_->sg_poly_order_);
 }
 
 
@@ -117,8 +115,6 @@ void OmniPidPursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".min_max_sum_error", rclcpp::ParameterValue(1.0));
-  declare_parameter_if_not_declared(
     node, plugin_name_ + ".lookahead_dist", rclcpp::ParameterValue(0.3));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".use_velocity_scaled_lookahead_dist", rclcpp::ParameterValue(true));
@@ -161,6 +157,28 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".curvature_backward_dist", rclcpp::ParameterValue(0.3));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_velocity_scaling_factor_rate", rclcpp::ParameterValue(0.9));
+    declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_kappa_min", rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_kappa_max", rclcpp::ParameterValue(1.20));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_a_lat_max", rclcpp::ParameterValue(0.80));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_min_speed", rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_max_slowdown_ratio", rclcpp::ParameterValue(0.70));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_lookahead_dist", rclcpp::ParameterValue(1.20));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_sample_ds", rclcpp::ParameterValue(0.10));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_projection_search_dist", rclcpp::ParameterValue(1.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_projection_trust_dist", rclcpp::ParameterValue(0.50));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_recover_rate", rclcpp::ParameterValue(1.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_kappa_hysteresis", rclcpp::ParameterValue(0.08));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".last_vel", rclcpp::ParameterValue(2.0));
   declare_parameter_if_not_declared(
@@ -168,10 +186,14 @@ void OmniPidPursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".min_dist", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".large_slow", rclcpp::ParameterValue(1.0));
-  declare_parameter_if_not_declared(
     node, plugin_name_ + ".mpc_ref_speed", rclcpp::ParameterValue(2.5));
     // 公共参数读取（PID/MPC均需使用）
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".pid_curve_kappa_fall_rate", rclcpp::ParameterValue(1.5));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_curve_kappa_rise_rate", rclcpp::ParameterValue(3.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mpc_curve_kappa_fall_rate", rclcpp::ParameterValue(1.0));
   node->get_parameter(plugin_name_ + ".translation_kp", translation_kp_);
   node->get_parameter(plugin_name_ + ".translation_ki", translation_ki_);
   node->get_parameter(plugin_name_ + ".translation_kd", translation_kd_);
@@ -180,7 +202,6 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".rotation_ki", rotation_ki_);
   node->get_parameter(plugin_name_ + ".rotation_kd", rotation_kd_);
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
-  node->get_parameter(plugin_name_ + ".min_max_sum_error", min_max_sum_error_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
   node->get_parameter(
     plugin_name_ + ".use_velocity_scaled_lookahead_dist", use_velocity_scaled_lookahead_dist_);
@@ -202,16 +223,32 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
   node->get_parameter(plugin_name_ + ".curvature_min", curvature_min_);
   node->get_parameter(plugin_name_ + ".curvature_max", curvature_max_);
+  node->get_parameter(plugin_name_ + ".pid_curve_kappa_min", pid_curve_kappa_min_);
+  node->get_parameter(plugin_name_ + ".pid_curve_kappa_max", pid_curve_kappa_max_);
+  node->get_parameter(plugin_name_ + ".pid_curve_a_lat_max", pid_curve_a_lat_max_);
+  node->get_parameter(plugin_name_ + ".pid_curve_min_speed", pid_curve_min_speed_);
+  node->get_parameter(
+    plugin_name_ + ".pid_curve_max_slowdown_ratio", pid_curve_max_slowdown_ratio_);
+  node->get_parameter(plugin_name_ + ".pid_curve_lookahead_dist", pid_curve_lookahead_dist_);
+  node->get_parameter(plugin_name_ + ".pid_curve_sample_ds", pid_curve_sample_ds_);
+  node->get_parameter(
+    plugin_name_ + ".pid_curve_projection_search_dist", pid_curve_projection_search_dist_);
+  node->get_parameter(
+    plugin_name_ + ".pid_curve_projection_trust_dist", pid_curve_projection_trust_dist_);
+  node->get_parameter(plugin_name_ + ".pid_curve_recover_rate", pid_curve_recover_rate_);
+  node->get_parameter(
+    plugin_name_ + ".pid_curve_kappa_hysteresis", pid_curve_kappa_hysteresis_);
   node->get_parameter(
     plugin_name_ + ".reduction_ratio_at_high_curvature", reduction_ratio_at_high_curvature_);
   node->get_parameter(plugin_name_ + ".curvature_forward_dist", curvature_forward_dist_);
   node->get_parameter(plugin_name_ + ".curvature_backward_dist", curvature_backward_dist_);
   node->get_parameter(
     plugin_name_ + ".max_velocity_scaling_factor_rate", max_velocity_scaling_factor_rate_);
+  node->get_parameter(
+  plugin_name_ + ".pid_curve_kappa_fall_rate", pid_curve_kappa_fall_rate_);
   node->get_parameter("controller_frequency", control_frequency);
   node->get_parameter(plugin_name_ + ".last_vel", last_vel_);
   node->get_parameter(plugin_name_ + ".lower_speed", lower_speed_);
-  node->get_parameter(plugin_name_ + ".large_slow", large_slow_);
   // SG滤波参数读取
   node->get_parameter(plugin_name_ + ".enable_sg_filter", impl_->enable_sg_filter_);
   node->get_parameter(plugin_name_ + ".sg_window_size", impl_->sg_window_size_);
@@ -240,7 +277,10 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".min_dist", min_dist_);
   node->get_parameter(plugin_name_ + ".acc_max", acc_max_);
   node->get_parameter(plugin_name_ + ".mpc_ref_speed", mpc_ref_speed_);
-
+  node->get_parameter(
+    plugin_name_ + ".mpc_curve_kappa_rise_rate", mpc_curve_kappa_rise_rate_);
+  node->get_parameter(
+    plugin_name_ + ".mpc_curve_kappa_fall_rate", mpc_curve_kappa_fall_rate_);
   declare_parameter_if_not_declared(
   node, plugin_name_ + ".mpc_curve_a_lat_max", rclcpp::ParameterValue(1.0));
   declare_parameter_if_not_declared(
@@ -269,8 +309,6 @@ void OmniPidPursuitController::configure(
   } else {
     impl_->linear_vel_filter_->setWindowSize(impl_->sg_window_size_);
     impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
-    impl_->angular_vel_filter_->setWindowSize(impl_->sg_window_size_);
-    impl_->angular_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
   }
   move_pid_ = std::make_shared<PID>(
     control_duration_, 
@@ -287,11 +325,7 @@ void OmniPidPursuitController::configure(
     rotation_kd_,
     rotation_ki_);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
-  
-  smooth_vel_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(  //如果不用smooth_server的话，这个订阅可以去掉
-    "cmd_vel_nav2_result",
-    rclcpp::SensorDataQoS(),
-    std::bind(&OmniPidPursuitController::smoothedVelCallback, this, std::placeholders::_1));
+
   rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
     "/rm_task",
     10,
@@ -334,13 +368,6 @@ void OmniPidPursuitController::updateMpcWeights()
   R_delta(1, 1) = mpc_Rdelta_vy;
 
   mpc_controller_->initWeights(S, Q, R, R_delta);
-}
-void OmniPidPursuitController::smoothedVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
-{
-  std::lock_guard<std::mutex> lock(sm_mutex);
-  double x = msg->linear.x;
-  double y = msg->linear.y;
-  smoothed_vel = std::sqrt(x*x+y*y);
 }
 
 void OmniPidPursuitController::cleanup()
@@ -415,7 +442,25 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header = pose.header;
+  if (pending_controller_soft_reset_) {
+    pending_controller_soft_reset_ = false;
 
+    last_velocity_scaling_factor_ = std::hypot(
+      prev_cmd_vel_.twist.linear.x,
+      prev_cmd_vel_.twist.linear.y);
+
+    if (move_pid_) {
+      move_pid_->reset();
+    }
+
+    if (heading_pid_) {
+      heading_pid_->reset();
+    }
+
+    if (mpc_controller_) {
+      mpc_controller_->reset();
+    }
+  }
   auto transformed_plan = transformGlobalPlan(pose);
 
   const double lookahead_dist = getLookAheadDistance(velocity);
@@ -430,7 +475,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     return cmd_vel;
   }
 
-  const bool direct_drive_request = (rm_task_value_.load() == 1);
+  const bool direct_drive_request = (rm_task_value_.load() == 1) || (rm_task_value_.load() == 2);
   bool direct_drive_mode = false;
 
   if (direct_drive_request) {
@@ -655,7 +700,6 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
       if (std::hypot(cmd_vx, cmd_vy) > 1e-6) {
         applyCurvatureLimitation_mpc(transformed_plan, carrot_pose, cmd_vx, cmd_vy);
-        // 不要再调用 applyApproachVelocityScaling_mpc()
       }
 
       angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
@@ -718,59 +762,50 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   return cmd_vel;
 }
 
-nav_msgs::msg::Path OmniPidPursuitController::cropGlobalPlanToLocal(
-  const geometry_msgs::msg::PoseStamped & pose)
+void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path)
 {
-  if (global_plan_.poses.empty()) {
-    throw nav2_core::PlannerException("Received plan with zero length");
+  if (path.poses.empty()) {
+    global_plan_ = path;
+    return;
   }
 
-  geometry_msgs::msg::PoseStamped robot_pose;
-  if (!transformPose(global_plan_.header.frame_id, pose, robot_pose)) {
-    throw nav2_core::PlannerException("Unable to transform robot pose into global plan's frame");
+  const auto & new_goal = path.poses.back();
+
+  bool goal_changed = false;
+
+  if (!has_latched_goal_) {
+    goal_changed = true;
+  } else {
+    const auto & old_p = latched_goal_.pose.position;
+    const auto & new_p = new_goal.pose.position;
+
+    const double goal_dist_change =
+      std::hypot(new_p.x - old_p.x, new_p.y - old_p.y);
+
+    const double old_yaw = tf2::getYaw(latched_goal_.pose.orientation);
+    const double new_yaw = tf2::getYaw(new_goal.pose.orientation);
+
+    double dyaw = new_yaw - old_yaw;
+    while (dyaw > M_PI) {
+      dyaw -= 2.0 * M_PI;
+    }
+    while (dyaw < -M_PI) {
+      dyaw += 2.0 * M_PI;
+    }
+
+    goal_changed = goal_dist_change > 1.0;
   }
 
-  double max_costmap_extent = getCostmapMaxExtent();
+  global_plan_ = path;
 
-  auto closest_pose_upper_bound = nav2_util::geometry_utils::first_after_integrated_distance(
-    global_plan_.poses.begin(), global_plan_.poses.end(), max_robot_pose_search_dist_);
+  if (goal_changed) {
+    latched_goal_ = new_goal;
+    has_latched_goal_ = true;
 
-  auto transformation_begin = nav2_util::geometry_utils::min_by(
-    global_plan_.poses.begin(), closest_pose_upper_bound,
-    [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
-      return euclidean_distance(robot_pose, ps);
-    });
-
-  auto transformation_end = std::find_if(
-    transformation_begin, global_plan_.poses.end(),
-    [&](const auto & pose) { return euclidean_distance(pose, robot_pose) > max_costmap_extent; });
-
-  nav_msgs::msg::Path local_plan;
-  local_plan.header = global_plan_.header; 
-  local_plan.poses.reserve(std::distance(transformation_begin, transformation_end));
-  
-  for (auto it = transformation_begin; it != transformation_end; ++it) {
-    local_plan.poses.push_back(*it);
+    // 这里只挂一个标志，不直接 reset。
+    // 真正 reset 放到 computeVelocityCommands() 里做。
+    pending_controller_soft_reset_ = true;
   }
-  global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
-
-  local_path_pub_->publish(local_plan);
-
-  if (local_plan.poses.empty()) {
-    throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
-  }
-
-  // RCLCPP_INFO(logger_, "裁剪路径: 全局[%lu] -> 局部[%lu] (坐标系: %s)",
-  //             global_plan_.poses.size() + local_plan.poses.size(), // 加回来是因为刚才 erase 了
-  //             local_plan.poses.size(),
-  //             local_plan.header.frame_id.c_str());
-
-  return local_plan;
-}
-
-void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path) { 
-  global_plan_ = path; 
-  // minco_tracker_->reset();
 }
 
 void OmniPidPursuitController::setSpeedLimit(
@@ -1854,7 +1889,6 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
     return ref_seq;
   }
 
-  double best_dist = std::numeric_limits<double>::infinity();
   double start_s = 0.0;
 
   const double start_s_deadband = 0.1;      
@@ -1957,7 +1991,15 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
 
   v_ref_eff = std::max(0.0, v_ref_eff);
 
-  double max_kappa_ahead = 0.0;
+  struct MpcCurvatureSample
+  {
+    double kappa{0.0};
+  };
+
+  std::vector<MpcCurvatureSample> mpc_curvature_samples;
+  mpc_curvature_samples.reserve(32);
+
+  double raw_max_kappa_ahead = 0.0;
 
   const double curve_check_dist =
     std::clamp(
@@ -1967,7 +2009,10 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
 
   const double ds = 0.10;
 
-  for (double s = start_s; s <= std::min(total_s, start_s + curve_check_dist); s += ds) {
+  for (double s = start_s;
+       s <= std::min(total_s, start_s + curve_check_dist);
+       s += ds)
+  {
     const double s_back = std::max(0.0, s - curvature_backward_dist_);
     const double s_mid = std::clamp(s, 0.0, total_s);
     const double s_fwd = std::min(total_s, s + curvature_forward_dist_);
@@ -1992,8 +2037,6 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
       continue;
     }
 
-    // 三点曲率：
-    // kappa = 4 * triangle_area / (ab * bc * ca)
     const double cross =
       std::abs(
         (b.x - a.x) * (c.y - a.y) -
@@ -2002,10 +2045,109 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
     const double kappa =
       2.0 * cross / std::max(1e-9, ab * bc * ca);
 
-    if (std::isfinite(kappa)) {
-      max_kappa_ahead = std::max(max_kappa_ahead, kappa);
+    if (std::isfinite(kappa) && kappa >= 0.0) {
+      MpcCurvatureSample sample;
+      sample.kappa = kappa;
+      mpc_curvature_samples.push_back(sample);
+
+      raw_max_kappa_ahead =
+        std::max(raw_max_kappa_ahead, kappa);
     }
   }
+
+  double robust_kappa_ahead = 0.0;
+
+  if (!mpc_curvature_samples.empty()) {
+    std::sort(
+      mpc_curvature_samples.begin(),
+      mpc_curvature_samples.end(),
+      [](const MpcCurvatureSample & a, const MpcCurvatureSample & b) {
+        return a.kappa > b.kappa;
+      });
+
+    const size_t sample_count = mpc_curvature_samples.size();
+
+    size_t top_count =
+      static_cast<size_t>(
+        std::ceil(0.25 * static_cast<double>(sample_count)));
+
+    top_count =
+      std::clamp<size_t>(
+        top_count,
+        std::min<size_t>(2, sample_count),
+        std::min<size_t>(5, sample_count));
+
+    // double kappa_sum = 0.0;
+
+    // for (size_t i = 0; i < top_count; ++i) {
+    //   kappa_sum += mpc_curvature_samples[i].kappa;
+    // }
+
+    // robust_kappa_ahead =
+    //   kappa_sum / static_cast<double>(top_count);
+  if (top_count == 1) {
+      robust_kappa_ahead =
+      mpc_curvature_samples.front().kappa;
+  } else {
+
+    robust_kappa_ahead =
+      0.5 * mpc_curvature_samples.front().kappa;
+
+    double remaining_weight_base_sum = 0.0;
+
+    for (size_t i = 1; i < top_count; ++i) {
+      remaining_weight_base_sum +=
+        static_cast<double>(top_count - i);
+    }
+
+    if (remaining_weight_base_sum > 1e-9) {
+      for (size_t i = 1; i < top_count; ++i) {
+        const double weight_base =
+          static_cast<double>(top_count - i);
+
+        const double normalized_weight =
+          0.5 * weight_base /
+          remaining_weight_base_sum;
+
+        robust_kappa_ahead +=
+          normalized_weight *
+          mpc_curvature_samples[i].kappa;
+      }
+    }
+  }
+  }
+
+  if (!has_mpc_curve_filtered_kappa_) {
+    mpc_curve_filtered_kappa_ = robust_kappa_ahead;
+    has_mpc_curve_filtered_kappa_ = true;
+  } else {
+    const double kappa_diff =
+      robust_kappa_ahead - mpc_curve_filtered_kappa_;
+
+    const double max_kappa_rise =
+      std::max(0.0, mpc_curve_kappa_rise_rate_) *
+      control_duration_;
+
+    const double max_kappa_fall =
+      std::max(0.0, mpc_curve_kappa_fall_rate_) *
+      control_duration_;
+
+    if (kappa_diff > max_kappa_rise) {
+      mpc_curve_filtered_kappa_ += max_kappa_rise;
+    } else if (kappa_diff < -max_kappa_fall) {
+      mpc_curve_filtered_kappa_ -= max_kappa_fall;
+    } else {
+      mpc_curve_filtered_kappa_ = robust_kappa_ahead;
+    }
+
+    mpc_curve_filtered_kappa_ =
+      std::clamp(
+        mpc_curve_filtered_kappa_,
+        0.0,
+        std::max(raw_max_kappa_ahead, robust_kappa_ahead));
+  }
+
+  const double max_kappa_ahead = mpc_curve_filtered_kappa_;
 
   double v_curve_limit = v_des;
 
@@ -2295,7 +2437,7 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
     return normalize_vec(d, tangent);
   };
 
-  const double max_poly_weight = 0.5;  // 先小一点，避免多项式导数滞后拖尾
+  const double max_poly_weight = 0.2;  // 先小一点，避免多项式导数滞后拖尾
   const double min_poly_weight = 0.0;
 
   for (int i = 0; i < Np; ++i) {
@@ -2381,12 +2523,12 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
 
     ref_seq.push_back(ref);
   }
-  std::cout << "total_s: " << total_s
-          << " start_s: " << start_s
-          << " remaining_s: " << remaining_s
-          << " v_des: " << v_des
-          << " v_ref_eff: " << v_ref_eff
-          << std::endl;
+  // std::cout << "total_s: " << total_s
+  //         << " start_s: " << start_s
+  //         << " remaining_s: " << remaining_s
+  //         << " v_des: " << v_des
+  //         << " v_ref_eff: " << v_ref_eff
+  //         << std::endl;
   return ref_seq;
 }
 std::unique_ptr<geometry_msgs::msg::PointStamped> OmniPidPursuitController::createCarrotMsg(
@@ -2489,22 +2631,6 @@ bool OmniPidPursuitController::transformPose(
   return false;
 }
 
-bool OmniPidPursuitController::isCollisionDetected(const nav_msgs::msg::Path & path)
-{
-  auto costmap = costmap_ros_->getCostmap();
-  for (const auto & pose_stamped : path.poses) {
-    const auto & pose = pose_stamped.pose;
-    unsigned int mx, my;
-    if (costmap->worldToMap(pose.position.x, pose.position.y, mx, my)) {
-      if (costmap->getCost(mx, my) >= nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
-        return true;
-      }
-    } else {
-      return false;
-    }
-  }
-  return false;
-}
 bool OmniPidPursuitController::isDirectPathSafeToTarget(
   const geometry_msgs::msg::PoseStamped & target_pose) const
 {
@@ -2646,50 +2772,435 @@ void OmniPidPursuitController::applyApproachVelocityScaling_mpc(
 }
 
 void OmniPidPursuitController::applyCurvatureLimitation(
-  const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
+  const nav_msgs::msg::Path & path,
+  const geometry_msgs::msg::PoseStamped & lookahead_pose,
   double & linear_vel)
 {
-  double curvature =
-  calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
-  RCLCPP_DEBUG(logger_, "Curvature: %.3f", curvature);
-  if(slow && curvature <= large_slow_-0.3) slow = false;
-  if(!slow && curvature >= large_slow_) slow = true;
-  double scaled_linear_vel = linear_vel;
+  (void)lookahead_pose;
 
+  if (path.poses.size() < 3) {
+    last_velocity_scaling_factor_ = linear_vel;
+    return;
+  }
 
-  if (curvature > curvature_min_) {
-    double reduction_ratio = 1.0;
-    if (curvature > curvature_max_) {
-      reduction_ratio = reduction_ratio_at_high_curvature_;
-    } else {
-      reduction_ratio = 1.0 - (curvature - curvature_min_) / (curvature_max_ - curvature_min_) *
-                                (1.0 - reduction_ratio_at_high_curvature_);
+  if (!std::isfinite(linear_vel) || linear_vel <= 1e-6) {
+    linear_vel = 0.0;
+    last_velocity_scaling_factor_ = 0.0;
+    return;
+  }
+
+  const double raw_linear_vel = linear_vel;
+
+  const double kappa_min =
+    std::max(0.0, pid_curve_kappa_min_);
+
+  const double kappa_max =
+    std::max(kappa_min + 1e-6, pid_curve_kappa_max_);
+
+  const double a_lat_max =
+    std::max(0.0, pid_curve_a_lat_max_);
+
+  if (a_lat_max <= 1e-6) {
+    last_velocity_scaling_factor_ = linear_vel;
+    return;
+  }
+
+  std::vector<double> cum_s(path.poses.size(), 0.0);
+
+  for (size_t i = 1; i < path.poses.size(); ++i) {
+    const auto & p0 = path.poses[i - 1].pose.position;
+    const auto & p1 = path.poses[i].pose.position;
+
+    cum_s[i] =
+      cum_s[i - 1] +
+      std::hypot(p1.x - p0.x, p1.y - p0.y);
+  }
+
+  const double total_s = cum_s.back();
+
+  if (total_s < 1e-6) {
+    last_velocity_scaling_factor_ = linear_vel;
+    return;
+  }
+
+  auto pose_at_s = [&](double target_s)
+  {
+    target_s = std::clamp(target_s, 0.0, total_s);
+
+    auto it = std::lower_bound(cum_s.begin(), cum_s.end(), target_s);
+    size_t idx = static_cast<size_t>(std::distance(cum_s.begin(), it));
+
+    if (idx == 0) {
+      return path.poses.front();
     }
 
-    double target_scaled_vel = linear_vel * reduction_ratio;
+    if (idx >= path.poses.size()) {
+      return path.poses.back();
+    }
 
-    if(slow && last_velocity_scaling_factor_ >= last_vel_){
-      // scaled_linear_vel = last_vel_;
-      scaled_linear_vel =
-      last_velocity_scaling_factor_ + std::clamp(
-                                        last_vel_-last_velocity_scaling_factor_,
-                                        -lower_speed_ ,
-                                        lower_speed_ );
-    }  
-    else if(!slow && last_velocity_scaling_factor_ > target_scaled_vel){
-      scaled_linear_vel =
-      last_velocity_scaling_factor_ + std::clamp(
-                                        target_scaled_vel - last_velocity_scaling_factor_,
-                                        -max_velocity_scaling_factor_rate_ * control_duration_,
-                                        max_velocity_scaling_factor_rate_ * control_duration_);
-    }                                    
+    const double s0 = cum_s[idx - 1];
+    const double s1 = cum_s[idx];
+
+    const double ratio =
+      (target_s - s0) / std::max(1e-6, s1 - s0);
+
+    const auto & p0 = path.poses[idx - 1].pose.position;
+    const auto & p1 = path.poses[idx].pose.position;
+
+    geometry_msgs::msg::PoseStamped out = path.poses[idx];
+
+    out.pose.position.x = p0.x + ratio * (p1.x - p0.x);
+    out.pose.position.y = p0.y + ratio * (p1.y - p0.y);
+    out.pose.position.z = 0.0;
+
+    return out;
+  };
+
+  double start_s = 0.0;
+  double best_dist = std::numeric_limits<double>::infinity();
+
+  const double projection_search_dist =
+    std::clamp(
+      pid_curve_projection_search_dist_,
+      0.2,
+      std::max(0.2, total_s));
+
+  for (size_t i = 0; i + 1 < path.poses.size(); ++i) {
+    if (cum_s[i] > projection_search_dist) {
+      break;
+    }
+
+    const auto & p0 = path.poses[i].pose.position;
+    const auto & p1 = path.poses[i + 1].pose.position;
+
+    const double x0 = p0.x;
+    const double y0 = p0.y;
+    const double x1 = p1.x;
+    const double y1 = p1.y;
+
+    const double dx = x1 - x0;
+    const double dy = y1 - y0;
+
+    const double len2 = dx * dx + dy * dy;
+
+    if (len2 < 1e-10) {
+      continue;
+    }
+
+    double t = -(x0 * dx + y0 * dy) / len2;
+    t = std::clamp(t, 0.0, 1.0);
+
+    const double proj_x = x0 + t * dx;
+    const double proj_y = y0 + t * dy;
+
+    const double proj_dist = std::hypot(proj_x, proj_y);
+
+    if (proj_dist < best_dist) {
+      best_dist = proj_dist;
+      start_s = cum_s[i] + t * std::sqrt(len2);
+    }
   }
-  // scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
-  RCLCPP_DEBUG(logger_, "Scaled linear vel: %.3f", scaled_linear_vel);
-  linear_vel = std::min(linear_vel, scaled_linear_vel);
-  linear_vel = std::clamp(linear_vel,last_velocity_scaling_factor_-lower_speed_,last_velocity_scaling_factor_+lower_speed_);
-  // std::lock_guard<std::mutex> lock(sm_mutex);
+
+  if (best_dist > std::max(0.0, pid_curve_projection_trust_dist_)) {
+    start_s = 0.0;
+  }
+
+  start_s = std::clamp(start_s, 0.0, total_s);
+
+  const double remaining_s = total_s - start_s;
+
+  if (remaining_s < 1e-6) {
+    last_velocity_scaling_factor_ = linear_vel;
+    return;
+  }
+
+  struct CurvatureSample
+  {
+    double kappa{0.0};
+    geometry_msgs::msg::PoseStamped back;
+    geometry_msgs::msg::PoseStamped fwd;
+  };
+
+  std::vector<CurvatureSample> curvature_samples;
+  curvature_samples.reserve(32);
+
+  double raw_max_kappa_ahead = 0.0;
+
+  geometry_msgs::msg::PoseStamped best_back_pose;
+  geometry_msgs::msg::PoseStamped best_fwd_pose;
+  bool has_best_curvature_pose = false;
+
+  const double curve_check_dist =
+    std::clamp(
+      pid_curve_lookahead_dist_,
+      0.2,
+      std::max(0.2, remaining_s));
+
+  const double sample_ds =
+    std::clamp(
+      pid_curve_sample_ds_,
+      0.03,
+      0.30);
+
+  for (double s = start_s;
+       s <= std::min(total_s, start_s + curve_check_dist);
+       s += sample_ds)
+  {
+    const double s_back =
+      std::max(0.0, s - curvature_backward_dist_);
+
+    const double s_mid =
+      std::clamp(s, 0.0, total_s);
+
+    const double s_fwd =
+      std::min(total_s, s + curvature_forward_dist_);
+
+    if (s_fwd - s_back < 0.05) {
+      continue;
+    }
+
+    const auto p_back = pose_at_s(s_back);
+    const auto p_mid = pose_at_s(s_mid);
+    const auto p_fwd = pose_at_s(s_fwd);
+
+    const auto & a = p_back.pose.position;
+    const auto & b = p_mid.pose.position;
+    const auto & c = p_fwd.pose.position;
+
+    const double ab = std::hypot(b.x - a.x, b.y - a.y);
+    const double bc = std::hypot(c.x - b.x, c.y - b.y);
+    const double ca = std::hypot(a.x - c.x, a.y - c.y);
+
+    if (ab < 1e-4 || bc < 1e-4 || ca < 1e-4) {
+      continue;
+    }
+
+    const double cross =
+      std::abs(
+        (b.x - a.x) * (c.y - a.y) -
+        (b.y - a.y) * (c.x - a.x));
+
+    const double kappa =
+      2.0 * cross / std::max(1e-9, ab * bc * ca);
+
+  if (std::isfinite(kappa) && kappa >= 0.0) {
+    CurvatureSample sample;
+    sample.kappa = kappa;
+    sample.back = p_back;
+    sample.fwd = p_fwd;
+    curvature_samples.push_back(sample);
+
+    if (kappa > raw_max_kappa_ahead) {
+      raw_max_kappa_ahead = kappa;
+      best_back_pose = p_back;
+      best_fwd_pose = p_fwd;
+      has_best_curvature_pose = true;
+    }
+  }
+  }
+  double max_kappa_ahead = 0.0;
+
+  if (!curvature_samples.empty()) {
+    std::sort(
+      curvature_samples.begin(),
+      curvature_samples.end(),
+      [](const CurvatureSample & a, const CurvatureSample & b) {
+        return a.kappa > b.kappa;
+      });
+
+    // 取最大的前 25% 曲率点做加权平均
+    // 这样可以保留“前方弯道预判”，但不会被单个异常点支配
+    const size_t sample_count = curvature_samples.size();
+
+    size_t top_count =
+      static_cast<size_t>(
+        std::ceil(0.25 * static_cast<double>(sample_count)));
+
+    top_count =
+      std::clamp<size_t>(
+        top_count,
+        std::min<size_t>(2, sample_count),
+        std::min<size_t>(5, sample_count));
+
+    if (top_count == 1) {
+      max_kappa_ahead =
+        curvature_samples.front().kappa;
+    } else {
+      // 最大曲率固定占 50%
+      max_kappa_ahead =
+        0.5 * curvature_samples.front().kappa;
+
+      // 其余曲率共同占另外 50%
+      double remaining_weight_base_sum = 0.0;
+
+      for (size_t i = 1; i < top_count; ++i) {
+        remaining_weight_base_sum +=
+          static_cast<double>(top_count - i);
+      }
+
+      if (remaining_weight_base_sum > 1e-9) {
+        for (size_t i = 1; i < top_count; ++i) {
+          const double weight_base =
+            static_cast<double>(top_count - i);
+
+          const double normalized_weight =
+            0.5 * weight_base /
+            remaining_weight_base_sum;
+
+          max_kappa_ahead +=
+            normalized_weight *
+            curvature_samples[i].kappa;
+        }
+      }
+    }
+
+    // 可视化还是显示原始最大曲率点，方便你看最危险的位置
+    best_back_pose = curvature_samples.front().back;
+    best_fwd_pose = curvature_samples.front().fwd;
+    has_best_curvature_pose = true;
+  }
+  const double raw_kappa_for_debug = max_kappa_ahead;
+
+  if (!has_pid_curve_filtered_kappa_) {
+    pid_curve_filtered_kappa_ = raw_kappa_for_debug;
+    has_pid_curve_filtered_kappa_ = true;
+  } else {
+    const double kappa_diff =
+      raw_kappa_for_debug - pid_curve_filtered_kappa_;
+
+    const double max_kappa_rise =
+      std::max(0.0, pid_curve_kappa_rise_rate_) *
+      control_duration_;
+
+    const double max_kappa_fall =
+      std::max(0.0, pid_curve_kappa_fall_rate_) *
+      control_duration_;
+
+    if (kappa_diff > max_kappa_rise) {
+      pid_curve_filtered_kappa_ += max_kappa_rise;
+    } else if (kappa_diff < -max_kappa_fall) {
+      pid_curve_filtered_kappa_ -= max_kappa_fall;
+    } else {
+      pid_curve_filtered_kappa_ = raw_kappa_for_debug;
+    }
+
+    pid_curve_filtered_kappa_ =
+      std::clamp(
+        pid_curve_filtered_kappa_,
+        0.0,
+        std::max(pid_curve_kappa_max_, raw_kappa_for_debug));
+  }
+
+  // 后面的 slow 判断和速度公式全部用 filtered_kappa
+  max_kappa_ahead = pid_curve_filtered_kappa_;
+
+  max_kappa_ahead = pid_curve_filtered_kappa_;
+  if (has_best_curvature_pose) {
+    visualizeCurvaturePoints(best_back_pose, best_fwd_pose);
+  }
+
+  const double kappa_exit =
+    std::max(0.0, kappa_min - std::max(0.0, pid_curve_kappa_hysteresis_));
+
+  if (pid_curve_slow_active_) {
+    if (max_kappa_ahead <= kappa_exit) {
+      pid_curve_slow_active_ = false;
+    }
+  } else {
+    if (max_kappa_ahead >= kappa_min) {
+      pid_curve_slow_active_ = true;
+    }
+  }
+  // std::cout << "max_kappa_ahead: " << max_kappa_ahead
+  //           << " kappa_min: " << kappa_min
+  //           << " kappa_max: " << kappa_max
+  //           << " pid_curve_slow_active_: " << pid_curve_slow_active_
+  //           << std::endl;
+  double target_vel = raw_linear_vel;
+
+  if (pid_curve_slow_active_) {
+    const double effective_kappa =
+      std::clamp(
+        max_kappa_ahead,
+        kappa_min,
+        kappa_max);
+
+    double formula_vel =
+      std::sqrt(
+        a_lat_max /
+        std::max(effective_kappa, 1e-6));
+
+    if (!std::isfinite(formula_vel)) {
+      formula_vel = raw_linear_vel;
+    }
+
+    target_vel =
+      std::min(raw_linear_vel, formula_vel);
+
+    const double slowdown_ratio =
+      std::clamp(
+        pid_curve_max_slowdown_ratio_,
+        0.0,
+        1.0);
+
+    const double min_vel_by_ratio =
+      raw_linear_vel * (1.0 - slowdown_ratio);
+
+    const double min_allowed_vel =
+      std::min(
+        raw_linear_vel,
+        std::max(
+          std::max(0.0, pid_curve_min_speed_),
+          min_vel_by_ratio));
+
+    target_vel =
+      std::clamp(
+        target_vel,
+        min_allowed_vel,
+        raw_linear_vel);
+  }
+
+  double output_vel = target_vel;
+
+  const bool has_last_vel =
+    std::isfinite(last_velocity_scaling_factor_) &&
+    last_velocity_scaling_factor_ > 1e-4;
+
+  if (has_last_vel) {
+    const double last_vel = last_velocity_scaling_factor_;
+    const double diff = target_vel - last_vel;
+
+    if (diff <= 0.0) {
+      output_vel = target_vel;
+    } else {
+      const double max_recover_step =
+        std::max(0.0, pid_curve_recover_rate_) *
+        control_duration_;
+
+      output_vel =
+        std::min(
+          target_vel,
+          last_vel + max_recover_step);
+    }
+  }
+
+  output_vel =
+    std::clamp(
+      output_vel,
+      0.0,
+      raw_linear_vel);
+
+  linear_vel = output_vel;
   last_velocity_scaling_factor_ = linear_vel;
+
+  RCLCPP_DEBUG(
+    logger_,
+    "PID curve limit buffer: raw=%.3f target=%.3f out=%.3f kappa=%.3f slow=%d",
+    raw_linear_vel,
+    target_vel,
+    linear_vel,
+    max_kappa_ahead,
+    pid_curve_slow_active_ ? 1 : 0);
 }
 
 void OmniPidPursuitController::applyCurvatureLimitation_mpc(
@@ -2735,9 +3246,8 @@ void OmniPidPursuitController::applyCurvatureLimitation_mpc(
   RCLCPP_DEBUG(logger_, "Scaled linear vel: %.3f", scaled_linear_vel);
   linear_vel = std::min(linear_vel, scaled_linear_vel);
   double scale_ratio = linear_vel / original_linear_vel;
-  vx *= scale_ratio;  
+  vx *= scale_ratio;
   vy *= scale_ratio;
-  // std::lock_guard<std::mutex> lock(sm_mutex);
   last_velocity_scaling_factor_ = linear_vel;
 }
 
@@ -2921,8 +3431,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         if (heading_pid_) {
           // heading_pid_->setKd(rotation_kd_);
         }
-      } else if (name == plugin_name_ + ".min_max_sum_error") {
-        min_max_sum_error_ = parameter.as_double();
       } else if (name == plugin_name_ + ".lookahead_dist") {
         lookahead_dist_ = parameter.as_double();
       } else if (name == plugin_name_ + ".min_lookahead_dist") {
@@ -2973,12 +3481,38 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         curvature_forward_dist_ = parameter.as_double();
       } else if (name == plugin_name_ + ".curvature_backward_dist") {
         curvature_backward_dist_ = parameter.as_double();
+      }
+      else if (name == plugin_name_ + ".pid_curve_kappa_min") {
+        pid_curve_kappa_min_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_kappa_max") {
+        pid_curve_kappa_max_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_a_lat_max") {
+        pid_curve_a_lat_max_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_min_speed") {
+        pid_curve_min_speed_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_max_slowdown_ratio") {
+        pid_curve_max_slowdown_ratio_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_lookahead_dist") {
+        pid_curve_lookahead_dist_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_sample_ds") {
+        pid_curve_sample_ds_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_projection_search_dist") {
+        pid_curve_projection_search_dist_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_projection_trust_dist") {
+        pid_curve_projection_trust_dist_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_recover_rate") {
+        pid_curve_recover_rate_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".pid_curve_kappa_hysteresis") {
+        pid_curve_kappa_hysteresis_ = parameter.as_double();
       } else if (name == plugin_name_ + ".max_velocity_scaling_factor_rate") {
         max_velocity_scaling_factor_rate_ = parameter.as_double();
       } else if (name == plugin_name_ + ".last_vel") {
         last_vel_ = parameter.as_double();
       } else if (name == plugin_name_ + ".lower_speed") {
         lower_speed_ = parameter.as_double();
+      }
+      else if (name == plugin_name_ + ".pid_curve_kappa_fall_rate") {
+        pid_curve_kappa_fall_rate_ = parameter.as_double();
       }
       // MPC权重参数动态更新
       else if (name == plugin_name_ + ".mpc_S_x") {
@@ -3042,6 +3576,11 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
           updateMpcWeights();
         }
       }
+      else if (name == plugin_name_ + ".mpc_curve_kappa_rise_rate") {
+        mpc_curve_kappa_rise_rate_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".mpc_curve_kappa_fall_rate") {
+        mpc_curve_kappa_fall_rate_ = parameter.as_double();
+      }
     } else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == plugin_name_ + ".use_velocity_scaled_lookahead_dist") {
         use_velocity_scaled_lookahead_dist_ = parameter.as_bool();
@@ -3054,7 +3593,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         impl_->enable_sg_filter_ = parameter.as_bool();
         if (impl_->enable_sg_filter_) {
           impl_->linear_vel_filter_->reset();
-          impl_->angular_vel_filter_->reset();
         }
       }
       // 核心：算法切换参数
@@ -3070,11 +3608,9 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       if (name == plugin_name_ + ".sg_window_size") {
         impl_->sg_window_size_ = parameter.as_int();
         impl_->linear_vel_filter_->setWindowSize(impl_->sg_window_size_);
-        impl_->angular_vel_filter_->setWindowSize(impl_->sg_window_size_);
       } else if (name == plugin_name_ + ".sg_poly_order") {
         impl_->sg_poly_order_ = parameter.as_int();
         impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
-        impl_->angular_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
       }
       // MPC预测/控制时域
     else if (name == plugin_name_ + ".mpc_Np") {
@@ -3132,8 +3668,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       // 更新滤波器参数
       impl_->linear_vel_filter_->setWindowSize(impl_->sg_window_size_);
       impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
-      impl_->angular_vel_filter_->setWindowSize(impl_->sg_window_size_);
-      impl_->angular_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
       RCLCPP_INFO(logger_, "Successfully switched to PID control mode");
     }
   }

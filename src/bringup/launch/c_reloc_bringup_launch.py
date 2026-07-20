@@ -90,8 +90,8 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/blank.yaml", description="Full path to map yaml file to load"
-        
-        "map", default_value="/home/rps/sentry26/src/bringup/map/blue1.yaml", description="Full path to map yaml file to load"
+        # "map", default_value="/home/rps/sentry26/src/bringup/map/map_home_new.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/rps/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
     )                                                                                                 
 
@@ -268,7 +268,7 @@ def generate_launch_description():
         output="screen",
         parameters=[configured_params,
         {
-            "save_interval": 20.0,
+            "save_interval": 30.0,
             "save_path": "/home/rps/sentry26/map/map",
             "map_topic": "/slam_map",
         }

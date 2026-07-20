@@ -1,4 +1,4 @@
-#include "tf2_ros/buffer.h"
+ #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -50,22 +50,34 @@ public:
         this->get_parameter("third_hysteresis_margin", third_hysteresis_margin_);
 
         // 新增区域参数(前哨)
-        this->declare_parameter("special_left_top_x", 8.8);
-        this->declare_parameter("special_left_top_y", 4.0);
-        this->declare_parameter("special_right_bottom_x", 6.0);
-        this->declare_parameter("special_right_bottom_y", 1.0);
+        this->declare_parameter("special_p1_x", 8.4);
+        this->declare_parameter("special_p1_y", 5.2);
+        this->declare_parameter("special_p2_x", 5.8);
+        this->declare_parameter("special_p2_y", 1.8);
+        this->declare_parameter("special_p3_x", 4.6);
+        this->declare_parameter("special_p3_y", 1.8);
+        this->declare_parameter("special_p4_x", 7.2);
+        this->declare_parameter("special_p4_y", 5.2);
         this->declare_parameter("special_hysteresis_margin", 0.2);
-        // this->declare_parameter("special_left_top_x", 0.5);
-        // this->declare_parameter("special_left_top_y", 0.5);
-        // this->declare_parameter("special_right_bottom_x", -0.5);
-        // this->declare_parameter("special_right_bottom_y", -0.5);
-        // this->declare_parameter("special_hysteresis_margin", 0.2);
 
-        this->get_parameter("special_left_top_x", special_left_top_x_);
-        this->get_parameter("special_left_top_y", special_left_top_y_);
-        this->get_parameter("special_right_bottom_x", special_right_bottom_x_);
-        this->get_parameter("special_right_bottom_y", special_right_bottom_y_);
+        this->get_parameter("special_p1_x", special_p1_x_);
+        this->get_parameter("special_p1_y", special_p1_y_);
+        this->get_parameter("special_p2_x", special_p2_x_);
+        this->get_parameter("special_p2_y", special_p2_y_);
+        this->get_parameter("special_p3_x", special_p3_x_);
+        this->get_parameter("special_p3_y", special_p3_y_);
+        this->get_parameter("special_p4_x", special_p4_x_);
+        this->get_parameter("special_p4_y", special_p4_y_);
         this->get_parameter("special_hysteresis_margin", special_hysteresis_margin_);
+
+        // 填充原四边形顶点（顺时针顺序）
+        special_polygon_[0] = {special_p1_x_, special_p1_y_};
+        special_polygon_[1] = {special_p2_x_, special_p2_y_};
+        special_polygon_[2] = {special_p3_x_, special_p3_y_};
+        special_polygon_[3] = {special_p4_x_, special_p4_y_};
+
+        // 计算滞回膨胀后的四边形
+        special_hysteresis_polygon_ = offsetConvexPolygon(special_polygon_, special_hysteresis_margin_);
 
         // 原始小区域
         min_x = std::min(left_top_x, right_bottom_x);
@@ -91,15 +103,7 @@ public:
         third_hysteresis_max_y_ = third_max_y_ + third_hysteresis_margin_;
         // ==========================================================
 
-        special_min_x_ = std::min(special_left_top_x_, special_right_bottom_x_);
-        special_max_x_ = std::max(special_left_top_x_, special_right_bottom_x_);
-        special_min_y_ = std::min(special_left_top_y_, special_right_bottom_y_);
-        special_max_y_ = std::max(special_left_top_y_, special_right_bottom_y_);
-
-        special_hysteresis_min_x_ = special_min_x_ - special_hysteresis_margin_;
-        special_hysteresis_max_x_ = special_max_x_ + special_hysteresis_margin_;
-        special_hysteresis_min_y_ = special_min_y_ - special_hysteresis_margin_;
-        special_hysteresis_max_y_ = special_max_y_ + special_hysteresis_margin_;
+    
         rm_task_sub_ = this->create_subscription<std_msgs::msg::Int32>(
             "/rm_task",
             10,
@@ -157,16 +161,15 @@ private:
     double third_hysteresis_margin_;
     bool third_inside_active_;
 
-    double special_left_top_x_, special_left_top_y_;
-    double special_right_bottom_x_, special_right_bottom_y_;
-
-    double special_min_x_, special_max_x_;
-    double special_min_y_, special_max_y_;
-
-    double special_hysteresis_min_x_, special_hysteresis_max_x_;
-    double special_hysteresis_min_y_, special_hysteresis_max_y_;
-
+    double special_p1_x_, special_p1_y_;
+    double special_p2_x_, special_p2_y_;
+    double special_p3_x_, special_p3_y_;
+    double special_p4_x_, special_p4_y_;
     double special_hysteresis_margin_ = 0.2;
+
+    std::array<std::pair<double, double>, 4> special_polygon_;
+    std::array<std::pair<double, double>, 4> special_hysteresis_polygon_;
+
     bool special_area_has_triggered_ = false;
     bool special_inside_active_ = false;
     double special_gimbal_angle_ = 0.0;
@@ -197,6 +200,82 @@ private:
     double self_save_speed_ = 1.2;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
     std::atomic<int> rm_task_value_{0};
+
+    // ====================== 新增：点在四边形内判断（射线法） ======================
+    bool isPointInPolygon(double x, double y, const std::array<std::pair<double, double>, 4>& polygon) const
+    {
+        bool inside = false;
+        int n = static_cast<int>(polygon.size());
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            double xi = polygon[i].first, yi = polygon[i].second;
+            double xj = polygon[j].first, yj = polygon[j].second;
+
+            if (((yi > y) != (yj > y)) &&
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
+    // ====================== 新增：凸多边形等距向外膨胀 ======================
+    std::array<std::pair<double, double>, 4> offsetConvexPolygon(
+        const std::array<std::pair<double, double>, 4>& polygon, double margin) const
+    {
+        std::array<std::pair<double, double>, 4> offset_poly;
+        int n = static_cast<int>(polygon.size());
+        std::array<std::tuple<double, double, double>, 4> lines;
+
+        // 计算每条边外偏后的直线一般式 ax + by + c = 0
+        for (int i = 0; i < n; ++i) {
+            double x1 = polygon[i].first;
+            double y1 = polygon[i].second;
+            double x2 = polygon[(i+1)%n].first;
+            double y2 = polygon[(i+1)%n].second;
+
+            double dx = x2 - x1;
+            double dy = y2 - y1;
+            double len = std::hypot(dx, dy);
+            if (len < 1e-6) {
+                lines[i] = {0, 0, 0};
+                continue;
+            }
+
+            // 顺时针多边形外法线（边向量逆时针转90度）
+            double nx = -dy / len;
+            double ny = dx / len;
+
+            // 平移后的边上一点
+            double px = x1 + nx * margin;
+            double py = y1 + ny * margin;
+
+            // 直线一般式
+            double a = dy;
+            double b = -dx;
+            double c = -dy * px + dx * py;
+
+            lines[i] = {a, b, c};
+        }
+
+        // 求相邻直线交点，得到膨胀后顶点
+        for (int i = 0; i < n; ++i) {
+            int j = (i - 1 + n) % n;
+            auto [a1, b1, c1] = lines[j];
+            auto [a2, b2, c2] = lines[i];
+
+            double det = a1 * b2 - a2 * b1;
+            if (std::fabs(det) < 1e-6) {
+                offset_poly[i] = polygon[i];
+                continue;
+            }
+
+            double x = (b1 * c2 - b2 * c1) / det;
+            double y = (a2 * c1 - a1 * c2) / det;
+            offset_poly[i] = {x, y};
+        }
+
+        return offset_poly;
+    }
     int countLeadingObstacleCount(const std::vector<float>& cost_list) const
     {
         const float OBSTACLE_THRESHOLD = 240.0f;
@@ -284,13 +363,8 @@ private:
             // ==============================================================
 
             // 前哨区域判断
-            bool special_inside_small =
-            robot_x > special_min_x_ && robot_x < special_max_x_ &&
-            robot_y > special_min_y_ && robot_y < special_max_y_;
-
-            bool special_inside_large =
-                robot_x > special_hysteresis_min_x_ && robot_x < special_hysteresis_max_x_ &&
-                robot_y > special_hysteresis_min_y_ && robot_y < special_hysteresis_max_y_;
+            bool special_inside_small = isPointInPolygon(robot_x, robot_y, special_polygon_);
+            bool special_inside_large = isPointInPolygon(robot_x, robot_y, special_hysteresis_polygon_);
 
             // if (special_inside_small && !special_area_has_triggered_) {
             //     special_inside_active_ = true;
@@ -335,11 +409,12 @@ private:
 
             const bool force_area_status_1 = (rm_task == 1);
             const bool force_area_status_3 = (rm_task == 2);
+            const bool force_area_status_2 = (rm_task == 4);
             if (force_area_status_3) {
                 area_status = 3;            // rm_task == 2 时最高优先级，强制为 3
             } else if (force_area_status_1) {
                 area_status = 1;            // rm_task == 1 时最高优先级，强制为 1
-            }else if (special_inside_active_) {
+            }else if (special_inside_active_ || force_area_status_2) {
                 area_status = 2;            // 前哨 = 2
             } else if (inside_active || third_inside_active_) {
                 area_status = 1;            // 起伏 + 新增区域 = 1
@@ -373,7 +448,13 @@ private:
                 should_publish_angle = true;
             }
             else if (area_status == 2) {
-                angle_msg.data = static_cast<float>(special_angle);
+                if (force_area_status_2) {
+                    angle_msg.data = static_cast<float>(
+                        normalizeAngleDeg(current_gimbal_angle_ + 10.0)
+                    );
+                } else {
+                    angle_msg.data = static_cast<float>(special_angle);
+                }
                 should_publish_angle = true;
             }
             else if (area_status == 1) {

@@ -1,0 +1,9 @@
+<class_libraries>
+  <library path="static_xx_layer">
+    <class name="xx_nav2_costmap_2d::xxStaticLayer"
+    type="xx_nav2_costmap_2d::xxStaticLayer"   
+    base_class_type="nav2_costmap_2d::Layer">
+      <description>xx.</description>
+    </class>
+  </library>
+</class_libraries>

@@ -207,7 +207,7 @@ public:
 
             return true;
         } catch (const tf2::TransformException &ex) {
-            RCLCPP_WARN(this->get_logger(), "TF lookup (map→big_gimbal_link) failed: %s", ex.what());
+            // RCLCPP_WARN(this->get_logger(), "TF lookup (map→big_gimbal_link) failed: %s", ex.what());
             return false;
         }
     }
@@ -223,12 +223,12 @@ public:
         
         // 1. 先获取云台位姿，失败则跳过发布
         if (!getBigGimbalPose()) {
-            RCLCPP_WARN(this->get_logger(), "Skip publish gimbal frame msg: get gimbal pose failed");
+            // RCLCPP_WARN(this->get_logger(), "Skip publish gimbal frame msg: get gimbal pose failed");
             return;
         }
         tf2::Transform map_to_gimbal_tf;
         if (!getMapToGimbalTransform(map_to_gimbal_tf)) {
-            RCLCPP_WARN(this->get_logger(), "Skip publish map frame msg: get map->gimbal tf failed");
+            // RCLCPP_WARN(this->get_logger(), "Skip publish map frame msg: get map->gimbal tf failed");
             return;
         }
         // 2. 初始化新消息
@@ -345,13 +345,53 @@ public:
     
         gimbal_camera_pub_->publish(map_msg);
     }
-        // 4. 填充速度数据（保留原始odom系，若需转换可新增云台系速度）
-        // gimbal_msg.speed_x = original_camera_msg_.speed_x;
-        // gimbal_msg.speed_y = original_camera_msg_.speed_y;
+    //     4. 填充速度数据（保留原始odom系，若需转换可新增云台系速度）
+    //     gimbal_msg.speed_x = original_camera_msg_.speed_x;
+    //     gimbal_msg.speed_y = original_camera_msg_.speed_y;
 
-        // // 5. 发布新话题
-        // gimbal_camera_pub_->publish(gimbal_msg);
-        // RCLCPP_DEBUG(this->get_logger(), "Published gimbal frame camera msg (topic: /gimbal_frame_camera_topic)");
+    //     // 5. 发布新话题
+    //     gimbal_camera_pub_->publish(gimbal_msg);
+    //     RCLCPP_DEBUG(this->get_logger(), "Published gimbal frame camera msg (topic: /gimbal_frame_camera_topic)");
+    // }
+    //  void publishGimbalFrameCameraMsg()
+    // {
+    //     rm_interfaces::msg::CameraMsg zero_msg;
+
+    //     // 填充消息头，保持时间戳与坐标系兼容
+    //     zero_msg.header.stamp = this->now();
+    //     zero_msg.header.frame_id = map_frame_;
+
+    //     // 所有ID数组置零
+    //     std::fill(zero_msg.id_1.begin(), zero_msg.id_1.end(), 0);
+    //     std::fill(zero_msg.id_2.begin(), zero_msg.id_2.end(), 0);
+    //     std::fill(zero_msg.id_3.begin(), zero_msg.id_3.end(), 0);
+    //     std::fill(zero_msg.id_4.begin(), zero_msg.id_4.end(), 0);
+
+    //     // 相机1位置全零
+    //     std::fill(zero_msg.enemy_pose_1_x.begin(), zero_msg.enemy_pose_1_x.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_1_y.begin(), zero_msg.enemy_pose_1_y.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_1_z.begin(), zero_msg.enemy_pose_1_z.end(), 0.0f);
+
+    //     // 相机2位置全零
+    //     std::fill(zero_msg.enemy_pose_2_x.begin(), zero_msg.enemy_pose_2_x.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_2_y.begin(), zero_msg.enemy_pose_2_y.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_2_z.begin(), zero_msg.enemy_pose_2_z.end(), 0.0f);
+
+    //     // 相机3位置全零
+    //     std::fill(zero_msg.enemy_pose_3_x.begin(), zero_msg.enemy_pose_3_x.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_3_y.begin(), zero_msg.enemy_pose_3_y.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_3_z.begin(), zero_msg.enemy_pose_3_z.end(), 0.0f);
+
+    //     // 相机4位置全零
+    //     std::fill(zero_msg.enemy_pose_4_x.begin(), zero_msg.enemy_pose_4_x.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_4_y.begin(), zero_msg.enemy_pose_4_y.end(), 0.0f);
+    //     std::fill(zero_msg.enemy_pose_4_z.begin(), zero_msg.enemy_pose_4_z.end(), 0.0f);
+
+    //     // 速度数组全零
+    //     std::fill(zero_msg.speed_x.begin(), zero_msg.speed_x.end(), 0.0f);
+    //     std::fill(zero_msg.speed_y.begin(), zero_msg.speed_y.end(), 0.0f);
+
+    //     gimbal_camera_pub_->publish(zero_msg);
     // }
     void convertToGimbalFrame(double odom_x, double odom_y, double &gimbal_x, double &gimbal_y)
     {
@@ -437,12 +477,12 @@ public:
             return true;
 
         } catch (const tf2::TransformException &ex) {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "TF lookup (%s -> %s) failed: %s",
-                map_frame_.c_str(),
-                gimbal_frame_.c_str(),
-                ex.what());
+            // RCLCPP_WARN(
+            //     this->get_logger(),
+            //     "TF lookup (%s -> %s) failed: %s",
+            //     map_frame_.c_str(),
+            //     gimbal_frame_.c_str(),
+            //     ex.what());
             return false;
         }
     }

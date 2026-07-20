@@ -3,7 +3,7 @@ livox_ros_driver2:
     xfer_format: 4                                      # 0-PointCloud2Msg(PointXYZRTL), 1-LivoxCustomMsg, 2-PclPxyziMsg, 3-LivoxImuMsg, 4-AllMsg
     multi_topic: 1                                      # 0-All LiDARs share the same topic, 1-One LiDAR one topic
     data_src: 0                                         # 0-lidar, others-Invalid data src
-    publish_freq: 20.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
+    publish_freq: 25.0                                  # frequency of publish, 5.0, 10.0, 20.0, 50.0, etc.
     output_data_type: 0   #0-topic 1-rosbag
     frame_id: lidar_link
     user_config_path: $(find-pkg-share bringup)/config/mid360_user_config.json
@@ -91,7 +91,7 @@ point_lio:
       pcd_save_en: False
       interval: 30                                      # how many LiDAR frames saved in each pcd file;
                                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
-      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCDts/"
+      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_dxl/"
 
 small_gicp_relocalization:
   ros__parameters:
@@ -103,29 +103,30 @@ small_gicp_relocalization:
     map_frame: "odom_init"
     odom_frame: "camera_init"
     base_frame: "base_footprint"
-    robot_base_frame: "gimbal_yaw"
+    robot_base_frame: "fake_base_link"
     lidar_frame: "front_mid360"
     init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]   # [x, y, z, roll, pitch, yaw]
     min_accumulated_scans: 10
     min_accumulated_points: 3000
     max_accumulation_time_sec: 3.0
-    prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/PCDts/9.pcd"
 
+    # prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_home/5_-0.00--0.01--0.04-0.01--0.00-0.01.pcd"
+    prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_dxl/5_0.01-0.01--0.00-0.00-0.00-0.00.pcd"
 terrain_analysis_ext:
   ros__parameters:
     scanVoxelSize: 0.05
-    decayTime: 0.5
+    decayTime: 0.6
     noDecayDis: 1.0
     clearingDis: 20.0
-    useSorting: False
-    quantileZ: 0.2
+    useSorting: false
+    quantileZ: 0.1
     vehicleHeight: 0.5          ##########################
     voxelPointUpdateThre: 80
     voxelTimeUpdateThre: 0.5
     lowerBoundZ: -4.0
     upperBoundZ: 4.0
     disRatioZ: 0.6
-    checkTerrainConn: True
+    checkTerrainConn: false
     terrainUnderVehicle: -0.3
     terrainConnThre: 0.5
     ceilingFilteringThre: 2.0
@@ -240,7 +241,7 @@ pointcloud_frame_trans:
     odom_base_out: odometry
     limit_x: 15.0
     limit_y: 15.0
-    limit_z: 4.0
+    limit_z: 10.0
 bt_navigator:
   ros__parameters:
     global_frame: map
@@ -340,22 +341,35 @@ controller_server:
       use_interpolation: False
       use_rotate_to_heading: false
       use_rotate_to_heading_treshold: 0.1
-      min_approach_linear_velocity: 0.6
+      min_approach_linear_velocity: 0.5
       approach_velocity_scaling_dist: 1.8
-      v_linear_min: -3.0
-      v_linear_max: 3.0
+      v_linear_min: -3.5
+      v_linear_max: 3.5
       v_angular_min: -3.0
       v_angular_max: 3.0
-      curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
+      curvature_min: 0.35                                # 低曲率阈值，低于此值不减速。
       curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
       reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
       curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
       curvature_backward_dist: 0.4                      # 后向距离，用于曲率计算
-      large_slow: 0.8
+      pid_curve_kappa_min: 0.4
+      pid_curve_kappa_max: 1.20
+      pid_curve_a_lat_max: 3.6
+      pid_curve_min_speed: 1.8
+      pid_curve_max_slowdown_ratio: 0.6
+      pid_curve_lookahead_dist: 1.2
+      pid_curve_sample_ds: 0.2
+      pid_curve_projection_search_dist: 0.2
+      pid_curve_projection_trust_dist: 0.2
+      pid_curve_kappa_hysteresis: 0.15
+      pid_curve_recover_rate: 10.0
+      pid_curve_kappa_fall_rate: 5.0       # 曲率下降速度，越小出弯恢复越慢
       max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
-      last_vel: 1.4           #如果上一次速度大于这个，曲率减速大减
+      last_vel: 2.0           #如果上一次速度大于这个，曲率减速大减
       lower_speed: 0.5        #每次减速的上限
       enable_sg_filter: false
+      sg_window_size: 5
+      sg_poly_order: 2
       use_mpc_control: false
       mpc_Np: 15
       mpc_Nc: 6
@@ -366,22 +380,23 @@ controller_server:
       mpc_S_vy: 0.0
 
       # 每一步路径跟踪
-      mpc_Q_x: 10.0
-      mpc_Q_y: 10.0
-      mpc_Q_vx: 2.0
-      mpc_Q_vy: 2.0
+      mpc_Q_x: 15.0
+      mpc_Q_y: 15.0
+      mpc_Q_vx: 3.0
+      mpc_Q_vy: 3.0
 
       mpc_R_vx: 0.05
       mpc_R_vy: 0.05
       mpc_Rdelta_vx: 0.0
       mpc_Rdelta_vy: 0.0
       min_dist: 0.35
-      acc_max: 6.0
+      acc_max: 8.0
       mpc_ref_speed: 2.8
-
-      mpc_curve_a_lat_max: 4.0
+      mpc_curve_kappa_rise_rate: 15.0
+      mpc_curve_kappa_fall_rate: 2.0
+      mpc_curve_a_lat_max: 3.6
       mpc_curve_min_speed: 1.5
-      mpc_curve_lookahead_dist: 1.2
+      mpc_curve_lookahead_dist: 1.5
       # plugin: "constraint_vel_controller::ConstraintVelController"
       # inner_plugin: "nav2_mppi_controller::MPPIController"
       # controller_frequency: 50.0
@@ -495,8 +510,8 @@ controller_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 25.0
-      publish_frequency: 25.0
+      update_frequency: 20.0
+      publish_frequency: 20.0
       global_frame: odom
       robot_base_frame: fake_base_link
       rolling_window: true              #滚动优化
@@ -505,7 +520,18 @@ local_costmap:
       resolution: 0.05
       robot_radius: 0.3
       footprint: "[ [0.33, 0.33], [0.33, -0.33], [-0.33, -0.33], [-0.33, 0.33] ]"
-      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      plugins: ["static_xx_layer", "intensity_voxel_layer", "local_inflation_layer"]
+      static_xx_layer:
+        plugin: "xx_nav2_costmap_2d::xxStaticLayer"
+        map_subscribe_transient_local: True
+        extra_region_enabled: true
+
+        clear_region_enabled: true
+
+        clear_min_x: 1.5
+        clear_max_x: 4.5
+        clear_min_y: -1.8
+        clear_max_y: 0.8
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
@@ -532,6 +558,29 @@ local_costmap:
         unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
+
+        disable_dynamic_map_on_tilt: true
+        tilt_frame: "fake_base_link"
+        tilt_disable_threshold_deg: 25.0
+        tilt_recover_threshold_deg: 20.0
+
+        point_cluster_tolerance: 0.2
+        min_cluster_points: 3   # 硬条件簇至少有3个点
+        cluster_hard_evidence_min_points: 2  # 至少2个点达到硬梯度
+        soft_min_cluster_points: 2
+
+        # 软簇基础通过阈值
+        soft_score_threshold: 0.6
+
+        height_score_full: 0.4
+
+        speed_low_confidence_mps: 4.0
+
+        velocity_odom_topic: "/aft_mapped_to_init"
+
+        acceleration_suppression_threshold_mps2: 6.0
+
+        acceleration_suppression_radius: 2.0
         min_obstacle_height: 0.2
         max_obstacle_height: 2.0
         min_obstacle_intensity: 0.2
@@ -548,10 +597,10 @@ local_costmap:
           max_obstacle_height: 2.0
           obstacle_max_range: 5.0
           obstacle_min_range: 0.5
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
-      inflation_layer:
+      # static_layer:
+      #   plugin: "nav2_costmap_2d::StaticLayer"
+      #   map_subscribe_transient_local: True
+      local_inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
         inflation_radius: 0.6
@@ -560,15 +609,26 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 25.0
-      publish_frequency: 25.0
+      update_frequency: 20.0
+      publish_frequency: 20.0
       global_frame: map
       robot_base_frame: fake_base_link
       robot_radius: 0.3
       footprint: "[ [0.3, 0.3], [0.3, -0.3], [-0.3, -0.3], [-0.3, 0.3] ]"
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "intensity_voxel_layer", "inflation_layer"]
+      plugins: ["static_xx_layer", "intensity_voxel_layer", "global_inflation_layer"]
+      static_xx_layer:
+        plugin: "xx_nav2_costmap_2d::xxStaticLayer"
+        map_subscribe_transient_local: True
+        extra_region_enabled: true
+
+        clear_region_enabled: true
+
+        clear_min_x: 1.5
+        clear_max_x: 4.5
+        clear_min_y: -1.8
+        clear_max_y: 0.8
       # obstacle_layer:
         # plugin: "nav2_costmap_2d::ObstacleLayer"
         # plugin: "decaying_layer::DecayingObstacleLayer"
@@ -602,12 +662,17 @@ global_costmap:
         neighborhood_radius: 2               # 5x5邻域（半径2）
         neighborhood_min_voxels: 0           # 邻域内至少3个有效体素
         obstacle_hold_time: 0.5              # 障碍物保持时间
-        obstacle_expand_size: 1
+        near_obstacle_radius: 2.0
+        obstacle_expand_size: 0
         enabled: true
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
         use_static_obstacle_area: true
+        # static_obs_min_x: 7.3  #home
+        # static_obs_min_y: 0.5
+        # static_obs_max_x: 7.35
+        # static_obs_max_y: 1.5
         static_obs_min_x: 4.0
         static_obs_min_y: -6.1
         static_obs_max_x: 5.0
@@ -616,6 +681,31 @@ global_costmap:
         static_obs2_min_y: 4.75
         static_obs2_max_x: 16.956
         static_obs2_max_y: 4.9
+        
+        disable_dynamic_map_on_tilt: true
+        tilt_frame: "fake_base_link"
+        tilt_disable_threshold_deg: 25.0
+        tilt_recover_threshold_deg: 15.0
+
+        point_cluster_tolerance: 0.2
+        min_cluster_points: 3   # 硬条件簇至少有3个点
+        cluster_hard_evidence_min_points: 2  # 至少2个点达到硬梯度
+        soft_min_cluster_points: 2
+
+        # 软簇基础通过阈值
+        soft_score_threshold: 0.6
+
+        height_score_full: 0.4
+
+        speed_low_confidence_mps: 4.0
+
+        velocity_odom_topic:  "/aft_mapped_to_init"
+        acceleration_suppression_threshold_mps2: 6.0
+
+        acceleration_suppression_radius: 2.0
+
+        # 加速度超限后，继续关闭近场感知的时间
+        acceleration_suppression_hold_time: 0.1
 
         combination_method: 1
         mark_threshold: 0
@@ -639,10 +729,10 @@ global_costmap:
           max_obstacle_height: 2.0
           obstacle_max_range: 15.0
           obstacle_min_range: 0.35
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
-      inflation_layer:
+      # static_layer:
+      #   plugin: "nav2_costmap_2d::StaticLayer"
+      #   map_subscribe_transient_local: True
+      global_inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
         inflation_radius: 0.6
@@ -773,8 +863,12 @@ special_area:
     # right_bottom_y: -7.835625
     left_top_x: 0.3
     left_top_y: -5.620203
-    right_bottom_x: 5.6
+    right_bottom_x: 4.5
     right_bottom_y: -8.035625
+    # left_top_x: 8.9
+    # left_top_y: 0.7
+    # right_bottom_x: 7.5
+    # right_bottom_y: -2.5
     special_active_duration_sec: 20.0
     third_p1_x: 17.02
     third_p1_y: 5.991264
@@ -785,8 +879,16 @@ special_area:
     # special_left_top_y: 4.0
     # special_right_bottom_x: 6.0
     # special_right_bottom_y: 1.7
-    special_left_top_x: 8.8
-    special_left_top_y: 4.0
-    special_right_bottom_x: 6.0
-    special_right_bottom_y: 1.0
+    special_p1_x: 8.4
+    special_p1_y: 5.2
+    special_p2_x: 5.8
+    special_p2_y: 1.8
+    special_p3_x: 4.6
+    special_p3_y: 1.8
+    special_p4_x: 7.2
+    special_p4_y: 5.2
+    # special_left_top_x: 118.8
+    # special_left_top_y: 114.0
+    # special_right_bottom_x: 116.0
+    # special_right_bottom_y: 111.0
     special_hysteresis_margin: 0.2

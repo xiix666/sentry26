@@ -259,7 +259,8 @@ def generate_launch_description():
     ld.add_action(start_sync_slam_toolbox_node)
     # ld.add_action(start_static_transform_node)
     ld.add_action(gicp_relocalization_node)
-    ld.add_action(special_area)
     ld.add_action(terrain_node)
+    ld.add_action(special_area)
+   
 
     return ld

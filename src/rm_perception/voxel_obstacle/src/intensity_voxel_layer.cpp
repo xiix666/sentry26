@@ -1,147 +1,341 @@
 #include "intensity_voxel_layer.hpp"
 
-#include <vector>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <queue>
+#include <stdexcept>
+#include <utility>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
+#include "pluginlib/class_list_macros.hpp"
 #include "sensor_msgs/point_cloud2_iterator.hpp"
+#include "tf2/LinearMath/Matrix3x3.h"
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2/exceptions.h"
+#include "tf2/time.h"
 
 #define VOXEL_BITS 16
 
-using nav2_costmap_2d::FREE_SPACE;
 using nav2_costmap_2d::LETHAL_OBSTACLE;
-using nav2_costmap_2d::NO_INFORMATION;
-
 using nav2_costmap_2d::Observation;
-using nav2_costmap_2d::ObservationBuffer;
 
 namespace xx_nav2_costmap_2d
 {
 
-  void IntensityVoxelLayer::onInitialize()
-  {
-    auto node = node_.lock();
-    clock_ = node->get_clock();
-    ObstacleLayer::onInitialize();
-  
-    node->get_parameter(name_ + ".footprint_clearing_enabled", footprint_clearing_enabled_);
-    node->get_parameter(name_ + ".enabled", enabled_);
-    node->get_parameter(name_ + ".min_obstacle_height", min_obstacle_height_);
-    node->get_parameter(name_ + ".max_obstacle_height", max_obstacle_height_);
-    node->get_parameter(name_ + ".combination_method", combination_method_);
-  
-    node->declare_parameter(name_ + ".obstacle_hold_time", 1.5);
-    node->get_parameter(name_ + ".obstacle_hold_time", obstacle_hold_time_);
-  
-    node->declare_parameter(name_ + ".z_voxels", 16);
-    node->get_parameter(name_ + ".z_voxels", size_z_);
-  
-    node->declare_parameter(name_ + ".origin_z", 16.0);
-    node->get_parameter(name_ + ".origin_z", origin_z_);
-  
-    node->declare_parameter(name_ + ".min_obstacle_intensity", 0.1);
-    node->get_parameter(name_ + ".min_obstacle_intensity", min_obstacle_intensity_);
-  
-    node->declare_parameter(name_ + ".max_obstacle_intensity", 2.0);
-    node->get_parameter(name_ + ".max_obstacle_intensity", max_obstacle_intensity_);
-  
-    node->declare_parameter(name_ + ".z_resolution", 0.05);
-    node->get_parameter(name_ + ".z_resolution", z_resolution_);
-  
-    node->declare_parameter(name_ + ".unknown_threshold", 15);
-    node->get_parameter(name_ + ".unknown_threshold", unknown_threshold_);
-    unknown_threshold_ += (VOXEL_BITS - size_z_);
-  
-    node->declare_parameter(name_ + ".mark_threshold", 0);
-    node->get_parameter(name_ + ".mark_threshold", mark_threshold_);
-  
-    node->declare_parameter(name_ + ".publish_voxel_map", false);
-    node->get_parameter(name_ + ".publish_voxel_map", publish_voxel_);
-  
-    node->declare_parameter(name_ + ".max_gradient_threshold", 1.0);
-    node->get_parameter(name_ + ".max_gradient_threshold", max_gradient_threshold_);
-  
-    node->declare_parameter(name_ + ".continuous_hit_threshold", 2);
-    node->get_parameter(name_ + ".continuous_hit_threshold", continuous_hit_threshold_);
-  
-    node->declare_parameter(name_ + ".neighborhood_radius", 1);
-    node->get_parameter(name_ + ".neighborhood_radius", neighborhood_radius_);
-  
-    node->declare_parameter(name_ + ".neighborhood_min_voxels", 1);
-    node->get_parameter(name_ + ".neighborhood_min_voxels", neighborhood_min_voxels_);
-  
-    node->declare_parameter(name_ + ".obstacle_expand_size", 1);  // 膨胀格子数 1=3x3, 2=5x5
-    node->get_parameter(name_ + ".obstacle_expand_size", obstacle_expand_size_);
+void IntensityVoxelLayer::onInitialize()
+{
+  auto node = node_.lock();
+  if (!node) {
+    throw std::runtime_error("IntensityVoxelLayer: lifecycle node expired during initialization");
+  }
 
-    node->declare_parameter(name_ + ".near_obstacle_radius", 0.6);
-    node->get_parameter(name_ + ".near_obstacle_radius", near_obstacle_radius_);
+  clock_ = node->get_clock();
+  ObstacleLayer::onInitialize();
 
-    node->declare_parameter(name_ + ".low_gradient_threshold", 0.2);
-    node->get_parameter(name_ + ".low_gradient_threshold", low_gradient_threshold_);
-    
-    node->declare_parameter(name_ + ".use_static_obstacle_area", false);
-    node->get_parameter(name_ + ".use_static_obstacle_area", use_static_obstacle_area_);
+  node->get_parameter(name_ + ".footprint_clearing_enabled", footprint_clearing_enabled_);
+  node->get_parameter(name_ + ".enabled", enabled_);
+  node->get_parameter(name_ + ".min_obstacle_height", min_obstacle_height_);
+  node->get_parameter(name_ + ".max_obstacle_height", max_obstacle_height_);
+  node->get_parameter(name_ + ".combination_method", combination_method_);
 
-    node->declare_parameter(name_ + ".static_obs_min_x", 0.0);
-    node->declare_parameter(name_ + ".static_obs_min_y", 0.0);
-    node->declare_parameter(name_ + ".static_obs_max_x", 0.0);
-    node->declare_parameter(name_ + ".static_obs_max_y", 0.0);
-    node->declare_parameter(name_ + ".static_obs2_min_x", 0.0);
-    node->declare_parameter(name_ + ".static_obs2_min_y", 0.0);
-    node->declare_parameter(name_ + ".static_obs2_max_x", 0.0);
-    node->declare_parameter(name_ + ".static_obs2_max_y", 0.0);
-    node->get_parameter(name_ + ".static_obs2_min_x", static_obs2_min_x_);
-    node->get_parameter(name_ + ".static_obs2_min_y", static_obs2_min_y_);
-    node->get_parameter(name_ + ".static_obs2_max_x", static_obs2_max_x_);
-    node->get_parameter(name_ + ".static_obs2_max_y", static_obs2_max_y_);
-    node->get_parameter(name_ + ".static_obs_min_x", static_obs_min_x_);
-    node->get_parameter(name_ + ".static_obs_min_y", static_obs_min_y_);
-    node->get_parameter(name_ + ".static_obs_max_x", static_obs_max_x_);
-    node->get_parameter(name_ + ".static_obs_max_y", static_obs_max_y_);
-    node->declare_parameter(name_ + ".point_cluster_tolerance", 0.15);
-    node->declare_parameter(name_ + ".min_cluster_points", 8);
+  node->declare_parameter(name_ + ".obstacle_hold_time", 1.5);
+  node->get_parameter(name_ + ".obstacle_hold_time", obstacle_hold_time_);
 
-    node->get_parameter(name_ + ".point_cluster_tolerance", point_cluster_tolerance_);
-    node->get_parameter(name_ + ".min_cluster_points", min_cluster_points_);
-    if (publish_voxel_) {
-      voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
-    }
-    rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
+  node->declare_parameter(name_ + ".z_voxels", 16);
+  node->get_parameter(name_ + ".z_voxels", size_z_);
+
+  node->declare_parameter(name_ + ".origin_z", 16.0);
+  node->get_parameter(name_ + ".origin_z", origin_z_);
+
+  // intensity是地形分析后的相对局部平面高度，不是反射强度。
+  node->declare_parameter(name_ + ".min_obstacle_intensity", 0.1);
+  node->get_parameter(name_ + ".min_obstacle_intensity", min_obstacle_intensity_);
+
+  node->declare_parameter(name_ + ".max_obstacle_intensity", 2.0);
+  node->get_parameter(name_ + ".max_obstacle_intensity", max_obstacle_intensity_);
+
+  node->declare_parameter(name_ + ".z_resolution", 0.05);
+  node->get_parameter(name_ + ".z_resolution", z_resolution_);
+
+  node->declare_parameter(name_ + ".unknown_threshold", 15);
+  node->get_parameter(name_ + ".unknown_threshold", unknown_threshold_);
+
+  node->declare_parameter(name_ + ".mark_threshold", 0);
+  node->get_parameter(name_ + ".mark_threshold", mark_threshold_);
+
+  node->declare_parameter(name_ + ".publish_voxel_map", false);
+  node->get_parameter(name_ + ".publish_voxel_map", publish_voxel_);
+
+  node->declare_parameter(name_ + ".max_gradient_threshold", 1.0);
+  node->get_parameter(name_ + ".max_gradient_threshold", max_gradient_threshold_);
+
+  node->declare_parameter(name_ + ".low_gradient_threshold", 0.2);
+  node->get_parameter(name_ + ".low_gradient_threshold", low_gradient_threshold_);
+
+  node->declare_parameter(name_ + ".obstacle_expand_size", 1);
+  node->get_parameter(name_ + ".obstacle_expand_size", obstacle_expand_size_);
+
+  node->declare_parameter(name_ + ".near_obstacle_radius", 0.6);
+  node->get_parameter(name_ + ".near_obstacle_radius", near_obstacle_radius_);
+
+  node->declare_parameter(name_ + ".point_cluster_tolerance", 0.15);
+  node->get_parameter(name_ + ".point_cluster_tolerance", point_cluster_tolerance_);
+
+  node->declare_parameter(name_ + ".min_cluster_points", 8);
+  node->get_parameter(name_ + ".min_cluster_points", min_cluster_points_);
+
+  node->declare_parameter(name_ + ".cluster_hard_evidence_min_points", 6);
+  node->get_parameter(
+    name_ + ".cluster_hard_evidence_min_points",
+    cluster_hard_evidence_min_points_);
+
+  node->declare_parameter(name_ + ".soft_min_cluster_points", 3);
+  node->get_parameter(name_ + ".soft_min_cluster_points", soft_min_cluster_points_);
+
+  node->declare_parameter(name_ + ".soft_score_threshold", 0.55);
+  node->get_parameter(name_ + ".soft_score_threshold", soft_score_threshold_);
+
+  node->declare_parameter(name_ + ".speed_low_confidence_mps", 4.0);
+  node->get_parameter(name_ + ".speed_low_confidence_mps", speed_low_confidence_mps_);
+
+  node->declare_parameter(name_ + ".use_static_obstacle_area", false);
+  node->get_parameter(name_ + ".use_static_obstacle_area", use_static_obstacle_area_);
+
+  node->declare_parameter(name_ + ".static_obs_min_x", 0.0);
+  node->declare_parameter(name_ + ".static_obs_min_y", 0.0);
+  node->declare_parameter(name_ + ".static_obs_max_x", 0.0);
+  node->declare_parameter(name_ + ".static_obs_max_y", 0.0);
+  node->declare_parameter(name_ + ".static_obs2_min_x", 0.0);
+  node->declare_parameter(name_ + ".static_obs2_min_y", 0.0);
+  node->declare_parameter(name_ + ".static_obs2_max_x", 0.0);
+  node->declare_parameter(name_ + ".static_obs2_max_y", 0.0);
+
+  node->get_parameter(name_ + ".static_obs_min_x", static_obs_min_x_);
+  node->get_parameter(name_ + ".static_obs_min_y", static_obs_min_y_);
+  node->get_parameter(name_ + ".static_obs_max_x", static_obs_max_x_);
+  node->get_parameter(name_ + ".static_obs_max_y", static_obs_max_y_);
+  node->get_parameter(name_ + ".static_obs2_min_x", static_obs2_min_x_);
+  node->get_parameter(name_ + ".static_obs2_min_y", static_obs2_min_y_);
+  node->get_parameter(name_ + ".static_obs2_max_x", static_obs2_max_x_);
+  node->get_parameter(name_ + ".static_obs2_max_y", static_obs2_max_y_);
+
+  node->declare_parameter(name_ + ".disable_dynamic_map_on_tilt", true);
+  node->declare_parameter(name_ + ".tilt_frame", std::string("base_link"));
+  node->declare_parameter(name_ + ".tilt_disable_threshold_deg", 20.0);
+  node->declare_parameter(name_ + ".tilt_recover_threshold_deg", 15.0);
+
+  node->get_parameter(
+    name_ + ".disable_dynamic_map_on_tilt",
+    disable_dynamic_map_on_tilt_);
+  node->get_parameter(name_ + ".tilt_frame", tilt_frame_);
+  node->get_parameter(name_ + ".tilt_disable_threshold_deg", tilt_disable_threshold_deg_);
+  node->get_parameter(name_ + ".tilt_recover_threshold_deg", tilt_recover_threshold_deg_);
+
+  node->declare_parameter(
+    name_ + ".velocity_odom_topic",
+    std::string("/aft_mapped_to_init"));
+  node->get_parameter(name_ + ".velocity_odom_topic", velocity_odom_topic_);
+  node->declare_parameter(
+    name_ + ".height_score_full",
+    0.35);
+
+  node->get_parameter(
+    name_ + ".height_score_full",
+    height_score_full_);
+
+  node->declare_parameter(
+  name_ + ".acceleration_suppression_threshold_mps2",
+  3.0);
+
+  node->get_parameter(
+    name_ + ".acceleration_suppression_threshold_mps2",
+    acceleration_suppression_threshold_mps2_);
+
+  node->declare_parameter(
+    name_ + ".acceleration_suppression_radius",
+    2.0);
+
+  node->get_parameter(
+    name_ + ".acceleration_suppression_radius",
+    acceleration_suppression_radius_);
+  node->declare_parameter(
+    name_ + ".acceleration_suppression_hold_time",
+    0.8);
+
+  node->get_parameter(
+    name_ + ".acceleration_suppression_hold_time",
+    acceleration_suppression_hold_time_);
+
+  // 参数保护。
+  size_z_ = std::clamp(size_z_, 1, VOXEL_BITS);
+  unknown_threshold_ += (VOXEL_BITS - size_z_);
+  z_resolution_ = std::max(1e-3, z_resolution_);
+  obstacle_hold_time_ = std::max(0.0, obstacle_hold_time_);
+  obstacle_expand_size_ = std::max(0, obstacle_expand_size_);
+  point_cluster_tolerance_ = std::max(0.01, point_cluster_tolerance_);
+  soft_min_cluster_points_ = std::max(1, soft_min_cluster_points_);
+  min_cluster_points_ = std::max(soft_min_cluster_points_, min_cluster_points_);
+  cluster_hard_evidence_min_points_ = std::clamp(
+    cluster_hard_evidence_min_points_, 1, min_cluster_points_);
+  soft_score_threshold_ = clamp01(soft_score_threshold_);
+  near_obstacle_radius_ = std::max(0.05, near_obstacle_radius_);
+  speed_low_confidence_mps_ = std::max(0.1, speed_low_confidence_mps_);
+  height_score_full_ =
+    std::max(
+      min_obstacle_intensity_ + 0.01,
+      height_score_full_);
+  acceleration_suppression_threshold_mps2_ =
+  std::max(
+    0.1,
+    acceleration_suppression_threshold_mps2_);
+
+  acceleration_suppression_radius_ =
+    std::max(
+      0.0,
+      acceleration_suppression_radius_);
+  acceleration_suppression_hold_time_ =
+    std::max(
+      0.0,
+      acceleration_suppression_hold_time_);
+  if (max_gradient_threshold_ <= low_gradient_threshold_) {
+    RCLCPP_WARN(
+      logger_,
+      "max_gradient_threshold(%.3f) must be greater than low_gradient_threshold(%.3f). "
+      "Force max=low+0.001.",
+      max_gradient_threshold_,
+      low_gradient_threshold_);
+    max_gradient_threshold_ = low_gradient_threshold_ + 0.001;
+  }
+
+  if (publish_voxel_) {
+    voxel_pub_ = node->create_publisher<nav2_msgs::msg::VoxelGrid>("voxel_grid", 1);
+  }
+
+  rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
     "/rm_task",
     rclcpp::QoS(10),
     [this](const std_msgs::msg::Int32::SharedPtr msg)
     {
       rm_task_.store(msg->data, std::memory_order_relaxed);
     });
-    matchSize();
-  }
 
-IntensityVoxelLayer::~IntensityVoxelLayer() 
-{
-  // 释放计数网格内存
-  if (hit_count_grid_ != nullptr) {
-    delete[] hit_count_grid_;
-    hit_count_grid_ = nullptr;
-  }
-  if (last_hit_time_grid_ != nullptr) {
-    delete[] last_hit_time_grid_;
-    last_hit_time_grid_ = nullptr;
-  }
+  lio_odom_sub_ = node->create_subscription<nav_msgs::msg::Odometry>(
+    velocity_odom_topic_,
+    rclcpp::SensorDataQoS(),
+    [this](const nav_msgs::msg::Odometry::SharedPtr msg)
+    {
+      const auto & velocity =
+        msg->twist.twist.linear;
+      
+      // 雷达斜装，车体速度会同时投影到雷达的x、y、z三个轴。
+      // 因此必须计算完整三维速度模长。
+      double speed = std::sqrt(
+        velocity.x * velocity.x +
+        velocity.y * velocity.y +
+        velocity.z * velocity.z);
+      // std::cout << "current_speed_mps: " << speed << std::endl;
+      if (!std::isfinite(speed)) {
+        return;
+      }
+
+      // 消除Point-LIO静止时的小速度抖动。
+      if (speed < 0.08) {
+        speed = 0.0;
+      }
+
+      current_speed_mps_.store(
+        speed,
+        std::memory_order_relaxed);
+
+      double stamp_sec =
+        rclcpp::Time(
+          msg->header.stamp).seconds();
+
+      // 消息时间戳无效时，退化到节点当前时间。
+      if (
+        !std::isfinite(stamp_sec) ||
+        stamp_sec <= 0.0)
+      {
+        stamp_sec =
+          clock_->now().seconds();
+      }
+
+      double filtered_acceleration = 0.0;
+
+      if (has_last_odom_speed_) {
+        const double dt =
+          stamp_sec -
+          last_odom_stamp_sec_;
+
+        // 过滤时间倒退、重复时间戳和过长间隔。
+        if (
+          dt >= 0.005 &&
+          dt <= 0.5)
+        {
+          // 使用三维速度模长的变化计算加减速度。
+          // 取绝对值后，急加速和急刹车都会触发抑制。
+          const double raw_acceleration =
+            std::abs(
+              speed -
+              last_odom_speed_mps_) /
+            dt;
+
+          if (std::isfinite(raw_acceleration)) {
+            const double previous_acceleration =
+              current_acceleration_mps2_.load(
+                std::memory_order_relaxed);
+
+            filtered_acceleration =
+              0.60 * previous_acceleration +
+              0.40 * raw_acceleration;
+          }
+        }
+      }
+
+      current_acceleration_mps2_.store(
+        filtered_acceleration,
+        std::memory_order_relaxed);
+
+      acceleration_update_time_sec_.store(
+        clock_->now().seconds(),
+        std::memory_order_relaxed);
+
+      last_odom_speed_mps_ =
+        speed;
+
+      last_odom_stamp_sec_ =
+        stamp_sec;
+
+      has_last_odom_speed_ =
+        true;
+    });
+
+  matchSize();
 }
 
+IntensityVoxelLayer::~IntensityVoxelLayer() = default;
+
 void IntensityVoxelLayer::updateFootprint(
-  double robot_x, double robot_y, double robot_yaw, double * min_x, double * min_y, double * max_x,
-  double * max_y)
+  double robot_x, double robot_y, double robot_yaw,
+  double * min_x, double * min_y,
+  double * max_x, double * max_y)
 {
   if (!footprint_clearing_enabled_) {
     return;
   }
 
   nav2_costmap_2d::transformFootprint(
-    robot_x, robot_y, robot_yaw, getFootprint(), transformed_footprint_);
+    robot_x,
+    robot_y,
+    robot_yaw,
+    getFootprint(),
+    transformed_footprint_);
 
-  for (auto & i : transformed_footprint_) {
-    touch(i.x, i.y, min_x, min_y, max_x, max_y);
+  for (auto & point : transformed_footprint_) {
+    touch(point.x, point.y, min_x, min_y, max_x, max_y);
   }
 
   setConvexPolygonCost(transformed_footprint_, nav2_costmap_2d::FREE_SPACE);
@@ -151,52 +345,12 @@ void IntensityVoxelLayer::matchSize()
 {
   ObstacleLayer::matchSize();
   voxel_grid_.resize(size_x_, size_y_, size_z_);
-  
-  // 初始化连续命中计数网格（x*y*z维度）
-  int total_voxels = size_x_ * size_y_ * size_z_;
-  if (hit_count_grid_ != nullptr) {
-    delete[] hit_count_grid_;
-  }
-  hit_count_grid_ = new int[total_voxels](); // 初始化为0
-  if (last_hit_time_grid_ != nullptr) {
-    delete[] last_hit_time_grid_;
-  }
-  last_hit_time_grid_ = new double[total_voxels];
-  for (int i = 0; i < total_voxels; ++i) {
-    last_hit_time_grid_[i] = -1.0;
-  }
+
+  // matchSize只会在初始化或地图尺寸真正变化时调用。
+  // 这里清理旧世界坐标障碍，避免尺寸切换后保留无效状态。
+  active_obstacle_cells_.clear();
 }
 
-// 获取体素在网格中的索引
-// inline unsigned int IntensityVoxelLayer::getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz)
-// {
-//   return mx + my * size_x_ + mz * size_x_ * size_y_;
-// }
-
-// 动态邻域校验：根据配置的半径统计有效体素数
-inline unsigned int IntensityVoxelLayer::countNeighborhoodVoxels(unsigned int mx, unsigned int my, unsigned int mz)
-{
-  unsigned int count = 0;
-  // 遍历动态邻域范围：[-radius, +radius]
-  for (int dx = -static_cast<int>(neighborhood_radius_); dx <= static_cast<int>(neighborhood_radius_); ++dx) {
-    for (int dy = -static_cast<int>(neighborhood_radius_); dy <= static_cast<int>(neighborhood_radius_); ++dy) {
-      // 跳过当前体素自身
-      if (dx == 0 && dy == 0) continue;
-      
-      // 检查邻域体素是否在网格范围内（防止越界）
-      unsigned int nx = mx + dx;
-      unsigned int ny = my + dy;
-      if (nx >= size_x_ || ny >= size_y_) continue;
-
-      // 检查邻域体素是否有有效命中（连续命中计数>0）
-      unsigned int n_idx = getVoxelIndex(nx, ny, mz);
-      if (hit_count_grid_[n_idx] > 0) {
-        count++;
-      }
-    }
-  }
-  return count;
-}
 void IntensityVoxelLayer::markStaticObstacleArea(
   double robot_x, double robot_y,
   double * min_x, double * min_y,
@@ -216,25 +370,17 @@ void IntensityVoxelLayer::markStaticObstacleArea(
 
   const double vx = x1 - x2;
   const double vy = y1 - y2;
-
   const double qx = robot_x - x2;
   const double qy = robot_y - y2;
-
   const double cross = vx * qy - vy * qx;
 
   const bool left_down_of_line = cross >= 0.0;
-  const bool left_down_of_point =
-    robot_x <= px_limit &&
-    robot_y >= py_limit;
+  const bool left_down_of_point = robot_x <= px_limit && robot_y >= py_limit;
+  const bool robot_in_trigger_region = left_down_of_line || left_down_of_point;
 
-  const bool robot_in_trigger_region =
-    left_down_of_line || left_down_of_point;
   const double block_px = 13.752;
   const double block_py = 4.439;
-
-  const bool right_up_of_block_point =
-    robot_x >= block_px &&
-    robot_y <= block_py;
+  const bool right_up_of_block_point = robot_x >= block_px && robot_y <= block_py;
 
   const double rx1 = 15.110;
   const double ry1 = -2.326;
@@ -243,324 +389,701 @@ void IntensityVoxelLayer::markStaticObstacleArea(
 
   const double rvx = rx1 - rx2;
   const double rvy = ry1 - ry2;
-
   const double rqx = robot_x - rx2;
   const double rqy = robot_y - ry2;
-
   const double r_cross = rvx * rqy - rvy * rqx;
 
   const bool right_up_of_block_line = r_cross <= 0.0;
+  const bool robot_in_block_region = right_up_of_block_point || right_up_of_block_line;
 
-  const bool robot_in_block_region =
-    right_up_of_block_point ||
-    right_up_of_block_line;
   if (!robot_in_trigger_region && !robot_in_block_region) {
     return;
   }
-  auto touch_rect_area = [&](
+
+  auto touch_rect_area = [&] (
     double rect_min_x, double rect_min_y,
     double rect_max_x, double rect_max_y)
-  {
-    double min_wx = std::min(rect_min_x, rect_max_x);
-    double max_wx = std::max(rect_min_x, rect_max_x);
-    double min_wy = std::min(rect_min_y, rect_max_y);
-    double max_wy = std::max(rect_min_y, rect_max_y);
+    {
+      const double min_wx = std::min(rect_min_x, rect_max_x);
+      const double max_wx = std::max(rect_min_x, rect_max_x);
+      const double min_wy = std::min(rect_min_y, rect_max_y);
+      const double max_wy = std::max(rect_min_y, rect_max_y);
 
-    touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
-    touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
-  };
+      touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
+      touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
+    };
 
+  // rm_task=2时只扩大更新边界，不在本层写死障碍。
   if (rm_task_.load(std::memory_order_relaxed) == 2) {
     touch_rect_area(
       static_obs_min_x_, static_obs_min_y_,
       static_obs_max_x_, static_obs_max_y_);
-
     touch_rect_area(
       static_obs2_min_x_, static_obs2_min_y_,
       static_obs2_max_x_, static_obs2_max_y_);
-
     return;
   }
-  auto mark_rect_obstacle = [&](
+
+  auto mark_rect_obstacle = [&] (
     double rect_min_x, double rect_min_y,
     double rect_max_x, double rect_max_y)
-  {
-    double min_wx = std::min(rect_min_x, rect_max_x);
-    double max_wx = std::max(rect_min_x, rect_max_x);
-    double min_wy = std::min(rect_min_y, rect_max_y);
-    double max_wy = std::max(rect_min_y, rect_max_y);
+    {
+      const double min_wx = std::min(rect_min_x, rect_max_x);
+      const double max_wx = std::max(rect_min_x, rect_max_x);
+      const double min_wy = std::min(rect_min_y, rect_max_y);
+      const double max_wy = std::max(rect_min_y, rect_max_y);
 
-    unsigned int min_mx, min_my, max_mx, max_my;
+      unsigned int min_mx = 0;
+      unsigned int min_my = 0;
+      unsigned int max_mx = 0;
+      unsigned int max_my = 0;
 
-    if (!worldToMap(min_wx, min_wy, min_mx, min_my)) {
-      return;
-    }
-
-    if (!worldToMap(max_wx, max_wy, max_mx, max_my)) {
-      return;
-    }
-
-    unsigned int start_x = std::min(min_mx, max_mx);
-    unsigned int end_x   = std::max(min_mx, max_mx);
-    unsigned int start_y = std::min(min_my, max_my);
-    unsigned int end_y   = std::max(min_my, max_my);
-
-    for (unsigned int mx = start_x; mx <= end_x; ++mx) {
-      for (unsigned int my = start_y; my <= end_y; ++my) {
-        unsigned int index = getIndex(mx, my);
-        costmap_[index] = LETHAL_OBSTACLE;
+      if (!worldToMap(min_wx, min_wy, min_mx, min_my)) {
+        return;
       }
-    }
+      if (!worldToMap(max_wx, max_wy, max_mx, max_my)) {
+        return;
+      }
 
-    touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
-    touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
-  };
+      const unsigned int start_x = std::min(min_mx, max_mx);
+      const unsigned int end_x = std::max(min_mx, max_mx);
+      const unsigned int start_y = std::min(min_my, max_my);
+      const unsigned int end_y = std::max(min_my, max_my);
+
+      for (unsigned int mx = start_x; mx <= end_x; ++mx) {
+        for (unsigned int my = start_y; my <= end_y; ++my) {
+          costmap_[getIndex(mx, my)] = LETHAL_OBSTACLE;
+        }
+      }
+
+      touch(min_wx, min_wy, min_x, min_y, max_x, max_y);
+      touch(max_wx, max_wy, min_x, min_y, max_x, max_y);
+    };
+
   mark_rect_obstacle(
     static_obs_min_x_, static_obs_min_y_,
     static_obs_max_x_, static_obs_max_y_);
   mark_rect_obstacle(
     static_obs2_min_x_, static_obs2_min_y_,
     static_obs2_max_x_, static_obs2_max_y_);
-
 }
+
 void IntensityVoxelLayer::markObstacleWithExpand(
-  unsigned int mx, unsigned int my, double wx, double wy,
-  double* min_x, double* min_y, double* max_x, double* max_y)
+  unsigned int mx, unsigned int my,
+  double wx, double wy,
+  double * min_x, double * min_y,
+  double * max_x, double * max_y)
 {
+  for (int dx = -obstacle_expand_size_; dx <= obstacle_expand_size_; ++dx) {
+    for (int dy = -obstacle_expand_size_; dy <= obstacle_expand_size_; ++dy) {
+      const int cell_x = static_cast<int>(mx) + dx;
+      const int cell_y = static_cast<int>(my) + dy;
 
-  for (int dx = -obstacle_expand_size_; dx <= obstacle_expand_size_; dx++) {
-    for (int dy = -obstacle_expand_size_; dy <= obstacle_expand_size_; dy++) {
-      int cx = static_cast<int>(mx) + dx;
-      int cy = static_cast<int>(my) + dy;
-
-      if (cx < 0 || cx >= static_cast<int>(size_x_) || cy < 0 || cy >= static_cast<int>(size_y_))
+      if (
+        cell_x < 0 ||
+        cell_y < 0 ||
+        cell_x >= static_cast<int>(size_x_) ||
+        cell_y >= static_cast<int>(size_y_))
+      {
         continue;
+      }
 
-      unsigned int idx = getIndex(static_cast<unsigned int>(cx), static_cast<unsigned int>(cy));
-      costmap_[idx] = LETHAL_OBSTACLE;
+      costmap_[getIndex(
+        static_cast<unsigned int>(cell_x),
+        static_cast<unsigned int>(cell_y))] = LETHAL_OBSTACLE;
     }
   }
 
-  // touch(wx, wy, min_x, min_y, max_x, max_y);
+  // 把膨胀后的完整区域加入本次更新边界。
+  const double expand_distance = obstacle_expand_size_ * resolution_;
+  touch(
+    wx - expand_distance,
+    wy - expand_distance,
+    min_x, min_y, max_x, max_y);
+  touch(
+    wx + expand_distance,
+    wy + expand_distance,
+    min_x, min_y, max_x, max_y);
 }
+
 void IntensityVoxelLayer::reset()
 {
   ObstacleLayer::reset();
   resetMaps();
+
   active_obstacle_cells_.clear();
+
+  current_speed_mps_.store(
+    0.0,
+    std::memory_order_relaxed);
+
+  current_acceleration_mps2_.store(
+    0.0,
+    std::memory_order_relaxed);
+
+  acceleration_update_time_sec_.store(
+    -1.0,
+    std::memory_order_relaxed);
+  acceleration_suppression_until_sec_.store(
+    -1.0,
+    std::memory_order_relaxed);
+  has_last_odom_speed_ = false;
+  last_odom_speed_mps_ = 0.0;
+  last_odom_stamp_sec_ = -1.0;
 }
 
 void IntensityVoxelLayer::resetMaps()
 {
   ObstacleLayer::resetMaps();
   voxel_grid_.reset();
-  // active_obstacle_cells_.clear();
-  // 重置计数网格（保留历史计数，仅清空costmap）
+
+  // 不在这里清active_obstacle_cells_。
+  // updateBounds每帧都会resetMaps，障碍稳定显示依靠active_obstacle_cells_和保持时间。
 }
 
 void IntensityVoxelLayer::updateBounds(
-  double robot_x, double robot_y, double robot_yaw, double * min_x, double * min_y, double * max_x,
-  double * max_y)
+  double robot_x, double robot_y, double robot_yaw,
+  double * min_x, double * min_y,
+  double * max_x, double * max_y)
 {
   if (rolling_window_) {
-    updateOrigin(robot_x - getSizeInMetersX() / 2, robot_y - getSizeInMetersY() / 2);
+    updateOrigin(
+      robot_x - getSizeInMetersX() / 2.0,
+      robot_y - getSizeInMetersY() / 2.0);
   }
 
   resetMaps();
+
   if (!enabled_) {
     return;
   }
-  const unsigned int total_columns = size_x_ * size_y_;
 
-  if (column_hit_count_grid_.size() != total_columns) {
-    column_hit_count_grid_.assign(total_columns, 0);
+  const bool was_suppressed = dynamic_map_suppressed_by_tilt_;
+  const bool suppress_dynamic_map = updateTiltSuppressionState();
+
+  // 只在刚进入严重倾斜状态时清空动态历史，避免错误障碍恢复后再次出现。
+  if (suppress_dynamic_map && !was_suppressed) {
+    clearDynamicObstacleHistory(min_x, min_y, max_x, max_y);
   }
 
-  if (column_last_hit_time_grid_.size() != total_columns) {
-    column_last_hit_time_grid_.assign(total_columns, 0.0);
-  }
   markStaticObstacleArea(robot_x, robot_y, min_x, min_y, max_x, max_y);
   useExtraBounds(min_x, min_y, max_x, max_y);
+
+  auto publish_voxel_grid = [&] ()
+    {
+      if (!publish_voxel_ || !voxel_pub_) {
+        return;
+      }
+
+      nav2_msgs::msg::VoxelGrid grid_msg;
+      const unsigned int size = voxel_grid_.sizeX() * voxel_grid_.sizeY();
+
+      grid_msg.size_x = voxel_grid_.sizeX();
+      grid_msg.size_y = voxel_grid_.sizeY();
+      grid_msg.size_z = voxel_grid_.sizeZ();
+      grid_msg.data.resize(size);
+
+      if (size > 0) {
+        std::memcpy(
+          grid_msg.data.data(),
+          voxel_grid_.getData(),
+          size * sizeof(unsigned int));
+      }
+
+      grid_msg.origin.x = origin_x_;
+      grid_msg.origin.y = origin_y_;
+      grid_msg.origin.z = origin_z_;
+      grid_msg.resolutions.x = resolution_;
+      grid_msg.resolutions.y = resolution_;
+      grid_msg.resolutions.z = z_resolution_;
+      grid_msg.header.frame_id = global_frame_;
+      grid_msg.header.stamp = clock_->now();
+
+      voxel_pub_->publish(grid_msg);
+    };
+
+  if (suppress_dynamic_map) {
+    current_ = true;
+    publish_voxel_grid();
+    updateFootprint(robot_x, robot_y, robot_yaw, min_x, min_y, max_x, max_y);
+    return;
+  }
 
   bool current = true;
   std::vector<Observation> observations;
   current = getMarkingObservations(observations) && current;
   current_ = current;
 
-  // 临时记录本次命中的体素
-  // std::unordered_set<unsigned int> hit_voxels;
+  const double now_sec = clock_->now().seconds();
+  const double current_acceleration =
+    current_acceleration_mps2_.load(
+      std::memory_order_relaxed);
+
+  const double acceleration_update_time =
+    acceleration_update_time_sec_.load(
+      std::memory_order_relaxed);
+
+  // 里程计超过0.5秒没有更新，认为加速度数据失效。
+  // 防止里程计断流时一直关闭近场感知。
+  const bool acceleration_is_fresh =
+    acceleration_update_time > 0.0 &&
+    now_sec -
+      acceleration_update_time <= 0.5;
+
+  // 当前帧是否检测到加速度超限
+  const bool acceleration_triggered =
+    acceleration_is_fresh &&
+    current_acceleration >=
+      acceleration_suppression_threshold_mps2_;
+
+  // 一旦触发，就把近场抑制延长一段时间。
+  // 加速度持续超限时，截止时间会不断向后续期。
+  if (acceleration_triggered) {
+    const double new_suppression_until =
+      now_sec +
+      acceleration_suppression_hold_time_;
+
+    const double old_suppression_until =
+      acceleration_suppression_until_sec_.load(
+        std::memory_order_relaxed);
+
+    acceleration_suppression_until_sec_.store(
+      std::max(
+        old_suppression_until,
+        new_suppression_until),
+      std::memory_order_relaxed);
+  }
+
+  const double suppression_until =
+    acceleration_suppression_until_sec_.load(
+      std::memory_order_relaxed);
+
+  const bool suppress_near_by_acceleration =
+    now_sec <= suppression_until;
+
+  const double acceleration_suppression_radius_sq =
+    acceleration_suppression_radius_ *
+    acceleration_suppression_radius_;
+  // std::cout << current_acceleration << std::endl;
+  if (suppress_near_by_acceleration) {
+    // 加速度过大时，不等待obstacle_hold_time，
+    // 立即删除车辆附近的动态障碍历史。
+    clearNearDynamicObstacleHistory(
+      robot_x,
+      robot_y,
+      acceleration_suppression_radius_,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    RCLCPP_WARN_THROTTLE(
+      logger_,
+      *clock_,
+      500,
+      "Acceleration %.2f m/s^2 exceeds %.2f m/s^2. "
+      "Immediately clear and suppress dynamic perception within %.2f m.",
+      current_acceleration,
+      acceleration_suppression_threshold_mps2_,
+      acceleration_suppression_radius_);
+  }
+  // std::cout << "current_acceleration: " << current_acceleration << std::endl;
+
   std::vector<CandidateObstaclePoint> candidate_points;
   candidate_points.reserve(4096);
 
-  std::unordered_set<unsigned int> clustered_columns;
-  std::unordered_set<unsigned int> z_confirmed_columns;
-  std::unordered_set<unsigned int> final_obstacle_columns;
-  double now_sec = clock_->now().seconds();
+  // ========================================================================
+  // 1. 点级处理：只做前置过滤和硬/软梯度分类。
+  // ========================================================================
+  for (const auto & observation : observations) {
+    const double sq_max_range =
+      observation.obstacle_max_range_ * observation.obstacle_max_range_;
+    const double sq_min_range =
+      observation.obstacle_min_range_ * observation.obstacle_min_range_;
 
-  for (const auto & obs : observations) {
-    double sq_obstacle_max_range = obs.obstacle_max_range_ * obs.obstacle_max_range_;
-    double sq_obstacle_min_range = obs.obstacle_min_range_ * obs.obstacle_min_range_;
+    sensor_msgs::PointCloud2ConstIterator<float> it_x(*observation.cloud_, "x");
+    sensor_msgs::PointCloud2ConstIterator<float> it_y(*observation.cloud_, "y");
+    sensor_msgs::PointCloud2ConstIterator<float> it_z(*observation.cloud_, "z");
+    sensor_msgs::PointCloud2ConstIterator<float> it_i(*observation.cloud_, "intensity");
+    sensor_msgs::PointCloud2ConstIterator<float> it_gradient(
+      *observation.cloud_, "curvature");
 
-    sensor_msgs::PointCloud2ConstIterator<float> it_x(*obs.cloud_, "x");
-    sensor_msgs::PointCloud2ConstIterator<float> it_y(*obs.cloud_, "y");
-    sensor_msgs::PointCloud2ConstIterator<float> it_z(*obs.cloud_, "z");
-    sensor_msgs::PointCloud2ConstIterator<float> it_i(*obs.cloud_, "intensity");
-    sensor_msgs::PointCloud2ConstIterator<float> it_grad(*obs.cloud_, "curvature");
+    for (
+      ;
+      it_x != it_x.end();
+      ++it_x, ++it_y, ++it_z, ++it_i, ++it_gradient)
+    {
+      const double px = *it_x;
+      const double py = *it_y;
+      const double pz = *it_z;
+      const double relative_height = *it_i;
+      const double gradient = *it_gradient;
 
-    for (; it_x != it_x.end(); ++it_x, ++it_y, ++it_z, ++it_i, ++it_grad) {
-      double px = *it_x, py = *it_y, pz = *it_z;
-      unsigned int mx, my, mz;
-      if (pz < origin_z_) {
-        if (!worldToMap3D(px, py, origin_z_, mx, my, mz)) continue;
-      } else if (!worldToMap3D(px, py, pz, mx, my, mz)) continue;
-      unsigned int voxel_idx = getVoxelIndex(mx, my, mz);
-
-      if (pz < min_obstacle_height_ || pz > max_obstacle_height_) continue;
-      if (*it_i < min_obstacle_intensity_ || *it_i > max_obstacle_intensity_) continue;
-      double sq_dist = (px - obs.origin_.x)*(px - obs.origin_.x) + (py - obs.origin_.y)*(py - obs.origin_.y) + (pz - obs.origin_.z)*(pz - obs.origin_.z);
-      if (sq_dist <= sq_obstacle_min_range || sq_dist >= sq_obstacle_max_range) continue;
-      double gradient = 0.0;
-  
-      // bool has_gradient_field = (it_grad != it_grad.end());
-      // if (has_gradient_field) {
-      gradient = *it_grad;
-      bool valid_gradient = std::isfinite(gradient) && gradient >= 0.0;
-        // std::cout << "Point (" << px << ", " << py << ", " << pz << ") has gradient: " << gradient <<  "  " << max_gradient_threshold_ << std::endl;
-      double robot_dist = std::hypot(px - robot_x, py - robot_y);
-      bool gradient_obstacle = valid_gradient && gradient > max_gradient_threshold_;
-      // if (gradient <= max_gradient_threshold_) continue;
-      bool near_robot_obstacle = false;
-      if (!gradient_obstacle) {
-        near_robot_obstacle =
-          robot_dist <= near_obstacle_radius_ &&
-          pz >= min_obstacle_height_ &&
-          pz <= max_obstacle_height_ &&
-          *it_i > 0.2;
-      }
-      bool low_gradient_height_obstacle = false;
-      if (!gradient_obstacle && !near_robot_obstacle) {
-        low_gradient_height_obstacle =
-          valid_gradient &&
-          gradient >= low_gradient_threshold_ && gradient <= max_gradient_threshold_ &&
-          *it_i > 0.2 &&
-          *it_i < max_obstacle_intensity_ &&
-          pz >= 0.2 &&
-          pz <= 0.8;
-      }
-      if (!gradient_obstacle && !near_robot_obstacle && !low_gradient_height_obstacle) {
+      if (
+        !std::isfinite(px) ||
+        !std::isfinite(py) ||
+        !std::isfinite(pz) ||
+        !std::isfinite(relative_height) ||
+        !std::isfinite(gradient))
+      {
         continue;
       }
 
-      unsigned int column_idx = getIndex(mx, my);
+      if (pz < min_obstacle_height_ || pz > max_obstacle_height_) {
+        continue;
+      }
+
+      if (
+        relative_height < min_obstacle_intensity_ ||
+        relative_height > max_obstacle_intensity_)
+      {
+        continue;
+      }
+
+      if (gradient < 0.0) {
+        continue;
+      }
+
+      const bool hard_gradient = gradient >= max_gradient_threshold_;
+
+      const bool soft_mid_gradient =
+        gradient >= low_gradient_threshold_ &&
+        gradient < max_gradient_threshold_;
+
+      if (!hard_gradient && !soft_mid_gradient) {
+        continue;
+      }
+
+      const double diff_x = px - observation.origin_.x;
+      const double diff_y = py - observation.origin_.y;
+      const double diff_z = pz - observation.origin_.z;
+      const double sq_range =
+        diff_x * diff_x +
+        diff_y * diff_y +
+        diff_z * diff_z;
+
+      if (sq_range <= sq_min_range || sq_range >= sq_max_range) {
+        continue;
+      }
+      if (
+        suppress_near_by_acceleration &&
+        sq_range <=
+          acceleration_suppression_radius_sq)
+      {
+        continue;
+      }
+      unsigned int mx = 0;
+      unsigned int my = 0;
+      unsigned int mz = 0;
+
+      // 保留原来的origin_z处理方式。
+      const double voxel_z = pz < origin_z_ ? origin_z_ : pz;
+      if (!worldToMap3D(px, py, voxel_z, mx, my, mz)) {
+        continue;
+      }
 
       CandidateObstaclePoint candidate;
       candidate.x = px;
       candidate.y = py;
       candidate.z = pz;
+      candidate.gradient = gradient;
+      candidate.relative_height = relative_height;
+      candidate.range = std::sqrt(sq_range);
       candidate.mx = mx;
       candidate.my = my;
       candidate.mz = mz;
-      candidate.column_idx = column_idx;
+      candidate.column_idx = getIndex(mx, my);
+      candidate.hard_gradient = hard_gradient;
+      candidate.soft_mid_gradient = soft_mid_gradient;
 
       candidate_points.push_back(candidate);
-
-      bool column_marked = voxel_grid_.markVoxelInMap(mx, my, mz, mark_threshold_);
-
-      if (column_marked) {
-        z_confirmed_columns.insert(column_idx);
-      }
+    }
   }
-}
-  std::vector<std::vector<size_t>> point_clusters;
-  clusterCandidatePoints(candidate_points, point_clusters);
+  // ============================================================
+  // 调试目标点：输出包含(2.81, 0.30)栅格的点簇得分
+  // 坐标需要与当前costmap的global_frame_一致
+  // ============================================================
+  constexpr double debug_target_x = 2.71;
+  constexpr double debug_target_y = 0.02;
+  constexpr double debug_radius = 0.5;
+  constexpr double debug_radius_sq =
+    debug_radius * debug_radius;
 
+  std::vector<std::vector<std::size_t>> point_clusters;
+  clusterCandidatePoints(
+    candidate_points,
+    point_clusters,
+    soft_min_cluster_points_);
+
+  // 当前帧被硬簇或高分软簇接受的二维栅格。
+  std::unordered_set<unsigned int> accepted_columns;
+  accepted_columns.reserve(candidate_points.size());
+
+  // ========================================================================
+  // 3. 自身状态：只轻微提高软簇阈值，不改变硬簇结果。
+  // ========================================================================
+  const double tilt_confidence = clamp01(
+    1.0 -
+    current_tilt_deg_ /
+    std::max(1.0, tilt_disable_threshold_deg_));
+
+  const double speed = current_speed_mps_.load(std::memory_order_relaxed);
+  const double speed_confidence = clamp01(
+    1.0 -
+    speed /
+    std::max(0.1, speed_low_confidence_mps_));
+
+  const double state_confidence =
+    0.60 * tilt_confidence +
+    0.40 * speed_confidence;
+
+  // 状态正常时为soft_score_threshold_；状态最差时最多提高到0.90。
+  const double effective_soft_threshold = clamp01(
+    soft_score_threshold_ +
+    (0.9-soft_score_threshold_) * (1.0 - state_confidence));
+  
+  // ========================================================================
+  // 4. 对簇评分，不对单独栅格评分。
+  // ========================================================================
   for (const auto & cluster : point_clusters) {
-    for (size_t point_idx : cluster) {
-      const auto & p = candidate_points[point_idx];
-      clustered_columns.insert(p.column_idx);
+    int hard_gradient_count = 0;
+    int soft_point_count = 0;
+    double soft_gradient_sum = 0.0;
+    double soft_range_sum = 0.0;
+    double soft_height_sum = 0.0;
+
+    bool in_debug_region = false;
+    // bool contains_debug_target = false;
+
+    std::unordered_set<unsigned int> cluster_columns;
+    cluster_columns.reserve(cluster.size());
+
+    for (const std::size_t point_index : cluster) {
+      const auto & point = candidate_points[point_index];
+
+      cluster_columns.insert(point.column_idx);
+
+      // 判断该点是否位于(2.81, 0.30)附近0.5m内
+      const double debug_dx =
+        point.x - debug_target_x;
+
+      const double debug_dy =
+        point.y - debug_target_y;
+
+      const double debug_distance_sq =
+        debug_dx * debug_dx +
+        debug_dy * debug_dy;
+
+      if (debug_distance_sq <= debug_radius_sq) {
+        in_debug_region = true;
+      }
+
+      if (point.hard_gradient) {
+        ++hard_gradient_count;
+      }
+
+      if (point.soft_mid_gradient) {
+        ++soft_point_count;
+        soft_gradient_sum += point.gradient;
+        soft_range_sum += point.range;
+        soft_height_sum += point.relative_height;
+      }
+    }
+
+    // 硬通道：簇总点数足够，并且大梯度点数足够。
+    const bool hard_cluster_pass =
+      static_cast<int>(cluster.size()) >= min_cluster_points_ &&
+      hard_gradient_count >= cluster_hard_evidence_min_points_;
+
+    if (hard_cluster_pass) {
+      accepted_columns.insert(cluster_columns.begin(), cluster_columns.end());
+      continue;
+    }
+
+    // 硬条件没有通过时，中梯度点才进入软簇评分。
+    if (soft_point_count <= 0) {
+      continue;
+    }
+
+    const double point_count =
+      static_cast<double>(
+        soft_point_count);
+
+    const double avg_gradient =
+      soft_gradient_sum /
+      point_count;
+
+    const double avg_relative_height =
+      soft_height_sum /
+      point_count;
+
+    const double avg_range =
+      soft_range_sum /
+      point_count;
+
+    // 中梯度从low到max线性映射到0~1。
+    const double gradient_score = clamp01(
+      (avg_gradient - low_gradient_threshold_) /
+      std::max(
+        1e-6,
+        max_gradient_threshold_ - low_gradient_threshold_));
+    const double height_score = clamp01(
+      (avg_relative_height -
+      min_obstacle_intensity_ ) /
+      std::max(
+        1e-6,
+        height_score_full_ -
+        min_obstacle_intensity_ ));
+    // 点数越接近原硬簇点数，分数越高。
+    const double point_score = clamp01(
+      static_cast<double>(soft_point_count) /
+      static_cast<double>(std::max(1, min_cluster_points_)));
+
+    // 越靠近车辆分数越高，用于补偿近处可能扫不到完整斜面。
+    const double near_score = clamp01(
+      1.0 -
+      avg_range /
+      std::max(0.05, near_obstacle_radius_));
+
+    // 简单簇评分：梯度是主要依据，点数次之，近距离只做小幅补偿。
+    const double cluster_score =
+      0.4 * gradient_score +
+      0.3 * height_score +
+      0.25 * point_score +
+      0.05 * near_score;
+    // if (in_debug_region) {
+    //   RCLCPP_INFO(
+    //     logger_,
+    //     "[SoftScore] score=%.3f",
+    //     cluster_score);
+    // }
+
+    if (cluster_score >= effective_soft_threshold) {
+      // 簇通过后刷新整个簇覆盖的栅格，避免只留下零碎点。
+        // RCLCPP_INFO(
+        //   logger_,
+        //   "[SoftScore] score=%.3f",
+        //   cluster_score);
+      accepted_columns.insert(cluster_columns.begin(), cluster_columns.end());
     }
   }
-  for (const auto & column_idx : z_confirmed_columns) {
-    if (clustered_columns.find(column_idx) != clustered_columns.end()) {
-      final_obstacle_columns.insert(column_idx);
+
+  // ========================================================================
+  // 5. 当前帧通过的簇刷新世界坐标障碍保持时间。
+  // ========================================================================
+  for (const unsigned int column_idx : accepted_columns) {
+    if (column_idx >= size_x_ * size_y_) {
+      continue;
     }
-  }
-  double sec = clock_->now().seconds();
 
-  for (const auto & column_idx : final_obstacle_columns) {
-    unsigned int mx = column_idx % size_x_;
-    unsigned int my = column_idx / size_x_;
+    const unsigned int mx = column_idx % size_x_;
+    const unsigned int my = column_idx / size_x_;
 
-    costmap_[column_idx] = LETHAL_OBSTACLE;
-
-    double wx, wy;
+    double wx = 0.0;
+    double wy = 0.0;
     mapToWorld(mx, my, wx, wy);
+    if (suppress_near_by_acceleration) {
+      const double expand_distance =
+        obstacle_expand_size_ *
+        resolution_;
 
+      const double effective_clear_radius =
+        acceleration_suppression_radius_ +
+        std::sqrt(2.0) * expand_distance +
+        0.5 * resolution_;
+
+      const double dx =
+        wx - robot_x;
+
+      const double dy =
+        wy - robot_y;
+
+      if (
+        dx * dx + dy * dy <=
+        effective_clear_radius *
+        effective_clear_radius)
+      {
+        continue;
+      }
+    }
     bool found = false;
     for (auto & cell : active_obstacle_cells_) {
       if (std::hypot(cell.wx - wx, cell.wy - wy) < resolution_ * 0.5) {
-        cell.last_hit_time = sec;
+        cell.last_hit_time = now_sec;
         found = true;
         break;
       }
     }
 
     if (!found) {
-      active_obstacle_cells_.push_back({wx, wy, sec});
+      active_obstacle_cells_.push_back(ActiveObstacleCell{wx, wy, now_sec});
     }
-
-    touch(wx, wy, min_x, min_y, max_x, max_y);
   }
 
-  // // 重置未命中体素的计数
-  // for (unsigned int i = 0; i < total_columns; ++i) {
-  //   if (z_confirmed_columns.find(i) == z_confirmed_columns.end()) {
-  //     column_hit_count_grid_[i] = 0;
-  //   }
-  // }
+  // ========================================================================
+  // 6. 只根据obstacle_hold_time_删除；保持期内每帧重新写入costmap。
+  // ========================================================================
   for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
-    if (now_sec - it->last_hit_time > obstacle_hold_time_) {
+    const bool expired =
+      now_sec - it->last_hit_time > obstacle_hold_time_;
+
+    if (expired) {
+      // 把旧位置加入更新边界，保证master costmap能清掉已经过期的障碍。
+      const double expand_distance = obstacle_expand_size_ * resolution_;
+      touch(
+        it->wx - expand_distance,
+        it->wy - expand_distance,
+        min_x, min_y, max_x, max_y);
+      touch(
+        it->wx + expand_distance,
+        it->wy + expand_distance,
+        min_x, min_y, max_x, max_y);
+
       it = active_obstacle_cells_.erase(it);
       continue;
     }
-  
-    unsigned int mx, my;
+
+    unsigned int mx = 0;
+    unsigned int my = 0;
     if (worldToMap(it->wx, it->wy, mx, my)) {
       markObstacleWithExpand(
-        mx, my,
-        it->wx, it->wy,
-        min_x, min_y, max_x, max_y);
+        mx,
+        my,
+        it->wx,
+        it->wy,
+        min_x,
+        min_y,
+        max_x,
+        max_y);
     }
-  
+
     ++it;
   }
-  // 发布体素网格（原有逻辑）
-  if (publish_voxel_) {
-    nav2_msgs::msg::VoxelGrid grid_msg;
-    unsigned int size = voxel_grid_.sizeX() * voxel_grid_.sizeY();
-    grid_msg.size_x = voxel_grid_.sizeX();
-    grid_msg.size_y = voxel_grid_.sizeY();
-    grid_msg.size_z = voxel_grid_.sizeZ();
-    grid_msg.data.resize(size);
-    memcpy(&grid_msg.data[0], voxel_grid_.getData(), size * sizeof(unsigned int));
 
-    grid_msg.origin.x = origin_x_;
-    grid_msg.origin.y = origin_y_;
-    grid_msg.origin.z = origin_z_;
+  // ========================================================================
+  // 7. VoxelGrid只显示当前帧属于已接受簇的候选点。
+  // 历史保持障碍没有原始z信息，因此只保留在二维costmap中。
+  // ========================================================================
+  for (const auto & point : candidate_points) {
+    if (accepted_columns.find(point.column_idx) == accepted_columns.end()) {
+      continue;
+    }
 
-    grid_msg.resolutions.x = resolution_;
-    grid_msg.resolutions.y = resolution_;
-    grid_msg.resolutions.z = z_resolution_;
-    grid_msg.header.frame_id = global_frame_;
-    grid_msg.header.stamp = clock_->now();
-    voxel_pub_->publish(grid_msg);
+    voxel_grid_.markVoxelInMap(
+      point.mx,
+      point.my,
+      point.mz,
+      mark_threshold_);
   }
 
+  publish_voxel_grid();
   updateFootprint(robot_x, robot_y, robot_yaw, min_x, min_y, max_x, max_y);
 }
+
 void IntensityVoxelLayer::clusterCandidatePoints(
   const std::vector<CandidateObstaclePoint> & points,
-  std::vector<std::vector<size_t>> & clusters)
+  std::vector<std::vector<std::size_t>> & clusters,
+  int min_points)
 {
   clusters.clear();
 
@@ -568,122 +1091,282 @@ void IntensityVoxelLayer::clusterCandidatePoints(
     return;
   }
 
-  const double tolerance = point_cluster_tolerance_;
+  const double tolerance = std::max(0.01, point_cluster_tolerance_);
   const double tolerance_sq = tolerance * tolerance;
+  const int required_points = std::max(1, min_points);
 
   std::unordered_map<
     PointClusterGridKey,
-    std::vector<size_t>,
+    std::vector<std::size_t>,
     PointClusterGridKeyHash> spatial_grid;
 
   spatial_grid.reserve(points.size() * 2);
 
-  auto getClusterGridKey = [&](const CandidateObstaclePoint & p) {
-    return PointClusterGridKey{
-      static_cast<int>(std::floor(p.x / tolerance)),
-      static_cast<int>(std::floor(p.y / tolerance)),
-      static_cast<int>(std::floor(p.z / tolerance))
+  auto get_cluster_grid_key = [&] (const CandidateObstaclePoint & point)
+    {
+      return PointClusterGridKey{
+        static_cast<int>(std::floor(point.x / tolerance)),
+        static_cast<int>(std::floor(point.y / tolerance)),
+        static_cast<int>(std::floor(point.z / tolerance))};
     };
-  };
 
-  for (size_t i = 0; i < points.size(); ++i) {
-    spatial_grid[getClusterGridKey(points[i])].push_back(i);
+  for (std::size_t index = 0; index < points.size(); ++index) {
+    spatial_grid[get_cluster_grid_key(points[index])].push_back(index);
   }
 
   std::vector<bool> visited(points.size(), false);
 
-  for (size_t start_i = 0; start_i < points.size(); ++start_i) {
-    if (visited[start_i]) {
+  for (std::size_t start_index = 0; start_index < points.size(); ++start_index) {
+    if (visited[start_index]) {
       continue;
     }
 
-    std::vector<size_t> cluster;
-    std::queue<size_t> q;
+    std::vector<std::size_t> cluster;
+    std::queue<std::size_t> search_queue;
 
-    visited[start_i] = true;
-    q.push(start_i);
+    visited[start_index] = true;
+    search_queue.push(start_index);
 
-    while (!q.empty()) {
-      size_t cur_i = q.front();
-      q.pop();
+    while (!search_queue.empty()) {
+      const std::size_t current_index = search_queue.front();
+      search_queue.pop();
 
-      cluster.push_back(cur_i);
+      cluster.push_back(current_index);
 
-      const auto & cur_p = points[cur_i];
-      PointClusterGridKey cur_key = getClusterGridKey(cur_p);
+      const auto & current_point = points[current_index];
+      const PointClusterGridKey current_key = get_cluster_grid_key(current_point);
 
       for (int dx = -1; dx <= 1; ++dx) {
         for (int dy = -1; dy <= 1; ++dy) {
           for (int dz = -1; dz <= 1; ++dz) {
-            PointClusterGridKey neighbor_key{
-              cur_key.x + dx,
-              cur_key.y + dy,
-              cur_key.z + dz
-            };
+            const PointClusterGridKey neighbor_key{
+              current_key.x + dx,
+              current_key.y + dy,
+              current_key.z + dz};
 
-            auto grid_iter = spatial_grid.find(neighbor_key);
-            if (grid_iter == spatial_grid.end()) {
+            const auto grid_iterator = spatial_grid.find(neighbor_key);
+            if (grid_iterator == spatial_grid.end()) {
               continue;
             }
 
-            for (size_t next_i : grid_iter->second) {
-              if (visited[next_i]) {
+            for (const std::size_t next_index : grid_iterator->second) {
+              if (visited[next_index]) {
                 continue;
               }
 
-              const auto & next_p = points[next_i];
-
-              const double diff_x = cur_p.x - next_p.x;
-              const double diff_y = cur_p.y - next_p.y;
-              const double diff_z = cur_p.z - next_p.z;
-
-              const double dist_sq =
+              const auto & next_point = points[next_index];
+              const double diff_x = current_point.x - next_point.x;
+              const double diff_y = current_point.y - next_point.y;
+              const double diff_z = current_point.z - next_point.z;
+              const double distance_sq =
                 diff_x * diff_x +
                 diff_y * diff_y +
                 diff_z * diff_z;
 
-              if (dist_sq > tolerance_sq) {
+              if (distance_sq > tolerance_sq) {
                 continue;
               }
 
-              visited[next_i] = true;
-              q.push(next_i);
+              visited[next_index] = true;
+              search_queue.push(next_index);
             }
           }
         }
       }
     }
 
-    if (cluster.size() >= min_cluster_points_) {
+    if (static_cast<int>(cluster.size()) >= required_points) {
       clusters.push_back(std::move(cluster));
     }
   }
 }
-void IntensityVoxelLayer::updateOrigin(double new_origin_x, double new_origin_y)
-{
-  int cell_ox, cell_oy;
-  cell_ox = static_cast<int>((new_origin_x - origin_x_) / resolution_);
-  cell_oy = static_cast<int>((new_origin_y - origin_y_) / resolution_);
 
-  origin_x_ = origin_x_ + cell_ox * resolution_;
-  origin_y_ = origin_y_ + cell_oy * resolution_;
-  // active_obstacle_cells_.clear();
-  matchSize();
+void IntensityVoxelLayer::updateOrigin(
+  double new_origin_x,
+  double new_origin_y)
+{
+  const int cell_offset_x = static_cast<int>(
+    (new_origin_x - origin_x_) / resolution_);
+  const int cell_offset_y = static_cast<int>(
+    (new_origin_y - origin_y_) / resolution_);
+
+  if (cell_offset_x == 0 && cell_offset_y == 0) {
+    return;
+  }
+
+  origin_x_ += cell_offset_x * resolution_;
+  origin_y_ += cell_offset_y * resolution_;
+
+  // active_obstacle_cells_保存的是世界坐标，rolling window移动时不需要清空或平移。
+  // 本层costmap和VoxelGrid会在本次updateBounds中重新构建。
+  voxel_grid_.reset();
 }
 
-}  // namespace pb_nav2_costmap_2d
+bool IntensityVoxelLayer::updateTiltSuppressionState()
+{
+  if (!disable_dynamic_map_on_tilt_) {
+    dynamic_map_suppressed_by_tilt_ = false;
+    current_roll_deg_ = 0.0;
+    current_pitch_deg_ = 0.0;
+    current_tilt_deg_ = 0.0;
+    return false;
+  }
 
-// 头文件新增声明（关键！）
-/*
-private:
-  unsigned int * hit_count_grid_ = nullptr;  // 连续命中计数网格
-  unsigned int continuous_hit_threshold_ = 2; // 连续命中阈值
-  unsigned int neighborhood_radius_ = 1;      // 动态邻域半径（网格数），1=3x3邻域，2=5x5邻域...
-  unsigned int neighborhood_min_voxels_ = 1;  // 邻域内有效体素数阈值
+  try {
+    const auto transform = tf_->lookupTransform(
+      global_frame_,
+      tilt_frame_,
+      tf2::TimePointZero);
 
-  inline unsigned int getVoxelIndex(unsigned int mx, unsigned int my, unsigned int mz);
-  inline unsigned int countNeighborhoodVoxels(unsigned int mx, unsigned int my, unsigned int mz);
-*/
+    const auto & rotation = transform.transform.rotation;
+    tf2::Quaternion quaternion(
+      rotation.x,
+      rotation.y,
+      rotation.z,
+      rotation.w);
 
-#include "pluginlib/class_list_macros.hpp"
-PLUGINLIB_EXPORT_CLASS(xx_nav2_costmap_2d::IntensityVoxelLayer, nav2_costmap_2d::Layer)
+    double roll = 0.0;
+    double pitch = 0.0;
+    double yaw = 0.0;
+    tf2::Matrix3x3(quaternion).getRPY(roll, pitch, yaw);
+
+    constexpr double RAD_TO_DEG = 180.0 / 3.14159265358979323846;
+    const double roll_deg = std::abs(roll) * RAD_TO_DEG;
+    const double pitch_deg = std::abs(pitch) * RAD_TO_DEG;
+    const double max_tilt_deg = std::max(roll_deg, pitch_deg);
+
+    const bool previous_state = dynamic_map_suppressed_by_tilt_;
+
+    if (!dynamic_map_suppressed_by_tilt_) {
+      if (max_tilt_deg >= tilt_disable_threshold_deg_) {
+        dynamic_map_suppressed_by_tilt_ = true;
+      }
+    } else if (
+      roll_deg <= tilt_recover_threshold_deg_ &&
+      pitch_deg <= tilt_recover_threshold_deg_)
+    {
+      dynamic_map_suppressed_by_tilt_ = false;
+    }
+
+    if (previous_state != dynamic_map_suppressed_by_tilt_) {
+      if (dynamic_map_suppressed_by_tilt_) {
+        RCLCPP_WARN(
+          logger_,
+          "Vehicle tilt too large: roll=%.2f deg, pitch=%.2f deg. "
+          "Disable dynamic obstacle map.",
+          roll_deg,
+          pitch_deg);
+      } else {
+        RCLCPP_INFO(
+          logger_,
+          "Vehicle posture recovered: roll=%.2f deg, pitch=%.2f deg. "
+          "Enable dynamic obstacle map.",
+          roll_deg,
+          pitch_deg);
+      }
+    }
+
+    current_roll_deg_ = roll_deg;
+    current_pitch_deg_ = pitch_deg;
+    current_tilt_deg_ = max_tilt_deg;
+  } catch (const tf2::TransformException & exception) {
+    RCLCPP_WARN_THROTTLE(
+      logger_,
+      *clock_,
+      2000,
+      "Cannot get tilt transform %s -> %s: %s",
+      global_frame_.c_str(),
+      tilt_frame_.c_str(),
+      exception.what());
+
+    // TF短时丢失时保留之前状态，避免动态地图来回开关。
+  }
+
+  return dynamic_map_suppressed_by_tilt_;
+}
+
+void IntensityVoxelLayer::clearDynamicObstacleHistory(
+  double * min_x, double * min_y,
+  double * max_x, double * max_y)
+{
+  const double expand_distance = obstacle_expand_size_ * resolution_;
+
+  // 旧动态障碍区域加入更新边界，保证master costmap及时清除。
+  for (const auto & cell : active_obstacle_cells_) {
+    touch(
+      cell.wx - expand_distance,
+      cell.wy - expand_distance,
+      min_x, min_y, max_x, max_y);
+    touch(
+      cell.wx + expand_distance,
+      cell.wy + expand_distance,
+      min_x, min_y, max_x, max_y);
+  }
+
+  active_obstacle_cells_.clear();
+  voxel_grid_.reset();
+}
+void IntensityVoxelLayer::clearNearDynamicObstacleHistory(
+  double robot_x,
+  double robot_y,
+  double radius,
+  double * min_x,
+  double * min_y,
+  double * max_x,
+  double * max_y)
+{
+  const double valid_radius =
+    std::max(0.0, radius);
+
+  const double radius_sq =
+    valid_radius * valid_radius;
+
+  const double expand_distance =
+    obstacle_expand_size_ * resolution_;
+  const double effective_clear_radius =
+    valid_radius +
+    std::sqrt(2.0) * expand_distance +
+    0.5 * resolution_;
+
+  const double clear_radius_sq =
+    effective_clear_radius *
+    effective_clear_radius;
+
+  for (
+    auto it = active_obstacle_cells_.begin();
+    it != active_obstacle_cells_.end();)
+  {
+    const double dx =
+      it->wx - robot_x;
+
+    const double dy =
+      it->wy - robot_y;
+
+    const double distance_sq =
+      dx * dx + dy * dy;
+
+    if (distance_sq > clear_radius_sq) {
+      ++it;
+      continue;
+    }
+
+    // 将旧障碍及其膨胀区域加入更新范围，
+    // 保证master costmap本帧就能清掉它。
+    touch(
+      it->wx - expand_distance,
+      it->wy - expand_distance,
+      min_x, min_y, max_x, max_y);
+
+    touch(
+      it->wx + expand_distance,
+      it->wy + expand_distance,
+      min_x, min_y, max_x, max_y);
+
+    it = active_obstacle_cells_.erase(it);
+  }
+}
+}  // namespace xx_nav2_costmap_2d
+
+PLUGINLIB_EXPORT_CLASS(
+  xx_nav2_costmap_2d::IntensityVoxelLayer,
+  nav2_costmap_2d::Layer)

@@ -4,8 +4,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <vector>
-#include <numeric>
 #include <Eigen/Dense>
 #include "nav2_core/controller.hpp"
 #include "pb_omni_pid_pursuit_controller/pid.hpp"
@@ -91,7 +89,6 @@ public:
   void reset()
   {
     std::fill(data_window_.begin(), data_window_.end(), 0.0); // 窗口值置0
-    valid_data_count_ = 0;                                   // 有效数据清零
   }
 private:
   // 计算SG滤波系数
@@ -128,13 +125,10 @@ private:
 
   int window_size_;          // 滤波窗口大小（奇数）
   int poly_order_;           // 多项式拟合阶数
-  std::vector<double> coeffs_;  // 滤波系数
   Eigen::VectorXd window_weights_;
   Eigen::VectorXd coeffs;
   std::vector<double> data_window_;  // 数据滑动窗口
-  int valid_data_count_ = 0;  
-  int window_idx_; 
-  
+
 };
 /**
  * @class pb_omni_pid_pursuit_controller::OmniPidPursuitController
@@ -308,19 +302,11 @@ protected:
    */
   void applyApproachVelocityScaling(const nav_msgs::msg::Path & path, double & linear_vel) const;
 
-  /**
-   * @brief Checks if collision is detected along the given path
-   * @param path Local path to check for collisions
-   * @return True if collision detected, false otherwise
-   */
-  bool isCollisionDetected(const nav_msgs::msg::Path & path);
-
 private:
     struct Impl
     {
       // SG滤波实例
       std::unique_ptr<SavitzkyGolayFilter> linear_vel_filter_;
-      std::unique_ptr<SavitzkyGolayFilter> angular_vel_filter_;
       // 滤波参数
       int sg_window_size_ = 5;
       int sg_poly_order_ = 2;
@@ -394,9 +380,6 @@ private:
   geometry_msgs::msg::PoseStamped findPoseAtDistance(
     const nav_msgs::msg::Path & path, const std::vector<double> & cumulative_distances,
     double target_distance) const;
-  void smoothedVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg) ;
-  nav_msgs::msg::Path cropGlobalPlanToLocal(
-    const geometry_msgs::msg::PoseStamped & pose);
   std::vector<geometry_msgs::msg::PoseStamped> removeCornerPts(
     const std::vector<geometry_msgs::msg::PoseStamped> &path);
   double euclideanDistance(
@@ -409,16 +392,6 @@ private:
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & end,
     unsigned char cost_threshold);
-  Eigen::Vector2d poseToEigen(
-    const geometry_msgs::msg::PoseStamped & pose)
-  {
-      return Eigen::Vector2d(pose.pose.position.x, pose.pose.position.y);
-  }
-  std::vector<geometry_msgs::msg::PoseStamped> smoothPathCorners(
-    const std::vector<geometry_msgs::msg::PoseStamped>& path,
-    double smooth_radius ,int num_interpolation,
-    double angle_tol_deg ,int skip_points
-  );
   std::vector<geometry_msgs::msg::PoseStamped> softSmoothPathCorners(
     const std::vector<geometry_msgs::msg::PoseStamped> & path,
     double max_smooth_radius,
@@ -484,11 +457,27 @@ private:
   double mpc_curve_lookahead_dist_{1.2};
   double mpc_curve_kappa_eps_{1e-3};
 
+  double pid_curve_kappa_min_{0.35};
+  double pid_curve_kappa_max_{1.20};
+  double pid_curve_a_lat_max_{0.80};
+  double pid_curve_min_speed_{0.35};
+  double pid_curve_max_slowdown_ratio_{0.70};
+  double pid_curve_lookahead_dist_{1.20};
+  double pid_curve_sample_ds_{0.10};
+  double pid_curve_projection_search_dist_{1.5};
+  double pid_curve_projection_trust_dist_{0.50};
+  double pid_curve_recover_rate_{1.0};          // 出弯加速恢复速度，m/s^2
+  double pid_curve_kappa_hysteresis_{0.08};     // 曲率进入/退出滞回
+  bool pid_curve_slow_active_{false};
+  double pid_curve_filtered_kappa_{0.0};
+  bool has_pid_curve_filtered_kappa_{false};
+
+  double pid_curve_kappa_rise_rate_{3.0};  // 曲率上升速度，越大减速越快
+  double pid_curve_kappa_fall_rate_{1.0};  // 曲率下降速度，越小出弯恢复越慢
   // Controller parameters
   double translation_kp_, translation_ki_, translation_kd_;
   bool enable_rotation_;
   double rotation_kp_, rotation_ki_, rotation_kd_;
-  double min_max_sum_error_;
   double control_duration_;
   double max_robot_pose_search_dist_;
   bool use_interpolation_,use_mpc_control_;
@@ -514,15 +503,15 @@ private:
   double last_vel_;
   double lower_speed_;
   double min_dist_;
-  double large_slow_;
   double acc_max_;
-  tf2::Duration transform_tolerance_;
-  double smoothed_vel;
-  bool slow = false;
+  mutable double mpc_curve_filtered_kappa_{0.0};
+  mutable bool has_mpc_curve_filtered_kappa_{false};
 
-  std::mutex sm_mutex;
+  double mpc_curve_kappa_rise_rate_{3.0};
+  double mpc_curve_kappa_fall_rate_{1.0};
+  
+  tf2::Duration transform_tolerance_;
   nav_msgs::msg::Path global_plan_;
-  int min_smooth_interpolation_points_{2};
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_path_pub_;
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr carrot_pub_;
   rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr
@@ -533,12 +522,13 @@ private:
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
   std::atomic<int> rm_task_value_{0};
 
-  double direct_drive_kp_ = 1.5;
-  double direct_drive_max_vel_ = 3.0;
   // Dynamic parameters handler
   std::mutex mutex_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr smooth_vel_sub_;
+  bool has_latched_goal_{false};
+  geometry_msgs::msg::PoseStamped latched_goal_;
+  bool pending_controller_soft_reset_{false};
+
 };
 
 }  // namespace pb_omni_pid_pursuit_controller

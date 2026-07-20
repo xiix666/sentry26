@@ -61,7 +61,7 @@ public:
         // 初始化发布者
         pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_topic_, 5);
         if (tran_odom_) {
-            pub_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_out_, 5);
+            pub_odom_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_out_, 15);
             sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
                 odom_in_, odom_qos, std::bind(&PointCloudFrameTrans::odomCallback, this, std::placeholders::_1));
         }
@@ -69,7 +69,7 @@ public:
         std::cout << "tran节点启动" << std::endl;
         // 订阅原始点云消息
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            input_topic_, odom_qos, std::bind(&PointCloudFrameTrans::pointCloudCallback, this, std::placeholders::_1));
+            input_topic_, 15, std::bind(&PointCloudFrameTrans::pointCloudCallback, this, std::placeholders::_1));
         
     }
 

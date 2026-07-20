@@ -65,7 +65,7 @@ def generate_launch_description():
 
     # Add any conditioned actions
     ld.add_action(start_rviz_cmd)
-    ld.add_action(echo_cmd_vel_base_cmd)
+    # ld.add_action(echo_cmd_vel_base_cmd)
     # Add other nodes and processes we need
     ld.add_action(exit_event_handler)
 

@@ -111,7 +111,7 @@ struct ReceivePacketUC
   uint16_t defence_buff;            //防御增益
   uint16_t defence_debuff;          //防御debuff
   uint16_t attack_buff;             //攻击增益
-  uint8_t status_info;              //最后3bit： 2bit占堡垒情况 + 最后1bit：是否中基地镖
+  uint16_t status_info;              //最后3bit： 2bit占堡垒情况 + 最后1bit：是否中基地镖
   float self_speed_x;                //自身速度
   float self_speed_y;
   float operator_x;              //操作手标点

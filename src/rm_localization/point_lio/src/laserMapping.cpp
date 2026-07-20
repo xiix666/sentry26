@@ -865,14 +865,14 @@ int main(int argc, char ** argv)
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
   qos.best_effort();
   qos.durability_volatile();
-  auto odom_qos = rclcpp::QoS(rclcpp::KeepLast(5));
+  auto odom_qos = rclcpp::QoS(rclcpp::KeepLast(10));
   odom_qos.reliable();
   odom_qos.durability_volatile();
   auto sub_imu = nh->create_subscription<sensor_msgs::msg::Imu>(
       imu_topic, rclcpp::SensorDataQoS(), imu_cbk);
   auto pub_laser_cloud_full_res =
       nh->create_publisher<sensor_msgs::msg::PointCloud2>("cloud_registered",
-                                                          odom_qos);
+                                                          15);
   auto pub_laser_cloud_full_res_body =
       nh->create_publisher<sensor_msgs::msg::PointCloud2>(
           "cloud_registered_body", 20);
@@ -881,7 +881,7 @@ int main(int argc, char ** argv)
   auto pub_laser_cloud_map =
       nh->create_publisher<sensor_msgs::msg::PointCloud2>("Laser_map", 20);
   auto pub_odom_aft_mapped =
-      nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", odom_qos);
+      nh->create_publisher<nav_msgs::msg::Odometry>("aft_mapped_to_init", 15);
   auto pub_path = nh->create_publisher<nav_msgs::msg::Path>("path", 20);
   auto tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(nh);
   // checkTFRecordFile(pose_txt, tf_broadcaster); 
