@@ -1,20 +1,10 @@
-// Copyright 2020 Anshumaan Singh
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 #include "theta_star_planner/theta_star_planner.hpp"
 #include "theta_star_planner/theta_star.hpp"
 
@@ -62,11 +52,41 @@ void ThetaStarPlanner::configure(
   nav2_util::declare_parameter_if_not_declared(
     node, name + ".use_final_approach_orientation", rclcpp::ParameterValue(false));
   node->get_parameter(name + ".use_final_approach_orientation", use_final_approach_orientation_);
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".same_goal_tolerance",
+    rclcpp::ParameterValue(0.15));
+  node->get_parameter(
+    name_ + ".same_goal_tolerance",
+    same_goal_tolerance_);
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".switch_improvement_ratio",
+    rclcpp::ParameterValue(0.12));
+  node->get_parameter(
+    name_ + ".switch_improvement_ratio",
+    switch_improvement_ratio_);
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".max_reuse_path_deviation",
+    rclcpp::ParameterValue(0.50));
+  node->get_parameter(
+    name_ + ".max_reuse_path_deviation",
+    max_reuse_path_deviation_);
+
+  same_goal_tolerance_ = std::max(0.0, same_goal_tolerance_);
+  switch_improvement_ratio_ =
+    std::clamp(switch_improvement_ratio_, 0.0, 0.99);
+  max_reuse_path_deviation_ =
+    std::max(0.0, max_reuse_path_deviation_);
 }
 
 void ThetaStarPlanner::cleanup()
 {
   RCLCPP_INFO(logger_, "CleaningUp plugin %s of type theta_star_planner", name_.c_str());
+  has_last_path_ = false;
+  last_path_.poses.clear();
+  last_progress_index_ = 0;
   planner_.reset();
 }
 
@@ -131,11 +151,29 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
     return global_path;
   }
 
+  // 每次规划周期都先运行 Theta*，得到当前代价地图下的新候选路径。
+  nav_msgs::msg::Path new_path;
   planner_->setStartAndGoal(start, goal);
+
   RCLCPP_DEBUG(
     logger_, "Got the src and dst... (%i, %i) && (%i, %i)",
     planner_->src_.x, planner_->src_.y, planner_->dst_.x, planner_->dst_.y);
-  getPlan(global_path);
+
+  getPlan(new_path);
+
+  nav_msgs::msg::Path reused_path;
+  const bool reused_last_path =
+    tryReuseLastPath(start, goal, new_path, reused_path);
+
+  if (reused_last_path) {
+    global_path = std::move(reused_path);
+    RCLCPP_DEBUG(
+      logger_, "Publishing pruned reused path with %zu poses",
+      global_path.poses.size());
+  } else {
+    global_path = std::move(new_path);
+  }
+
   // check if a plan is generated
   size_t plan_size = global_path.poses.size();
   if (plan_size > 0) {
@@ -160,7 +198,11 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
         nav2_util::geometry_utils::orientationAroundZAxis(theta);
     }
   }
-
+  // 只有采用本轮 Theta* 路径时才更新缓存。继续使用旧路径时，
+  // tryReuseLastPath() 已经推进 last_progress_index_。
+  if (!reused_last_path && !global_path.poses.empty()) {
+    cachePath(global_path, goal);
+  }
   auto stop_time = std::chrono::steady_clock::now();
   auto dur = std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time);
   RCLCPP_DEBUG(logger_, "the time taken is : %i", static_cast<int>(dur.count()));
@@ -196,6 +238,272 @@ void ThetaStarPlanner::getPlan(nav_msgs::msg::Path & global_path)
   }
   global_path.header.stamp = clock_->now();
   global_path.header.frame_id = global_frame_;
+
+  for (auto & pose : global_path.poses) {
+    pose.header = global_path.header;
+
+    if (
+      pose.pose.orientation.x == 0.0 &&
+      pose.pose.orientation.y == 0.0 &&
+      pose.pose.orientation.z == 0.0 &&
+      pose.pose.orientation.w == 0.0)
+    {
+      pose.pose.orientation.w = 1.0;
+    }
+  }
+}
+bool ThetaStarPlanner::segmentCostAndSafe(
+  const geometry_msgs::msg::PoseStamped & from,
+  const geometry_msgs::msg::PoseStamped & to,
+  double & cost) const
+{
+  cost = 0.0;
+
+  const double dx =
+    to.pose.position.x - from.pose.position.x;
+  const double dy =
+    to.pose.position.y - from.pose.position.y;
+  const double distance = std::hypot(dx, dy);
+  const double resolution = planner_->costmap_->getResolution();
+
+  // 距离代价，换算成栅格长度
+  cost += compare_distance_weight_ * distance / resolution;
+
+  // 每半个栅格检查一次，防止线段穿过障碍
+  const int steps = std::max(
+    1,
+    static_cast<int>(
+      std::ceil(distance / (0.5 * resolution))));
+
+  for (int i = 0; i <= steps; ++i) {
+    const double ratio =
+      static_cast<double>(i) / static_cast<double>(steps);
+
+    const double wx =
+      from.pose.position.x + ratio * dx;
+    const double wy =
+      from.pose.position.y + ratio * dy;
+
+    unsigned int mx;
+    unsigned int my;
+
+    if (!planner_->costmap_->worldToMap(wx, wy, mx, my)) {
+      return false;
+    }
+
+    if (!planner_->isSafe(
+        static_cast<int>(mx),
+        static_cast<int>(my)))
+    {
+      return false;
+    }
+
+    const unsigned char raw_cost =
+      planner_->costmap_->getCost(mx, my);
+
+    double scaled_cost;
+    if (raw_cost == UNKNOWN_COST) {
+      scaled_cost = OCCUPIED_COST - 1;
+    } else {
+      scaled_cost = 26.0 + 0.9 * raw_cost;
+    }
+
+  cost +=
+    compare_traversal_weight_ *
+    scaled_cost * scaled_cost /
+    MAX_NON_OBSTACLE_COST /
+    MAX_NON_OBSTACLE_COST;
+  }
+
+  return true;
+}
+bool ThetaStarPlanner::pathCostAndSafe(
+  const geometry_msgs::msg::PoseStamped & start,
+  const nav_msgs::msg::Path & path,
+  double & cost) const
+{
+  cost = 0.0;
+
+  if (path.poses.empty()) {
+    return false;
+  }
+
+  // 新旧路径都从同一个机器人当前位置开始计价，保证代价可直接比较。
+  double segment_cost = 0.0;
+  if (!segmentCostAndSafe(start, path.poses.front(), segment_cost)) {
+    return false;
+  }
+  cost += segment_cost;
+
+  for (size_t i = 1; i < path.poses.size(); ++i) {
+    if (!segmentCostAndSafe(path.poses[i - 1], path.poses[i], segment_cost)) {
+      return false;
+    }
+    cost += segment_cost;
+  }
+
+  return true;
+}
+
+void ThetaStarPlanner::cachePath(
+  const nav_msgs::msg::Path & path,
+  const geometry_msgs::msg::PoseStamped & goal)
+{
+  last_path_ = path;
+  last_goal_ = goal;
+  last_progress_index_ = 0;
+  has_last_path_ = last_path_.poses.size() >= 2;
+}
+
+bool ThetaStarPlanner::tryReuseLastPath(
+  const geometry_msgs::msg::PoseStamped & start,
+  const geometry_msgs::msg::PoseStamped & goal,
+  const nav_msgs::msg::Path & new_path,
+  nav_msgs::msg::Path & reused_path)
+{
+  if (!has_last_path_ || last_path_.poses.size() < 2) {
+    return false;
+  }
+
+  // 必须还是同一个目标点。
+  const double goal_distance = std::hypot(
+    goal.pose.position.x - last_goal_.pose.position.x,
+    goal.pose.position.y - last_goal_.pose.position.y);
+
+  if (goal_distance > same_goal_tolerance_) {
+    return false;
+  }
+
+  // 在旧路径尚未走完的线段上寻找机器人投影点。使用点到线段距离，
+  // 避免路径点疏密影响偏离判断。
+  const size_t search_begin = std::min(
+    last_progress_index_,
+    last_path_.poses.size() - 2);
+
+  size_t nearest_segment = search_begin;
+  double nearest_ratio = 0.0;
+  double nearest_distance_sq =
+    std::numeric_limits<double>::max();
+
+  for (size_t i = search_begin;
+    i + 1 < last_path_.poses.size(); ++i)
+  {
+    const auto & p0 = last_path_.poses[i].pose.position;
+    const auto & p1 = last_path_.poses[i + 1].pose.position;
+
+    const double segment_x = p1.x - p0.x;
+    const double segment_y = p1.y - p0.y;
+    const double segment_length_sq =
+      segment_x * segment_x + segment_y * segment_y;
+
+    double ratio = 0.0;
+    if (segment_length_sq > 1e-12) {
+      ratio =
+        ((start.pose.position.x - p0.x) * segment_x +
+        (start.pose.position.y - p0.y) * segment_y) /
+        segment_length_sq;
+      ratio = std::clamp(ratio, 0.0, 1.0);
+    }
+
+    const double projected_x = p0.x + ratio * segment_x;
+    const double projected_y = p0.y + ratio * segment_y;
+    const double dx = start.pose.position.x - projected_x;
+    const double dy = start.pose.position.y - projected_y;
+    const double distance_sq = dx * dx + dy * dy;
+
+    if (distance_sq < nearest_distance_sq) {
+      nearest_distance_sq = distance_sq;
+      nearest_segment = i;
+      nearest_ratio = ratio;
+    }
+  }
+
+  const double path_deviation = std::sqrt(nearest_distance_sq);
+  if (path_deviation > max_reuse_path_deviation_) {
+    RCLCPP_INFO(
+      logger_,
+      "Reject old path: robot deviation %.3f m exceeds %.3f m",
+      path_deviation, max_reuse_path_deviation_);
+    return false;
+  }
+
+  reused_path.poses.clear();
+  reused_path.header.stamp = clock_->now();
+  reused_path.header.frame_id = global_frame_;
+
+  // 发布路径直接从旧路径线段上的投影点开始，不把机器人当前位置强行
+  // 塞进 Path，避免形成“当前位置 -> 旧路径 -> 原方向”的人为折角。
+  auto projection_pose = last_path_.poses[nearest_segment];
+  const auto & segment_start =
+    last_path_.poses[nearest_segment].pose.position;
+  const auto & segment_end =
+    last_path_.poses[nearest_segment + 1].pose.position;
+  projection_pose.header = reused_path.header;
+  projection_pose.pose.position.x =
+    segment_start.x + nearest_ratio * (segment_end.x - segment_start.x);
+  projection_pose.pose.position.y =
+    segment_start.y + nearest_ratio * (segment_end.y - segment_start.y);
+  projection_pose.pose.position.z =
+    segment_start.z + nearest_ratio * (segment_end.z - segment_start.z);
+  reused_path.poses.push_back(projection_pose);
+
+  for (size_t i = nearest_segment + 1;
+    i < last_path_.poses.size(); ++i)
+  {
+    auto pose = last_path_.poses[i];
+    pose.header = reused_path.header;
+
+    const auto & previous = reused_path.poses.back().pose.position;
+    const double dx = pose.pose.position.x - previous.x;
+    const double dy = pose.pose.position.y - previous.y;
+    if (dx * dx + dy * dy < 1e-12) {
+      continue;
+    }
+    reused_path.poses.push_back(pose);
+  }
+
+  // 临近终点只剩一个点时交给本轮 Theta*，避免控制器收到过短路径。
+  if (reused_path.poses.size() < 2) {
+    return false;
+  }
+
+  // 连接段虽然不发布，但必须参与安全检查和总代价比较；这样新旧路径
+  // 都以机器人当前位置作为统一起点。
+  double old_cost = 0.0;
+  if (!pathCostAndSafe(start, reused_path, old_cost)) {
+    RCLCPP_INFO(
+      logger_,
+      "Reject old path: remaining path or connection is blocked");
+    return false;
+  }
+
+  double new_cost = 0.0;
+  const bool new_path_valid =
+    pathCostAndSafe(start, new_path, new_cost);
+
+  // 新路径至少明显优于旧路径 switch_improvement_ratio_ 才切换。
+  // 若本轮 Theta* 没有有效结果而旧路径仍安全，则继续使用旧路径。
+  if (new_path_valid &&
+    new_cost <= old_cost * (1.0 - switch_improvement_ratio_))
+  {
+    RCLCPP_DEBUG(
+      logger_,
+      "Use new Theta* path: new_cost=%.3f old_cost=%.3f improvement=%.1f%%",
+      new_cost, old_cost,
+      old_cost > 1e-9 ? (old_cost - new_cost) * 100.0 / old_cost : 0.0);
+    return false;
+  }
+
+  last_progress_index_ = nearest_segment;
+
+  RCLCPP_DEBUG(
+    logger_,
+    "Reuse pruned old path: progress=%zu poses=%zu deviation=%.3f "
+    "old_cost=%.3f new_cost=%.3f new_valid=%d",
+    nearest_segment, reused_path.poses.size(), path_deviation,
+    old_cost, new_cost, new_path_valid);
+
+  return true;
 }
 
 nav_msgs::msg::Path ThetaStarPlanner::linearInterpolation(
@@ -222,7 +530,13 @@ nav_msgs::msg::Path ThetaStarPlanner::linearInterpolation(
       pa.poses.push_back(p1);
     }
   }
-
+  if (!raw_path.empty()) {
+    p1.pose.position.x = raw_path.back().x;
+    p1.pose.position.y = raw_path.back().y;
+    p1.pose.position.z = 0.0;
+    p1.pose.orientation.w = 1.0;
+    pa.poses.push_back(p1);
+  }
   return pa;
 }
 
@@ -243,6 +557,15 @@ ThetaStarPlanner::dynamicParametersCallback(std::vector<rclcpp::Parameter> param
         planner_->w_euc_cost_ = parameter.as_double();
       } else if (name == name_ + ".w_traversal_cost") {
         planner_->w_traversal_cost_ = parameter.as_double();
+      } else if (name == name_ + ".same_goal_tolerance") {
+        same_goal_tolerance_ =
+          std::max(0.0, parameter.as_double());
+      } else if (name == name_ + ".switch_improvement_ratio") {
+        switch_improvement_ratio_ =
+          std::clamp(parameter.as_double(), 0.0, 0.99);
+      } else if (name == name_ + ".max_reuse_path_deviation") {
+        max_reuse_path_deviation_ =
+          std::max(0.0, parameter.as_double());
       }
     } else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == name_ + ".use_final_approach_orientation") {

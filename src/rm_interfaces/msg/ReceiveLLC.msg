@@ -18,7 +18,8 @@ int32 self_sentry_hp
 int32 self_outpost_hp
 # 己方基地血量
 int32 self_base_hp
-
+# 敌方前哨站血量
+int32 enemy_outpost_hp
 
 # 哨兵位置
 float32 self_pose_x

@@ -90,7 +90,7 @@ struct ReceivePacketUC
   uint16_t self_sentry_hp;          //自身血量
   uint16_t self_outpost_hp;      //己方前哨站血量
   uint16_t self_base_hp;         //己方基地血量
-
+  uint16_t enemy_outpost_hp;        //敌方前哨站血量
   float self_pose_x;                //自身位置
   float self_pose_y;
 
@@ -141,6 +141,7 @@ struct SendPacket
   uint8_t area_status;                               //特殊地形区域状态 1起伏路段 2前哨站 3下台阶 0默认 
   uint8_t nav_enable;                                   //默认0为不导航，发1为导航
   uint8_t sentry_stance;                                //1 为进攻姿态，2 为防御姿态，3 为移动姿态，默认为 3                                  
+  uint8_t outpost_enable;                                //抬头打前哨
   std::array<std::array<float, 2>, 5> send_enemy_poses; //发给雷达补盲的消息(顺序：英雄、工程、步兵1、步兵2、哨兵)
   uint16_t checksum = 0;
 } __attribute__((packed));

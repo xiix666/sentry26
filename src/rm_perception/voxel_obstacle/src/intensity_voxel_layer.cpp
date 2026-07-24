@@ -168,7 +168,50 @@ void IntensityVoxelLayer::onInitialize()
   node->get_parameter(
     name_ + ".acceleration_suppression_hold_time",
     acceleration_suppression_hold_time_);
+  // --------------------------------------------------------------------------
+  // 多帧障碍突变检测
+  // --------------------------------------------------------------------------
+  node->declare_parameter(
+    name_ + ".enable_sudden_obstacle_history_filter",
+    true);
+  node->get_parameter(
+    name_ + ".enable_sudden_obstacle_history_filter",
+    enable_sudden_obstacle_history_filter_);
 
+  node->declare_parameter(
+    name_ + ".sudden_obstacle_near_radius",
+    2.5);
+  node->get_parameter(
+    name_ + ".sudden_obstacle_near_radius",
+    sudden_obstacle_near_radius_);
+
+  node->declare_parameter(
+    name_ + ".sudden_obstacle_stable_free_duration",
+    1.0);
+  node->get_parameter(
+    name_ + ".sudden_obstacle_stable_free_duration",
+    sudden_obstacle_stable_free_duration_);
+
+  node->declare_parameter(
+    name_ + ".sudden_obstacle_max_observation_gap",
+    0.2);
+  node->get_parameter(
+    name_ + ".sudden_obstacle_max_observation_gap",
+    sudden_obstacle_max_observation_gap_);
+
+  node->declare_parameter(
+    name_ + ".sudden_obstacle_rising_cell_threshold",
+    30);
+  node->get_parameter(
+    name_ + ".sudden_obstacle_rising_cell_threshold",
+    sudden_obstacle_rising_cell_threshold_);
+
+  node->declare_parameter(
+    name_ + ".sudden_obstacle_history_retention",
+    5.0);
+  node->get_parameter(
+    name_ + ".sudden_obstacle_history_retention",
+    sudden_obstacle_history_retention_);
   // 参数保护。
   size_z_ = std::clamp(size_z_, 1, VOXEL_BITS);
   unknown_threshold_ += (VOXEL_BITS - size_z_);
@@ -200,6 +243,23 @@ void IntensityVoxelLayer::onInitialize()
     std::max(
       0.0,
       acceleration_suppression_hold_time_);
+  sudden_obstacle_near_radius_ =
+    std::max(0.1, sudden_obstacle_near_radius_);
+
+  sudden_obstacle_stable_free_duration_ =
+    std::max(0.1, sudden_obstacle_stable_free_duration_);
+
+  sudden_obstacle_max_observation_gap_ =
+    std::max(0.05, sudden_obstacle_max_observation_gap_);
+
+  sudden_obstacle_rising_cell_threshold_ =
+    std::max(1, sudden_obstacle_rising_cell_threshold_);
+
+  sudden_obstacle_history_retention_ =
+    std::max(
+      sudden_obstacle_stable_free_duration_ + 1.0,
+      sudden_obstacle_history_retention_);
+
   if (max_gradient_threshold_ <= low_gradient_threshold_) {
     RCLCPP_WARN(
       logger_,
@@ -349,6 +409,7 @@ void IntensityVoxelLayer::matchSize()
   // matchSize只会在初始化或地图尺寸真正变化时调用。
   // 这里清理旧世界坐标障碍，避免尺寸切换后保留无效状态。
   active_obstacle_cells_.clear();
+  resetSuddenObstacleHistory();
 }
 
 void IntensityVoxelLayer::markStaticObstacleArea(
@@ -512,7 +573,7 @@ void IntensityVoxelLayer::reset()
   resetMaps();
 
   active_obstacle_cells_.clear();
-
+  resetSuddenObstacleHistory();
   current_speed_mps_.store(
     0.0,
     std::memory_order_relaxed);
@@ -530,6 +591,7 @@ void IntensityVoxelLayer::reset()
   has_last_odom_speed_ = false;
   last_odom_speed_mps_ = 0.0;
   last_odom_stamp_sec_ = -1.0;
+  
 }
 
 void IntensityVoxelLayer::resetMaps()
@@ -564,6 +626,7 @@ void IntensityVoxelLayer::updateBounds(
   // 只在刚进入严重倾斜状态时清空动态历史，避免错误障碍恢复后再次出现。
   if (suppress_dynamic_map && !was_suppressed) {
     clearDynamicObstacleHistory(min_x, min_y, max_x, max_y);
+    resetSuddenObstacleHistory();
   }
 
   markStaticObstacleArea(robot_x, robot_y, min_x, min_y, max_x, max_y);
@@ -664,7 +727,6 @@ void IntensityVoxelLayer::updateBounds(
   const double acceleration_suppression_radius_sq =
     acceleration_suppression_radius_ *
     acceleration_suppression_radius_;
-  // std::cout << current_acceleration << std::endl;
   if (suppress_near_by_acceleration) {
     // 加速度过大时，不等待obstacle_hold_time，
     // 立即删除车辆附近的动态障碍历史。
@@ -966,6 +1028,239 @@ void IntensityVoxelLayer::updateBounds(
         //   cluster_score);
       accepted_columns.insert(cluster_columns.begin(), cluster_columns.end());
     }
+  }
+  // ========================================================================
+  // 4.5 车辆附近固定世界栅格的状态跳变检测
+  //
+  // 对每个世界栅格分别判断：
+  // 过去一段时间持续为空闲 -> 当前帧突然成为障碍。
+  //
+  // 车辆移动只改变本帧检查的世界栅格范围，
+  // 不会改变每个世界栅格自己的历史状态。
+  // ========================================================================
+  if (enable_sudden_obstacle_history_filter_) {
+    pruneObstacleCellTemporalStates(now_sec);
+
+    const int robot_world_grid_x =
+      static_cast<int>(
+        std::floor(robot_x / resolution_));
+
+    const int robot_world_grid_y =
+      static_cast<int>(
+        std::floor(robot_y / resolution_));
+
+    const int near_radius_cells =
+      static_cast<int>(
+        std::ceil(
+          sudden_obstacle_near_radius_ /
+          resolution_));
+
+    const double near_radius_sq =
+      sudden_obstacle_near_radius_ *
+      sudden_obstacle_near_radius_;
+
+    // 当前帧车辆附近被判断为障碍的固定世界栅格。
+    std::unordered_set<std::uint64_t>
+      current_near_obstacle_keys;
+
+    current_near_obstacle_keys.reserve(
+      accepted_columns.size() * 2);
+
+    // ------------------------------------------------------------
+    // 先把accepted_columns转换为固定世界坐标栅格。
+    // ------------------------------------------------------------
+    for (const unsigned int column_idx : accepted_columns) {
+      if (column_idx >= size_x_ * size_y_) {
+        continue;
+      }
+
+      const unsigned int mx =
+        column_idx % size_x_;
+
+      const unsigned int my =
+        column_idx / size_x_;
+
+      double wx = 0.0;
+      double wy = 0.0;
+
+      mapToWorld(mx, my, wx, wy);
+
+      const double dx =
+        wx - robot_x;
+
+      const double dy =
+        wy - robot_y;
+
+      if (dx * dx + dy * dy > near_radius_sq) {
+        continue;
+      }
+
+      const int world_grid_x =
+        static_cast<int>(
+          std::floor(wx / resolution_));
+
+      const int world_grid_y =
+        static_cast<int>(
+          std::floor(wy / resolution_));
+
+      current_near_obstacle_keys.insert(
+        makeObstacleHistoryKey(
+          world_grid_x,
+          world_grid_y));
+    }
+
+    // ------------------------------------------------------------
+    // 逐栅格判断是否由稳定空闲突然变为障碍。
+    // ------------------------------------------------------------
+    std::size_t rising_obstacle_cell_count = 0;
+
+    for (const std::uint64_t key :
+      current_near_obstacle_keys)
+    {
+      const auto state_it =
+        obstacle_cell_temporal_states_.find(key);
+
+      if (
+        state_it ==
+        obstacle_cell_temporal_states_.end())
+      {
+        // 第一次看到该世界栅格，没有历史，不能判定为突然变化。
+        continue;
+      }
+
+      const auto & state =
+        state_it->second;
+
+      // 上一帧或最近几帧仍持续在车辆近场范围内被检查。
+      const bool observation_is_continuous =
+        state.last_observed_sec > 0.0 &&
+        now_sec - state.last_observed_sec <=
+          sudden_obstacle_max_observation_gap_;
+
+      // 过去一段时间内该栅格持续为空闲。
+      const bool was_stably_free =
+        !state.occupied &&
+        state.free_since_sec > 0.0 &&
+        now_sec - state.free_since_sec >=
+          sudden_obstacle_stable_free_duration_;
+
+      if (
+        observation_is_continuous &&
+        was_stably_free)
+      {
+        ++rising_obstacle_cell_count;
+      }
+    }
+
+    const bool drop_current_obstacle_frame =
+      rising_obstacle_cell_count >=
+      static_cast<std::size_t>(
+        sudden_obstacle_rising_cell_threshold_);
+
+    if (drop_current_obstacle_frame) {
+      // 只丢弃当前帧的新识别，不清除之前合法的动态障碍历史。
+      //
+      // 因为检测位置在第5步之前，所以当前错误障碍尚未写入
+      // active_obstacle_cells_，不需要调用clearDynamicObstacleHistory()。
+      accepted_columns.clear();
+
+      RCLCPP_WARN(
+        logger_,
+        "Drop current obstacle frame: "
+        "%zu nearby world cells changed from stable-free "
+        "to occupied in one frame, threshold=%d, radius=%.2f m.",
+        rising_obstacle_cell_count,
+        sudden_obstacle_rising_cell_threshold_,
+        sudden_obstacle_near_radius_);
+    }
+
+    // ------------------------------------------------------------
+    // 决策完成后，更新当前近场所有世界栅格的状态。
+    //
+    // 必须枚举整个近场圆形区域，不仅是障碍栅格。
+    // 这样才能明确记录每个栅格过去一直是空闲状态。
+    // ------------------------------------------------------------
+    for (
+      int offset_x = -near_radius_cells;
+      offset_x <= near_radius_cells;
+      ++offset_x)
+    {
+      for (
+        int offset_y = -near_radius_cells;
+        offset_y <= near_radius_cells;
+        ++offset_y)
+      {
+        const int world_grid_x =
+          robot_world_grid_x + offset_x;
+
+        const int world_grid_y =
+          robot_world_grid_y + offset_y;
+
+        const double cell_center_x =
+          (static_cast<double>(world_grid_x) + 0.5) *
+          resolution_;
+
+        const double cell_center_y =
+          (static_cast<double>(world_grid_y) + 0.5) *
+          resolution_;
+
+        const double dx =
+          cell_center_x - robot_x;
+
+        const double dy =
+          cell_center_y - robot_y;
+
+        if (dx * dx + dy * dy > near_radius_sq) {
+          continue;
+        }
+
+        const std::uint64_t key =
+          makeObstacleHistoryKey(
+            world_grid_x,
+            world_grid_y);
+
+        auto & state =
+          obstacle_cell_temporal_states_[key];
+
+        // 如果本帧被判定为异常，则整帧的障碍结果不可信。
+        // 将当前近场栅格继续按空闲更新，使持续误识别下一帧仍能被拦截。
+        const bool occupied_this_frame =
+          !drop_current_obstacle_frame &&
+          current_near_obstacle_keys.find(key) !=
+            current_near_obstacle_keys.end();
+
+        if (occupied_this_frame) {
+          state.occupied = true;
+          state.free_since_sec = -1.0;
+        } else {
+          if (
+            state.occupied ||
+            state.free_since_sec < 0.0)
+          {
+            // 该栅格刚刚进入空闲状态。
+            state.free_since_sec =
+              now_sec;
+          }
+
+          state.occupied = false;
+        }
+
+        state.last_observed_sec =
+          now_sec;
+      }
+    }
+
+    // RCLCPP_INFO_THROTTLE(
+    //   logger_,
+    //   *clock_,
+    //   500,
+    //   "Nearby per-cell temporal check: "
+    //   "near_obstacles=%zu, rising_cells=%zu, "
+    //   "threshold=%d, drop=%d.",
+    //   current_near_obstacle_keys.size(),
+    //   rising_obstacle_cell_count,
+    //   sudden_obstacle_rising_cell_threshold_,
+    //   drop_current_obstacle_frame ? 1 : 0);
   }
 
   // ========================================================================
@@ -1365,6 +1660,46 @@ void IntensityVoxelLayer::clearNearDynamicObstacleHistory(
     it = active_obstacle_cells_.erase(it);
   }
 }
+std::uint64_t IntensityVoxelLayer::makeObstacleHistoryKey(
+  int grid_x,
+  int grid_y)
+{
+  // 通过uint32_t保留负数的二进制形式，
+  // 然后将x和y组合成唯一的64位键。
+  return
+    (static_cast<std::uint64_t>(
+      static_cast<std::uint32_t>(grid_x)) << 32) |
+    static_cast<std::uint32_t>(grid_y);
+}
+
+
+void IntensityVoxelLayer::pruneObstacleCellTemporalStates(
+  double now_sec)
+{
+  for (
+    auto it =
+      obstacle_cell_temporal_states_.begin();
+    it !=
+      obstacle_cell_temporal_states_.end();)
+  {
+    if (
+      it->second.last_observed_sec < 0.0 ||
+      now_sec - it->second.last_observed_sec >
+        sudden_obstacle_history_retention_)
+    {
+      it =
+        obstacle_cell_temporal_states_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void IntensityVoxelLayer::resetSuddenObstacleHistory()
+{
+  obstacle_cell_temporal_states_.clear();
+}
+
 }  // namespace xx_nav2_costmap_2d
 
 PLUGINLIB_EXPORT_CLASS(

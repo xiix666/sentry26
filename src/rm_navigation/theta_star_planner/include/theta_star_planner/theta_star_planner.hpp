@@ -1,17 +1,3 @@
-// Copyright 2020 Anshumaan Singh
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #ifndef THETA_STAR_PLANNER__THETA_STAR_PLANNER_HPP_
 #define THETA_STAR_PLANNER__THETA_STAR_PLANNER_HPP_
 
@@ -95,6 +81,39 @@ protected:
    */
   rcl_interfaces::msg::SetParametersResult
   dynamicParametersCallback(std::vector<rclcpp::Parameter> parameters);
+
+  // 上一次接受的路径
+  nav_msgs::msg::Path last_path_;
+  geometry_msgs::msg::PoseStamped last_goal_;
+
+  bool has_last_path_{false};
+  size_t last_progress_index_{0};
+
+  double same_goal_tolerance_{0.15};
+  double switch_improvement_ratio_{0.12};
+  double max_reuse_path_deviation_{0.30};
+
+  double compare_distance_weight_{8.0};
+  double compare_traversal_weight_{1.0};
+  bool tryReuseLastPath(
+    const geometry_msgs::msg::PoseStamped & start,
+    const geometry_msgs::msg::PoseStamped & goal,
+    const nav_msgs::msg::Path & new_path,
+    nav_msgs::msg::Path & reused_path);
+
+  bool segmentCostAndSafe(
+    const geometry_msgs::msg::PoseStamped & from,
+    const geometry_msgs::msg::PoseStamped & to,
+    double & cost) const;
+
+  bool pathCostAndSafe(
+    const geometry_msgs::msg::PoseStamped & start,
+    const nav_msgs::msg::Path & path,
+    double & cost) const;
+
+  void cachePath(
+    const nav_msgs::msg::Path & path,
+    const geometry_msgs::msg::PoseStamped & goal);
 };
 }   //  namespace theta_star_planner
 

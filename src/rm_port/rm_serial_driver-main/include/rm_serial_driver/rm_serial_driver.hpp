@@ -75,6 +75,8 @@ private:
 
   void areaStatusData(const std_msgs::msg::Int32::SharedPtr msg);
 
+  void outpostData(const std_msgs::msg::Int32::SharedPtr msg);
+
   void sendData();
 
   void timer_callback();
@@ -98,6 +100,7 @@ private:
   std::atomic<uint8_t> nav_enable{1};
   std::atomic<uint8_t> sentry_stance{3};
   std::atomic<uint8_t> area_status{0};
+  std::atomic<uint8_t> outpost_enable{0};
   std::atomic<float> area_angle{0.0f};
   std::array<std::array<float, 2>, 5> send_enemy_poses_;
   std::mutex send_enemy_poses_mutex_;
@@ -128,8 +131,10 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_save_sub_;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr save_sub;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr spin_sub;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr outpost_sub;
   rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr gimbal_angle_sub_;
   rclcpp::Subscription<rm_interfaces::msg::StatusMsg>::SharedPtr stance_sub_;
+  
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr timer_reset;
 

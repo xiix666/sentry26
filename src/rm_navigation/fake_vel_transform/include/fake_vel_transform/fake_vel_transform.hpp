@@ -1,17 +1,3 @@
-// Copyright 2025 Lihan Chen
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #ifndef FAKE_VEL_TRANSFORM__FAKE_VEL_TRANSFORM_HPP_
 #define FAKE_VEL_TRANSFORM__FAKE_VEL_TRANSFORM_HPP_
 
@@ -31,6 +17,7 @@
 
 namespace fake_vel_transform
 {
+
 class FakeVelTransform : public rclcpp::Node
 {
 public:
@@ -40,27 +27,53 @@ private:
   void syncCallback(
     const nav_msgs::msg::Odometry::ConstSharedPtr & odom,
     const nav_msgs::msg::Path::ConstSharedPtr & local_plan);
-  void odometryCallback(const nav_msgs::msg::Odometry::ConstSharedPtr & msg);
-  void localPlanCallback(const nav_msgs::msg::Path::ConstSharedPtr & msg);
-  void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
-  void cmdSpinCallback(example_interfaces::msg::Float32::SharedPtr msg);
-  // void publishTransform();
+
+  void odometryCallback(
+    const nav_msgs::msg::Odometry::ConstSharedPtr & msg);
+
+  void localPlanCallback(
+    const nav_msgs::msg::Path::ConstSharedPtr & msg);
+
+  void cmdVelCallback(
+    const geometry_msgs::msg::Twist::SharedPtr msg);
+
+  void cmdSpinCallback(
+    example_interfaces::msg::Float32::SharedPtr msg);
+
   void publishTransformAndSafeVel();
+
   geometry_msgs::msg::Twist transformVelocity(
-    const geometry_msgs::msg::Twist::SharedPtr & twist, float yaw_diff);
+    const geometry_msgs::msg::Twist & twist,
+    double yaw_diff);
+
+  geometry_msgs::msg::Twist applyLinearDecelerationLimit(
+    const geometry_msgs::msg::Twist & current,
+    const geometry_msgs::msg::Twist & target,
+    double dt) const;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
   rclcpp::Subscription<example_interfaces::msg::Float32>::SharedPtr cmd_spin_sub_;
 
   message_filters::Subscriber<nav_msgs::msg::Odometry> odom_sub_filter_;
   message_filters::Subscriber<nav_msgs::msg::Path> local_plan_sub_filter_;
+
   using SyncPolicy =
-    message_filters::sync_policies::ApproximateTime<nav_msgs::msg::Odometry, nav_msgs::msg::Path>;
-  std::unique_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
+    message_filters::sync_policies::ApproximateTime<
+    nav_msgs::msg::Odometry,
+    nav_msgs::msg::Path>;
 
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_chassis_pub_;
+  std::unique_ptr<
+    message_filters::Synchronizer<SyncPolicy>>
+    sync_;
 
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr
+    cmd_vel_chassis_pub_;
+
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr
+    cmd_vel_safe_pub_;
+
+  std::unique_ptr<tf2_ros::TransformBroadcaster>
+    tf_broadcaster_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -71,16 +84,36 @@ private:
   std::string cmd_spin_topic_;
   std::string input_cmd_vel_topic_;
   std::string output_cmd_vel_topic_;
-  float spin_speed_;
+  std::string output_safe_cmd_vel_topic_;
+
+  float spin_speed_{0.0F};
 
   std::mutex cmd_vel_mutex_;
-  geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
-  double current_robot_base_angle_;
-  rclcpp::Time last_controller_activate_time_;
+
+  double current_robot_base_angle_{0.0};
+
+  // 控制器最后一次发来的目标速度。
   geometry_msgs::msg::Twist::SharedPtr last_cmd_vel_;
+
+  // 经过最大减速度限制后的输出速度。
+  geometry_msgs::msg::Twist limited_cmd_vel_;
+
+  // 最后一次收到控制器速度的时间。
   rclcpp::Time last_cmd_vel_time_;
-  std::string output_safe_cmd_vel_topic_; 
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_safe_pub_; 
+
+  // 上一次执行速度限制的时间。
+  rclcpp::Time last_velocity_limit_time_;
+
+  // 是否启用线速度最大减速度限制。
+  bool enable_linear_deceleration_limit_{true};
+
+  // 最大线减速度，单位m/s²。
+  double max_linear_deceleration_{6.0};
+
+  rclcpp::Time last_controller_activate_time_;
+
+  // 原有成员保留，防止其他代码还在使用。
+  geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
 };
 
 }  // namespace fake_vel_transform

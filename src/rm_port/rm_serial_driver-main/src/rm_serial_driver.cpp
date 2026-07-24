@@ -97,6 +97,9 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
     "/status_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::stanceData, this, std::placeholders::_1));
   // Create a timer to run sendData at 100 Hz
+  outpost_sub = this->create_subscription<std_msgs::msg::Int32>(
+    "/outpost_lock_lost", 10,
+    std::bind(&RMSerialDriver::outpostData, this, std::placeholders::_1));
   timer_ = this->create_wall_timer(
     std::chrono::milliseconds(10),  // 10 ms = 100 Hz
     std::bind(&RMSerialDriver::sendData, this));
@@ -234,6 +237,7 @@ void RMSerialDriver::receiveData()
           pub_pack.self_outpost_hp = packet.self_outpost_hp;
           pub_pack.self_base_hp = packet.self_base_hp;
 
+          pub_pack.enemy_outpost_hp = packet.enemy_outpost_hp;
           pub_pack.self_pose_x = packet.self_pose_x;
           pub_pack.self_pose_y = packet.self_pose_y;
           pub_pack.bullets_allowance = packet.bullets_allowance;
@@ -426,6 +430,10 @@ void RMSerialDriver::spinData(const std_msgs::msg::Int32::SharedPtr msg)
 {
     spin_enable = msg->data;
 }
+void RMSerialDriver::outpostData(const std_msgs::msg::Int32::SharedPtr msg)
+{
+    outpost_enable = msg->data;
+}
 void RMSerialDriver::sendData()
 {
   try {
@@ -461,6 +469,7 @@ void RMSerialDriver::sendData()
     // packet.spin_enable = spin_enable;
     packet.nav_enable = nav_enable;
     packet.sentry_stance = sentry_stance;
+    packet.outpost_enable = outpost_enable;
     {
       std::lock_guard<std::mutex> lock(send_enemy_poses_mutex_);
       packet.send_enemy_poses = send_enemy_poses_;
