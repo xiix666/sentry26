@@ -56,3 +56,5 @@ int32 defence_debuff
 int32 attack_buff
 # 后3bit 占堡垒 中镖（1中） 
 int32 status_info
+
+int32 enemy_invincible

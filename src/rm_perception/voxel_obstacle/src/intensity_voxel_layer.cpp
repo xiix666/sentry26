@@ -19,7 +19,9 @@
 
 #define VOXEL_BITS 16
 
+using nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE;
 using nav2_costmap_2d::LETHAL_OBSTACLE;
+using nav2_costmap_2d::NO_INFORMATION;
 using nav2_costmap_2d::Observation;
 
 namespace xx_nav2_costmap_2d
@@ -126,7 +128,13 @@ void IntensityVoxelLayer::onInitialize()
   node->declare_parameter(name_ + ".tilt_frame", std::string("base_link"));
   node->declare_parameter(name_ + ".tilt_disable_threshold_deg", 20.0);
   node->declare_parameter(name_ + ".tilt_recover_threshold_deg", 15.0);
+  node->declare_parameter(
+    name_ + ".publish_pass_enable",
+    false);
 
+  node->get_parameter(
+    name_ + ".publish_pass_enable",
+    publish_pass_enable_);
   node->get_parameter(
     name_ + ".disable_dynamic_map_on_tilt",
     disable_dynamic_map_on_tilt_);
@@ -281,6 +289,12 @@ void IntensityVoxelLayer::onInitialize()
     {
       rm_task_.store(msg->data, std::memory_order_relaxed);
     });
+  if (publish_pass_enable_) {
+    area_obstacle_flag_pub_ =
+      node->create_publisher<std_msgs::msg::Int32>(
+        "/pass_enable",
+        rclcpp::QoS(10));
+  }
 
   lio_odom_sub_ = node->create_subscription<nav_msgs::msg::Odometry>(
     velocity_odom_topic_,
@@ -617,6 +631,10 @@ void IntensityVoxelLayer::updateBounds(
   resetMaps();
 
   if (!enabled_) {
+    publishAreaObstacleFlag(
+      robot_x,
+      true);
+
     return;
   }
 
@@ -631,6 +649,144 @@ void IntensityVoxelLayer::updateBounds(
 
   markStaticObstacleArea(robot_x, robot_y, min_x, min_y, max_x, max_y);
   useExtraBounds(min_x, min_y, max_x, max_y);
+  const int rm_task =
+    rm_task_.load(
+      std::memory_order_relaxed);
+
+  const bool robot_in_dynamic_clear_region =
+    isInDynamicClearTriggerArea(
+      robot_x,
+      robot_y);
+  const bool robot_in_forced_area_clear_region =
+    isInForcedAreaClearTriggerRegion(
+      robot_x,
+      robot_y);
+
+  const bool clear_forced_area =
+    rm_task == 1 ||
+    robot_in_forced_area_clear_region;
+  // ============================================================
+  // 特殊区域清障规则
+  //
+  // 优先级：
+  // 1. rm_task==1：只清两个强制障碍区域。
+  // 2. 否则 rm_task==2 或车辆进入清障触发区：
+  //    清除除强制障碍区域以外的所有动态障碍。
+  // 3. 普通状态：正常动态感知。
+  // ============================================================
+
+  if (clear_forced_area) {
+    // ----------------------------------------------------------
+    // task=1：
+    //
+    // 只允许清除：
+    //   x=[16.6, 19.0], y=[5.2, 6.6]
+    //   x=[1.4,  3.9], y=[-7.7,-6.4]
+    //
+    // 其他动态障碍完全不受影响。
+    // ----------------------------------------------------------
+    clearDynamicObstacleHistoryInForcedAreas(
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    // 不再把两个区域强制写成障碍。
+    //
+    // 函数仍然会touch区域，
+    // 保证上一帧的强制障碍可以从master costmap中消失。
+    updateForcedDynamicObstacleAreas(
+      false,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+  } else {
+    // ----------------------------------------------------------
+    // task != 1：
+    // 两块特殊区域永远是障碍。
+    // ----------------------------------------------------------
+    updateForcedDynamicObstacleAreas(
+      true,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+  }
+
+
+  // ------------------------------------------------------------
+  // rm_task==2
+  // 或者
+  // 车辆进入两个清障触发区
+  //
+  // => 清掉其他所有动态障碍。
+  // ------------------------------------------------------------
+  const bool clear_other_dynamic_obstacles =
+    (rm_task == 2 && task_clear) ||
+    robot_in_dynamic_clear_region;
+
+
+  // rm_task==1优先级最高。
+  // 即使此时车碰巧位于trigger区域，
+  // 仍然只清特殊区域。
+  if (
+    rm_task != 1 &&
+    clear_other_dynamic_obstacles)
+  {
+    clearDynamicObstacleHistoryOutsideForcedAreas(
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    resetSuddenObstacleHistory();
+
+    current_ = true;
+
+    publishAreaObstacleFlag(
+      robot_x,
+      false);
+
+    updateFootprint(
+      robot_x,
+      robot_y,
+      robot_yaw,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    return;
+  }
+  // if (rm_task_.load(std::memory_order_relaxed) == 2 && task_clear) {
+  //   clearDynamicObstacleHistory(
+  //     min_x,
+  //     min_y,
+  //     max_x,
+  //     max_y);
+
+  //   resetSuddenObstacleHistory();
+
+  //   current_ = true;
+
+  //   // active_obstacle_cells_ 已清空，
+  //   // rm_task==2 对应检测区域会发布“无障碍”状态。
+  //   publishAreaObstacleFlag(
+  //     robot_x,
+  //     false);
+
+  //   updateFootprint(
+  //     robot_x,
+  //     robot_y,
+  //     robot_yaw,
+  //     min_x,
+  //     min_y,
+  //     max_x,
+  //     max_y);
+
+  //   return;
+  // }
 
   auto publish_voxel_grid = [&] ()
     {
@@ -667,6 +823,7 @@ void IntensityVoxelLayer::updateBounds(
 
   if (suppress_dynamic_map) {
     current_ = true;
+    publishAreaObstacleFlag(robot_x,true);
     publish_voxel_grid();
     updateFootprint(robot_x, robot_y, robot_yaw, min_x, min_y, max_x, max_y);
     return;
@@ -780,7 +937,14 @@ void IntensityVoxelLayer::updateBounds(
       const double pz = *it_z;
       const double relative_height = *it_i;
       const double gradient = *it_gradient;
-
+      if (
+        clear_forced_area &&
+        isInForcedDynamicObstacleArea(
+          px,
+          py))
+      {
+        continue;
+      }
       if (
         !std::isfinite(px) ||
         !std::isfinite(py) ||
@@ -871,11 +1035,68 @@ void IntensityVoxelLayer::updateBounds(
   constexpr double debug_radius_sq =
     debug_radius * debug_radius;
 
+  // ========================================================================
+  // 距离自适应条件：
+  //   <= 3m：保持原始点数要求；
+  //   3~8m：线性降低；
+  //   >= 8m：簇只需要1个符合前置条件的候选点。
+  //
+  // 注意：clusterCandidatePoints() 必须先保留单点簇，否则8m外的单点
+  // 会在进入距离自适应判定之前就被直接丢弃。
+  // ========================================================================
+  constexpr double kAdaptiveNearRange = 5.0;
+  constexpr double kAdaptiveFarRange = 10.0;
+  constexpr double kFarHoldTimeBonus = 0.4;
+
+  auto distance_adaptation_ratio =
+    [&] (double range)
+    {
+      if (!std::isfinite(range)) {
+        return 0.0;
+      }
+
+      return clamp01(
+        (range - kAdaptiveNearRange) /
+        std::max(
+          1e-6,
+          kAdaptiveFarRange -
+          kAdaptiveNearRange));
+    };
+
+  auto interpolate_required_points =
+    [&] (int near_required, double range)
+    {
+      const double ratio =
+        distance_adaptation_ratio(range);
+
+      const double interpolated =
+        static_cast<double>(near_required) +
+        ratio *
+        (1.0 -
+        static_cast<double>(near_required));
+
+      return std::max(
+        1,
+        static_cast<int>(
+          std::lround(interpolated)));
+    };
+
+  auto obstacle_hold_time_for_range =
+    [&] (double range)
+    {
+      return obstacle_hold_time_ +
+        kFarHoldTimeBonus *
+        distance_adaptation_ratio(range);
+    };
+
   std::vector<std::vector<std::size_t>> point_clusters;
+
+  // 必须传1，确保远距离单点簇不会提前被删除。
+  // 真正的最小点数在后面对每个簇按距离计算。
   clusterCandidatePoints(
     candidate_points,
     point_clusters,
-    soft_min_cluster_points_);
+    1);
 
   // 当前帧被硬簇或高分软簇接受的二维栅格。
   std::unordered_set<unsigned int> accepted_columns;
@@ -913,6 +1134,7 @@ void IntensityVoxelLayer::updateBounds(
     double soft_gradient_sum = 0.0;
     double soft_range_sum = 0.0;
     double soft_height_sum = 0.0;
+    double cluster_range_sum = 0.0;
 
     bool in_debug_region = false;
     // bool contains_debug_target = false;
@@ -924,6 +1146,7 @@ void IntensityVoxelLayer::updateBounds(
       const auto & point = candidate_points[point_index];
 
       cluster_columns.insert(point.column_idx);
+      cluster_range_sum += point.range;
 
       // 判断该点是否位于(2.81, 0.30)附近0.5m内
       const double debug_dx =
@@ -952,18 +1175,52 @@ void IntensityVoxelLayer::updateBounds(
       }
     }
 
-    // 硬通道：簇总点数足够，并且大梯度点数足够。
-    const bool hard_cluster_pass =
-      static_cast<int>(cluster.size()) >= min_cluster_points_ &&
-      hard_gradient_count >= cluster_hard_evidence_min_points_;
-
-    if (hard_cluster_pass) {
-      accepted_columns.insert(cluster_columns.begin(), cluster_columns.end());
+    if (cluster.empty()) {
       continue;
     }
 
-    // 硬条件没有通过时，中梯度点才进入软簇评分。
-    if (soft_point_count <= 0) {
+    const double avg_cluster_range =
+      cluster_range_sum /
+      static_cast<double>(
+        cluster.size());
+
+    // 近处保持原参数，3~8m线性下降，8m外均降为1。
+    const int required_cluster_points =
+      interpolate_required_points(
+        min_cluster_points_,
+        avg_cluster_range);
+
+    const int required_hard_evidence_points =
+      interpolate_required_points(
+        cluster_hard_evidence_min_points_,
+        avg_cluster_range);
+
+    const int required_soft_points =
+      interpolate_required_points(
+        soft_min_cluster_points_,
+        avg_cluster_range);
+
+    // 硬通道：
+    // 8m外只要当前簇中有1个大梯度候选点即可通过。
+    const bool hard_cluster_pass =
+      static_cast<int>(
+        cluster.size()) >=
+        required_cluster_points &&
+      hard_gradient_count >=
+        required_hard_evidence_points;
+
+    if (hard_cluster_pass) {
+      accepted_columns.insert(
+        cluster_columns.begin(),
+        cluster_columns.end());
+
+      continue;
+    }
+
+    // 硬条件没有通过时，中梯度点进入软评分。
+    // 软点数要求同样按距离由原值线性降到1。
+    if (soft_point_count <
+        required_soft_points) {
       continue;
     }
 
@@ -996,10 +1253,15 @@ void IntensityVoxelLayer::updateBounds(
         1e-6,
         height_score_full_ -
         min_obstacle_intensity_ ));
-    // 点数越接近原硬簇点数，分数越高。
+    // 点数得分也使用距离自适应要求。
+    // 8m外 required_cluster_points=1，因此单个有效软点的point_score可达到1。
     const double point_score = clamp01(
-      static_cast<double>(soft_point_count) /
-      static_cast<double>(std::max(1, min_cluster_points_)));
+      static_cast<double>(
+        soft_point_count) /
+      static_cast<double>(
+        std::max(
+          1,
+          required_cluster_points)));
 
     // 越靠近车辆分数越高，用于补偿近处可能扫不到完整斜面。
     const double near_score = clamp01(
@@ -1318,9 +1580,27 @@ void IntensityVoxelLayer::updateBounds(
   // ========================================================================
   // 6. 只根据obstacle_hold_time_删除；保持期内每帧重新写入costmap。
   // ========================================================================
-  for (auto it = active_obstacle_cells_.begin(); it != active_obstacle_cells_.end(); ) {
+  for (
+    auto it =
+      active_obstacle_cells_.begin();
+    it != active_obstacle_cells_.end();)
+  {
+    const double obstacle_range =
+      std::hypot(
+        it->wx - robot_x,
+        it->wy - robot_y);
+
+    // <=3m使用原保持时间；
+    // 3~8m线性增加；
+    // >=8m固定为原保持时间 + 0.5s。
+    const double effective_hold_time =
+      obstacle_hold_time_for_range(
+        obstacle_range);
+
     const bool expired =
-      now_sec - it->last_hit_time > obstacle_hold_time_;
+      now_sec -
+      it->last_hit_time >
+      effective_hold_time;
 
     if (expired) {
       // 把旧位置加入更新边界，保证master costmap能清掉已经过期的障碍。
@@ -1370,7 +1650,9 @@ void IntensityVoxelLayer::updateBounds(
       point.mz,
       mark_threshold_);
   }
-
+  publishAreaObstacleFlag(
+    robot_x,
+    false);
   publish_voxel_grid();
   updateFootprint(robot_x, robot_y, robot_yaw, min_x, min_y, max_x, max_y);
 }
@@ -1700,6 +1982,562 @@ void IntensityVoxelLayer::resetSuddenObstacleHistory()
   obstacle_cell_temporal_states_.clear();
 }
 
+void IntensityVoxelLayer::updateCosts(
+  nav2_costmap_2d::Costmap2D & master_grid,
+  int min_i, int min_j,
+  int max_i, int max_j)
+{
+  // 先按ObstacleLayer原有逻辑，把本层动态/静态障碍合并到master costmap。
+  ObstacleLayer::updateCosts(
+    master_grid,
+    min_i, min_j,
+    max_i, max_j);
+
+  // 固定软代价区域，坐标均为map系。
+  constexpr double kAreaMinX = 11.5;
+  constexpr double kAreaMaxX = 13.5;
+  constexpr double kAreaMinY = -4.5;
+  constexpr double kAreaMaxY = 2.0;
+  constexpr unsigned char kAdditionalCost = 150;
+
+  if (min_i >= max_i || min_j >= max_j) {
+    return;
+  }
+
+  const double map_min_x = master_grid.getOriginX();
+  const double map_min_y = master_grid.getOriginY();
+  const double resolution = master_grid.getResolution();
+  const int map_size_x = static_cast<int>(master_grid.getSizeInCellsX());
+  const int map_size_y = static_cast<int>(master_grid.getSizeInCellsY());
+  const double map_max_x =
+    map_min_x + static_cast<double>(map_size_x) * resolution;
+  const double map_max_y =
+    map_min_y + static_cast<double>(map_size_y) * resolution;
+
+  // 矩形完全不在当前costmap窗口内时直接返回。
+  if (
+    kAreaMaxX <= map_min_x ||
+    kAreaMinX >= map_max_x ||
+    kAreaMaxY <= map_min_y ||
+    kAreaMinY >= map_max_y)
+  {
+    return;
+  }
+
+  // 先计算一个略宽的索引包围盒，随后再用栅格中心的世界坐标精确判断。
+  const int area_start_i = std::clamp(
+    static_cast<int>(std::floor((kAreaMinX - map_min_x) / resolution)),
+    0,
+    map_size_x);
+  const int area_end_i = std::clamp(
+    static_cast<int>(std::ceil((kAreaMaxX - map_min_x) / resolution)),
+    0,
+    map_size_x);
+  const int area_start_j = std::clamp(
+    static_cast<int>(std::floor((kAreaMinY - map_min_y) / resolution)),
+    0,
+    map_size_y);
+  const int area_end_j = std::clamp(
+    static_cast<int>(std::ceil((kAreaMaxY - map_min_y) / resolution)),
+    0,
+    map_size_y);
+
+  const int start_i = std::max(min_i, area_start_i);
+  const int end_i = std::min(max_i, area_end_i);
+  const int start_j = std::max(min_j, area_start_j);
+  const int end_j = std::min(max_j, area_end_j);
+
+  if (start_i >= end_i || start_j >= end_j) {
+    return;
+  }
+
+  // 253为INSCRIBED_INFLATED_OBSTACLE，254为LETHAL_OBSTACLE。
+  // 因此把增加后的非障碍代价封顶到252，确保不会因+20变成障碍栅格。
+  constexpr int kMaxTraversableCost =
+    static_cast<int>(INSCRIBED_INFLATED_OBSTACLE) - 1;
+
+  for (int my = start_j; my < end_j; ++my) {
+    for (int mx = start_i; mx < end_i; ++mx) {
+      double wx = 0.0;
+      double wy = 0.0;
+      master_grid.mapToWorld(
+        static_cast<unsigned int>(mx),
+        static_cast<unsigned int>(my),
+        wx,
+        wy);
+
+      // 只修改栅格中心落在指定矩形内的栅格。
+      if (
+        wx < kAreaMinX || wx > kAreaMaxX ||
+        wy < kAreaMinY || wy > kAreaMaxY)
+      {
+        continue;
+      }
+
+      const unsigned char old_cost = master_grid.getCost(
+        static_cast<unsigned int>(mx),
+        static_cast<unsigned int>(my));
+
+      // 未知区域保持未知；已有障碍和内切膨胀障碍保持原值。
+      if (
+        old_cost == NO_INFORMATION ||
+        old_cost >= INSCRIBED_INFLATED_OBSTACLE)
+      {
+        continue;
+      }
+
+      const int boosted_cost = std::min(
+        kMaxTraversableCost,
+        static_cast<int>(old_cost) +
+        static_cast<int>(kAdditionalCost));
+
+      master_grid.setCost(
+        static_cast<unsigned int>(mx),
+        static_cast<unsigned int>(my),
+        static_cast<unsigned char>(boosted_cost));
+    }
+  }
+}
+
+void IntensityVoxelLayer::publishAreaObstacleFlag(
+  double robot_x,
+  bool force_zero)
+{
+  if (!area_obstacle_flag_pub_) {
+    return;
+  }
+
+  std_msgs::msg::Int32 flag_msg;
+  flag_msg.data = 0;
+
+  if (force_zero) {
+    area_obstacle_flag_pub_->publish(flag_msg);
+    return;
+  }
+
+  const int rm_task =
+    rm_task_.load(
+      std::memory_order_relaxed);
+
+  bool area_configured = false;
+
+  double area_min_x = 0.0;
+  double area_max_x = 0.0;
+  double area_min_y = 0.0;
+  double area_max_y = 0.0;
+
+  if (rm_task == 1) {
+    area_configured = true;
+    if (robot_x >= 10.0) {
+      // 两个对角点：
+      // (20.1, 6.4)
+      // (19.2, 5.3)
+      area_min_x = 19.2;
+      area_max_x = 20.1;
+      area_min_y = 5.3;
+      area_max_y = 6.4;
+
+      area_configured = true;
+    } 
+    // else if (robot_x < 10.0) {
+    //   // 两个对角点：
+    //   // (1.2, -6.4)
+    //   // (0.3, -7.5)
+    //   area_min_x = 0.3;
+    //   area_max_x = 1.2;
+    //   area_min_y = -7.5;
+    //   area_max_y = -6.4;
+
+    //   area_configured = true;
+    // }
+  }
+
+  else if (rm_task == 2) {
+    area_configured = true;
+    if (robot_x >= 10.0) {
+      // TODO：填写 rm_task==2 且 robot_x>10 时的区域。
+      //
+      area_min_x = 15.5;
+      area_max_x = 16.3;
+      area_min_y = 3.0;
+      area_max_y = 4.2;
+      area_configured = true;
+    } 
+    // else if (robot_x < 10.0) {
+    //   // TODO：填写 rm_task==2 且 robot_x<10 时的区域。
+    //   //
+    //   area_min_x = 4.0;
+    //   area_max_x = 5.0;
+    //   area_min_y = -4.8;
+    //   area_max_y = -3.8;
+    //   area_configured = true;
+    // }
+  }
+
+  // 以下情况发布0：
+  // 1. rm_task不是1或2；
+  // 3. rm_task==2但区域尚未填写。
+  if (!area_configured) {
+    area_obstacle_flag_pub_->publish(flag_msg);
+    return;
+  }
+  flag_msg.data = 1;
+  constexpr std::size_t
+    kMinimumObstacleCellCount = 2;
+
+  std::size_t obstacle_cell_count = 0;
+
+  // active_obstacle_cells_ 中保存的是：
+  // 1. 已通过点云过滤和聚类的动态障碍；
+  // 2. 仍在 obstacle_hold_time 保持期内的障碍；
+  // 3. 障碍中心的世界坐标 wx、wy。
+  for (const auto & cell :
+    active_obstacle_cells_)
+  {
+    const bool inside_area =
+      cell.wx >= area_min_x &&
+      cell.wx <= area_max_x &&
+      cell.wy >= area_min_y &&
+      cell.wy <= area_max_y;
+
+    if (!inside_area) {
+      continue;
+    }
+
+    ++obstacle_cell_count;
+
+    if (
+      obstacle_cell_count >=
+      kMinimumObstacleCellCount)
+    {
+      flag_msg.data = 2;
+      break;
+    }
+  }
+
+  area_obstacle_flag_pub_->publish(
+    flag_msg);
+}
+bool IntensityVoxelLayer::isInForcedDynamicObstacleArea(
+  double wx,
+  double wy) const
+{
+  // 右上区域：
+  // (19.0, 6.6)
+  // (16.6, 5.2)
+  const bool in_upper_area =
+    wx >= 16.6 &&
+    wx <= 19.0 &&
+    wy >= 5.2 &&
+    wy <= 6.6;
+
+  // 左下区域：
+  // (3.9, -6.4)
+  // (1.4, -7.7)
+  const bool in_lower_area =
+    wx >= 1.4 &&
+    wx <= 3.9 &&
+    wy >= -7.7 &&
+    wy <= -6.4;
+
+  return in_upper_area || in_lower_area;
+}
+
+
+bool IntensityVoxelLayer::isInDynamicClearTriggerArea(
+  double robot_x,
+  double robot_y) const
+{
+  // 右上清障触发区域：
+  // (16.7, 6.6)
+  // (14.6, 5.1)
+  const bool in_upper_trigger =
+    robot_x >= 14.6 &&
+    robot_x <= 16.7 &&
+    robot_y >= 5.1 &&
+    robot_y <= 6.6;
+
+  // 左下清障触发区域：
+  // (5.9, -6.4)
+  // (3.9, -7.7)
+  const bool in_lower_trigger =
+    robot_x >= 3.9 &&
+    robot_x <= 5.9 &&
+    robot_y >= -7.7 &&
+    robot_y <= -6.4;
+
+  return in_upper_trigger || in_lower_trigger;
+}
+void IntensityVoxelLayer::updateForcedDynamicObstacleAreas(
+  bool mark_as_obstacle,
+  double * min_x,
+  double * min_y,
+  double * max_x,
+  double * max_y)
+{
+  auto process_rectangle =
+    [&](
+      double rect_min_x,
+      double rect_min_y,
+      double rect_max_x,
+      double rect_max_y)
+    {
+      const double min_wx =
+        std::min(rect_min_x, rect_max_x);
+
+      const double max_wx =
+        std::max(rect_min_x, rect_max_x);
+
+      const double min_wy =
+        std::min(rect_min_y, rect_max_y);
+
+      const double max_wy =
+        std::max(rect_min_y, rect_max_y);
+
+      // 无论现在是写障碍还是清障碍，
+      // 都要把这个区域加入本帧更新范围。
+      //
+      // 这样 rm_task 从0/2切换到1时，
+      // master costmap 才会立即把原来的强制障碍清掉。
+      touch(
+        min_wx,
+        min_wy,
+        min_x,
+        min_y,
+        max_x,
+        max_y);
+
+      touch(
+        max_wx,
+        max_wy,
+        min_x,
+        min_y,
+        max_x,
+        max_y);
+
+      if (!mark_as_obstacle) {
+        return;
+      }
+
+      if (size_x_ == 0 || size_y_ == 0) {
+        return;
+      }
+
+      const double map_max_x =
+        origin_x_ +
+        static_cast<double>(size_x_) *
+        resolution_;
+
+      const double map_max_y =
+        origin_y_ +
+        static_cast<double>(size_y_) *
+        resolution_;
+
+      // 当前 rolling costmap 根本没有覆盖这个区域。
+      if (
+        max_wx < origin_x_ ||
+        min_wx >= map_max_x ||
+        max_wy < origin_y_ ||
+        min_wy >= map_max_y)
+      {
+        return;
+      }
+
+      const int start_x =
+        std::clamp(
+          static_cast<int>(
+            std::floor(
+              (min_wx - origin_x_) /
+              resolution_)),
+          0,
+          static_cast<int>(size_x_) - 1);
+
+      const int end_x =
+        std::clamp(
+          static_cast<int>(
+            std::floor(
+              (max_wx - origin_x_) /
+              resolution_)),
+          0,
+          static_cast<int>(size_x_) - 1);
+
+      const int start_y =
+        std::clamp(
+          static_cast<int>(
+            std::floor(
+              (min_wy - origin_y_) /
+              resolution_)),
+          0,
+          static_cast<int>(size_y_) - 1);
+
+      const int end_y =
+        std::clamp(
+          static_cast<int>(
+            std::floor(
+              (max_wy - origin_y_) /
+              resolution_)),
+          0,
+          static_cast<int>(size_y_) - 1);
+
+      for (int mx = start_x; mx <= end_x; ++mx) {
+        for (int my = start_y; my <= end_y; ++my) {
+          double wx = 0.0;
+          double wy = 0.0;
+
+          mapToWorld(
+            static_cast<unsigned int>(mx),
+            static_cast<unsigned int>(my),
+            wx,
+            wy);
+
+          // 用栅格中心再次判断，
+          // 防止边缘多写一圈。
+          if (
+            wx < min_wx ||
+            wx > max_wx ||
+            wy < min_wy ||
+            wy > max_wy)
+          {
+            continue;
+          }
+
+          costmap_[
+            getIndex(
+              static_cast<unsigned int>(mx),
+              static_cast<unsigned int>(my))]
+            = LETHAL_OBSTACLE;
+        }
+      }
+    };
+
+  process_rectangle(
+    17.0,
+    5.2,
+    18.3,
+    6.6);
+
+  process_rectangle(
+    1.9,
+    -7.7,
+    3.6,
+    -6.4);
+}
+void IntensityVoxelLayer::clearDynamicObstacleHistoryInForcedAreas(
+  double * min_x,
+  double * min_y,
+  double * max_x,
+  double * max_y)
+{
+  const double expand_distance =
+    obstacle_expand_size_ *
+    resolution_;
+
+  for (
+    auto it =
+      active_obstacle_cells_.begin();
+    it != active_obstacle_cells_.end();)
+  {
+    if (
+      !isInForcedDynamicObstacleArea(
+        it->wx,
+        it->wy))
+    {
+      ++it;
+      continue;
+    }
+
+    touch(
+      it->wx - expand_distance,
+      it->wy - expand_distance,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    touch(
+      it->wx + expand_distance,
+      it->wy + expand_distance,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    it =
+      active_obstacle_cells_.erase(it);
+  }
+}
+void IntensityVoxelLayer::clearDynamicObstacleHistoryOutsideForcedAreas(
+  double * min_x,
+  double * min_y,
+  double * max_x,
+  double * max_y)
+{
+  const double expand_distance =
+    obstacle_expand_size_ *
+    resolution_;
+
+  for (
+    auto it =
+      active_obstacle_cells_.begin();
+    it != active_obstacle_cells_.end();)
+  {
+    // 两个特殊区域里的障碍保留。
+    if (
+      isInForcedDynamicObstacleArea(
+        it->wx,
+        it->wy))
+    {
+      ++it;
+      continue;
+    }
+
+    touch(
+      it->wx - expand_distance,
+      it->wy - expand_distance,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    touch(
+      it->wx + expand_distance,
+      it->wy + expand_distance,
+      min_x,
+      min_y,
+      max_x,
+      max_y);
+
+    it =
+      active_obstacle_cells_.erase(it);
+  }
+
+  // 当前帧voxel同样清掉。
+  voxel_grid_.reset();
+}
+bool IntensityVoxelLayer::isInForcedAreaClearTriggerRegion(
+  double robot_x,
+  double robot_y) const
+{
+  // 左下区域：
+  // (0.2, -7.7)
+  // (3.9, -6.3)
+  const bool in_lower_region =
+    robot_x >= 0.2 &&
+    robot_x <= 3.9 &&
+    robot_y >= -7.7 &&
+    robot_y <= -6.3;
+
+  // 右上区域：
+  // (16.6, 5.0)
+  // (20.6, 6.8)
+  const bool in_upper_region =
+    robot_x >= 16.6 &&
+    robot_x <= 20.6 &&
+    robot_y >= 5.0 &&
+    robot_y <= 6.8;
+
+  return in_lower_region || in_upper_region;
+}
 }  // namespace xx_nav2_costmap_2d
 
 PLUGINLIB_EXPORT_CLASS(

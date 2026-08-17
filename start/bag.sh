@@ -29,13 +29,27 @@ BAG_OUTPUT_NAME="${BAG_FULL_PATH}"
 
 # 开始录制 ros2 bag
 echo "开始录制 bag 文件，保存路径：${BAG_OUTPUT_NAME}"
-echo "录制的话题：/livox/lidar /livox/imu"
-ros2 bag record -o "${BAG_OUTPUT_NAME}" /livox/lidar /livox/imu
 
-# 录制结束提示
-if [ $? -eq 0 ]; then
-    echo "Bag 录制完成，文件已保存至：${BAG_FULL_PATH}"
-else
-    echo "Bag 录制过程中出现错误！"
-    exit 1
-fi
+cleanup()
+{
+    echo ""
+    echo "正在停止 ros2 bag..."
+    kill -SIGINT "$ROS2_BAG_PID"
+    wait "$ROS2_BAG_PID"
+
+    echo "Bag 已安全保存"
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+
+ros2 bag record \
+    -o "${BAG_OUTPUT_NAME}" \
+    /livox/lidar \
+    /livox/imu &
+
+
+ROS2_BAG_PID=$!
+
+wait "$ROS2_BAG_PID"

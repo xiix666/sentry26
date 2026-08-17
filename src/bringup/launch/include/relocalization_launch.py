@@ -168,17 +168,6 @@ def generate_launch_description():
         ],
     )
 
-    icp_node = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(launch_dir, "include", "icp_launch.py")
-        ),
-    )
-
-    delayed_icp_node = TimerAction(
-        period=5.0,  # 延迟启动
-        actions=[icp_node]
-    )
-
     # load_composable_nodes = LoadComposableNodes(
     #     condition=IfCondition(use_composition),
     #     target_container=container_name_full,
@@ -187,12 +176,6 @@ def generate_launch_description():
     #             package="nav2_map_server",
     #             plugin="nav2_map_server::MapServer",
     #             name="map_server",
-    #             parameters=[configured_params],
-    #         ),
-    #         ComposableNode(
-    #             package="icp_registration",
-    #             executable="icp_registration_node",
-    #             name="icp_registration_node",
     #             parameters=[configured_params],
     #         ),
     #         ComposableNode(
@@ -257,7 +240,6 @@ def generate_launch_description():
     # ld.add_action(start_livox_ros_driver2_node)
     # ld.add_action(start_point_lio_node)
     ld.add_action(start_static_transform_node)
-    # ld.add_action(delayed_icp_node)
     ld.add_action(load_nodes)
     # ld.add_action(load_composable_nodes)
 

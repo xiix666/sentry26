@@ -114,6 +114,9 @@ float terrainVoxelUpdateTime2[kTerrainVoxelNum2] = {0};
 // 平面体素相关
 float planarVoxelElev[kPlanarVoxelNum] = {0};
 int planarVoxelConn[kPlanarVoxelNum] = {0};
+
+bool planarVoxelHasPoint[kPlanarVoxelNum] = {false};
+
 std::vector<float> planarPointElev[kPlanarVoxelNum];
 std::queue<int> planarVoxelQueue;
 
@@ -496,12 +499,16 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
   }
 
   // 6. 计算平面体素高度
-  for (int i = 0; i < kPlanarVoxelNum; i++) {
-    planarVoxelElev[i] = 0;
+  for (int i = 0; i < kPlanarVoxelNum; ++i) {
+    planarVoxelElev[i] = 0.0F;
     planarVoxelConn[i] = 0;
-    planarPointElev[i].clear();
+    planarVoxelHasPoint[i] = false;
+
+    if (useSorting) {
+      planarPointElev[i].clear();
+    }
   }
-  
+    
   // int terrainCloudSize = terrainCloud->points.size();
   for (int i = 0; i < terrainCloudSize; i++) {
     point = terrainCloud->points[i];
@@ -516,13 +523,36 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
         indX--;
       if (point.y - cloudVehicleY + planarVoxelSize / 2 < 0)
         indY--;
-      if(point.z-cloudVehicleZ > lowerBoundZ && point.z-cloudVehicleZ < upperBoundZ){
-        for (int dX = -1; dX <= 1; dX++) {
-          for (int dY = -1; dY <= 1; dY++) {
-            if (indX + dX >= 0 && indX + dX < planarVoxelWidth &&
-                indY + dY >= 0 && indY + dY < planarVoxelWidth) {
-              planarPointElev[planarVoxelWidth * (indX + dX) + indY + dY].push_back(point.z);
+      if (point.z - cloudVehicleZ > lowerBoundZ &&
+          point.z - cloudVehicleZ < upperBoundZ && std::isfinite(point.z)) {
+        for (int dX = -1; dX <= 1; ++dX) {
+          for (int dY = -1; dY <= 1; ++dY) {
+            const int voxel_x = indX + dX;
+            const int voxel_y = indY + dY;
+
+            if (voxel_x < 0 || voxel_x >= planarVoxelWidth ||
+                voxel_y < 0 || voxel_y >= planarVoxelWidth) {
+              continue;
             }
+
+            const int voxel_index =
+              planarVoxelWidth * voxel_x + voxel_y;
+
+            if (useSorting) {
+              planarPointElev[voxel_index].push_back(point.z);
+            } else {
+              // 非排序模式直接维护最小高度。
+              if (!planarVoxelHasPoint[voxel_index]) {
+                planarVoxelElev[voxel_index] = point.z;
+              } else {
+                planarVoxelElev[voxel_index] =
+                  std::min(
+                    planarVoxelElev[voxel_index],
+                    point.z);
+              }
+            }
+
+            planarVoxelHasPoint[voxel_index] = true;
           }
         }
       }
@@ -612,36 +642,37 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
           minimum_z +
             kMaxRiseFromMinimum);
     }
-  } else {
-    for (int i = 0; i < kPlanarVoxelNum; ++i) {
-      const int point_count =
-        static_cast<int>(
-          planarPointElev[i].size());
+  } 
+  // else {
+  //   for (int i = 0; i < kPlanarVoxelNum; ++i) {
+  //     const int point_count =
+  //       static_cast<int>(
+  //         planarPointElev[i].size());
 
-      if (point_count <= 0) {
-        continue;
-      }
+  //     if (point_count <= 0) {
+  //       continue;
+  //     }
 
-      float min_z =
-        std::numeric_limits<float>::max();
+  //     float min_z =
+  //       std::numeric_limits<float>::max();
 
-      for (const float z :
-        planarPointElev[i])
-      {
-        if (std::isfinite(z)) {
-          min_z =
-            std::min(
-              min_z,
-              z);
-        }
-      }
+  //     for (const float z :
+  //       planarPointElev[i])
+  //     {
+  //       if (std::isfinite(z)) {
+  //         min_z =
+  //           std::min(
+  //             min_z,
+  //             z);
+  //       }
+  //     }
 
-      if (std::isfinite(min_z)) {
-        planarVoxelElev[i] =
-          min_z;
-      }
-    }
-  }
+  //     if (std::isfinite(min_z)) {
+  //       planarVoxelElev[i] =
+  //         min_z;
+  //     }
+  //   }
+  // }
 
   // 8. 地形连通性检测（移除天花板）
   if (checkTerrainConn) {

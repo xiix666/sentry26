@@ -2,8 +2,10 @@
 build/
 install/
 log/
+bag/
 # ROSBAG2录包文件（匹配所有日期的录包目录）
 rosbag2_*
+*.db3
 # 系统临时文件
 *.swp
 *.swo

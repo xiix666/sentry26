@@ -31,18 +31,87 @@ ThetaStar::ThetaStar()
   exp_node = new tree_node;
 }
 
+// void ThetaStar::setStartAndGoal(
+//   const geometry_msgs::msg::PoseStamped & start,
+//   const geometry_msgs::msg::PoseStamped & goal)
+// {
+//   unsigned int s[2], d[2];
+//   costmap_->worldToMap(start.pose.position.x, start.pose.position.y, s[0], s[1]);
+//   costmap_->worldToMap(goal.pose.position.x, goal.pose.position.y, d[0], d[1]);
+
+//   src_ = {static_cast<int>(s[0]), static_cast<int>(s[1])};
+//   dst_ = {static_cast<int>(d[0]), static_cast<int>(d[1])};
+// }
 void ThetaStar::setStartAndGoal(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & goal)
 {
-  unsigned int s[2], d[2];
-  costmap_->worldToMap(start.pose.position.x, start.pose.position.y, s[0], s[1]);
-  costmap_->worldToMap(goal.pose.position.x, goal.pose.position.y, d[0], d[1]);
+  unsigned int s[2];
+  unsigned int d[2];
 
-  src_ = {static_cast<int>(s[0]), static_cast<int>(s[1])};
-  dst_ = {static_cast<int>(d[0]), static_cast<int>(d[1])};
+  costmap_->worldToMap(
+    start.pose.position.x,
+    start.pose.position.y,
+    s[0],
+    s[1]);
+
+  costmap_->worldToMap(
+    goal.pose.position.x,
+    goal.pose.position.y,
+    d[0],
+    d[1]);
+
+  src_ = {static_cast<int>(s[0]),static_cast<int>(s[1])};
+
+  dst_ = {static_cast<int>(d[0]),static_cast<int>(d[1])};
+
+  // ============================================================
+  // 区域1
+  // 起点或者目标点在区域1内，本轮才允许经过区域1
+  // ============================================================
+  const bool start_inside_area1 =
+    isInsideConditionalAreaWorld(
+      start.pose.position.x,
+      start.pose.position.y,
+      conditional_area_min_x_,
+      conditional_area_max_x_,
+      conditional_area_min_y_,
+      conditional_area_max_y_);
+
+  const bool goal_inside_area1 =
+    isInsideConditionalAreaWorld(
+      goal.pose.position.x,
+      goal.pose.position.y,
+      conditional_area_min_x_,
+      conditional_area_max_x_,
+      conditional_area_min_y_,
+      conditional_area_max_y_);
+
+  conditional_area_allowed_for_plan_ =
+    start_inside_area1 ||
+    goal_inside_area1;
+  const bool start_inside_area2 =
+    isInsideConditionalAreaWorld(
+      start.pose.position.x,
+      start.pose.position.y,
+      conditional_area2_min_x_,
+      conditional_area2_max_x_,
+      conditional_area2_min_y_,
+      conditional_area2_max_y_);
+
+  const bool goal_inside_area2 =
+    isInsideConditionalAreaWorld(
+      goal.pose.position.x,
+      goal.pose.position.y,
+      conditional_area2_min_x_,
+      conditional_area2_max_x_,
+      conditional_area2_min_y_,
+      conditional_area2_max_y_);
+  // std::cout << goal_inside_area2 << std::endl;
+  conditional_area2_allowed_for_plan_ =
+    start_inside_area2 ||
+    goal_inside_area2;
 }
-
 bool ThetaStar::generatePath(std::vector<coordsW> & raw_path)
 {
   resetContainers();
@@ -338,6 +407,141 @@ bool ThetaStar::findNearestFreeCell(
       return true;
     }
   }
+
+  return false;
+}
+void ThetaStar::setConditionalForbiddenArea(
+  bool enabled,
+  double x1,
+  double y1,
+  double x2,
+  double y2)
+{
+  conditional_area_enabled_ = enabled;
+
+  conditional_area_min_x_ = std::min(x1, x2);
+  conditional_area_max_x_ = std::max(x1, x2);
+  conditional_area_min_y_ = std::min(y1, y2);
+  conditional_area_max_y_ = std::max(y1, y2);
+}
+
+bool ThetaStar::isInsideConditionalAreaWorld(
+  double wx,
+  double wy,
+  double min_x,
+  double max_x,
+  double min_y,
+  double max_y) const
+{
+  if (!conditional_area_enabled_) {
+    return false;
+  }
+
+  return
+    wx >= min_x &&
+    wx <= max_x &&
+    wy >= min_y &&
+    wy <= max_y;
+}
+
+bool ThetaStar::isConditionalAreaBlockedCell(
+  int mx,
+  int my) const
+{
+  if (!conditional_area_enabled_) {
+    return false;
+  }
+
+  if (
+    mx < 0 ||
+    my < 0 ||
+    mx >= static_cast<int>(
+      costmap_->getSizeInCellsX()) ||
+    my >= static_cast<int>(
+      costmap_->getSizeInCellsY()))
+  {
+    return false;
+  }
+
+  double wx = 0.0;
+  double wy = 0.0;
+
+  costmap_->mapToWorld(
+    static_cast<unsigned int>(mx),
+    static_cast<unsigned int>(my),
+    wx,
+    wy);
+
+  // 使用整个栅格和禁行区域是否相交判断，
+  // 防止沿矩形边界擦过去。
+  const double half_cell =
+    0.5 * costmap_->getResolution();
+
+  const double cell_min_x =
+    wx - half_cell;
+
+  const double cell_max_x =
+    wx + half_cell;
+
+  const double cell_min_y =
+    wy - half_cell;
+
+  const double cell_max_y =
+    wy + half_cell;
+
+
+  auto cellIntersectsArea =
+    [&](
+      double area_min_x,
+      double area_max_x,
+      double area_min_y,
+      double area_max_y)
+    {
+      return
+        cell_max_x >= area_min_x &&
+        cell_min_x <= area_max_x &&
+        cell_max_y >= area_min_y &&
+        cell_min_y <= area_max_y;
+    };
+
+
+  // ============================================================
+  // 区域1
+  //
+  // 只有起点或目标位于区域1时，
+  // 才允许规划路径经过区域1。
+  // ============================================================
+  if (
+    !conditional_area_allowed_for_plan_ &&
+    cellIntersectsArea(
+      conditional_area_min_x_,
+      conditional_area_max_x_,
+      conditional_area_min_y_,
+      conditional_area_max_y_))
+  {
+    return true;
+  }
+
+
+  // ============================================================
+  // 区域2
+  //
+  // (19.0,-1.2) ~ (20.7,0.8)
+  //
+  // 只有起点或目标位于区域2时，
+  // 才允许规划路径经过区域2。
+  // ============================================================
+  if (
+    !conditional_area2_allowed_for_plan_ &&
+    cellIntersectsArea(
+      conditional_area2_min_x_,
+      conditional_area2_max_x_,
+      conditional_area2_min_y_,
+      conditional_area2_max_y_))
+  {
+    return true;
+  }
+
 
   return false;
 }

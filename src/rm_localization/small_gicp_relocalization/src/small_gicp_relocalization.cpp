@@ -47,6 +47,14 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("min_accumulated_points", 3000); // 累积至少多少个点
   this->declare_parameter("max_accumulation_time_sec", 3.0); // 最多累计时间
 
+  this->declare_parameter(
+    "max_relocalization_points",
+    100000);
+
+  this->declare_parameter(
+    "max_relocalization_scans",
+    50);
+
   this->get_parameter("num_threads", num_threads_);
   this->get_parameter("num_neighbors", num_neighbors_);
   this->get_parameter("global_leaf_size", global_leaf_size_);
@@ -62,6 +70,28 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("min_accumulated_scans", min_accumulated_scans_);
   this->get_parameter("min_accumulated_points", min_accumulated_points_);
   this->get_parameter("max_accumulation_time_sec", max_accumulation_time_sec_);
+  this->get_parameter(
+    "max_relocalization_points",
+    tmp_points);
+  max_relocalization_points_ =
+    static_cast<std::size_t>(tmp_points);
+  this->get_parameter(
+    "max_relocalization_scans",
+    max_relocalization_scans_);
+  // 新增：声明固定偏置参数（默认x+0.1m，可在launch中修改）
+  this->declare_parameter("fixed_bias_x", 0.0);
+  this->declare_parameter("fixed_bias_y", 0.0);
+  this->declare_parameter("fixed_bias_z", 0.0);
+
+  // 读取参数
+  double bias_x, bias_y, bias_z;
+  this->get_parameter("fixed_bias_x", bias_x);
+  this->get_parameter("fixed_bias_y", bias_y);
+  this->get_parameter("fixed_bias_z", bias_z);
+
+  // 初始化偏置变换（纯平移，旋转不变）
+  fixed_bias_ = Eigen::Isometry3d::Identity();
+  fixed_bias_.translation() << bias_x, bias_y, bias_z;
 
   // [x, y, z, roll, pitch, yaw] - init_pose parameters
   if (!init_pose_.empty() && init_pose_.size() >= 6) {
@@ -124,9 +154,12 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  if (initial_registration_done_) {
-    return;
-  }
+  if (
+    initial_registration_done_ ||
+    relocalization_failed_)
+    {
+      return;
+    }
   if (!accumulation_started_) {
     accumulation_started_ = true;
     accumulation_start_time_ = this->now();
@@ -145,11 +178,42 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 
   *accumulated_cloud_ += *scan;
   accumulated_scan_count_++;
+  if (
+    accumulated_cloud_->size() >
+    max_relocalization_points_ ||
+    accumulated_scan_count_ >
+    max_relocalization_scans_)
+  {
+    RCLCPP_ERROR(
+      this->get_logger(),
+      "Relocalization accumulation limit exceeded. Cancel relocalization.");
 
-  if (accumulated_cloud_->size() > 100000) {
-    RCLCPP_WARN(this->get_logger(), "Accumulated cloud too large, clearing old points.");
-    accumulated_cloud_->clear();
+    cancelRelocalization();
+
+    return;
   }
+  // if (accumulated_cloud_->size() > 100000) {
+  //   RCLCPP_WARN(this->get_logger(), "Accumulated cloud too large, clearing old points.");
+  //   accumulated_cloud_->clear();
+  // }
+}
+void SmallGicpRelocalizationNode::cancelRelocalization()
+{
+  relocalization_failed_ = true;
+
+  accumulated_cloud_->clear();
+
+  if (register_timer_) {
+    register_timer_->cancel();
+  }
+
+  if (transform_timer_) {
+    transform_timer_->cancel();
+  }
+
+  RCLCPP_ERROR(
+    this->get_logger(),
+    "Relocalization canceled.");
 }
 void SmallGicpRelocalizationNode::prepareTargetCloud()
 {
@@ -269,7 +333,7 @@ void SmallGicpRelocalizationNode::performRegistration()
     *target_tree_,
     previous_result_t_);
 
-  if (result.converged) {
+  if (result.converged || result.error < max_registration_error_) {
     result_t_ = result.T_target_source;
     previous_result_t_ = result_t_;
     initial_registration_done_ = true;
@@ -291,41 +355,37 @@ void SmallGicpRelocalizationNode::performRegistration()
       register_timer_->cancel();
     }
   } else {
-    initial_registration_done_ = false;
 
     RCLCPP_ERROR(
       this->get_logger(),
-      "Initial GICP failed. No TF will be published. Stop relocalization.");
+      "Initial GICP failed. Disable relocalization.");
 
-    accumulated_cloud_->clear();
+    cancelRelocalization();
 
-    if (register_timer_) {
-      register_timer_->cancel();
-    }
-
-    if (transform_timer_) {
-      transform_timer_->cancel();
-    }
   }
 }
+
 void SmallGicpRelocalizationNode::publishTransform()
 {
   if (!initial_registration_done_) {
     return;
   }
 
+  // 叠加固定偏置：左乘 = 在父坐标系(odom_init)下偏移
+  Eigen::Isometry3d final_tf = fixed_bias_ * result_t_;
+
   geometry_msgs::msg::TransformStamped transform_stamped;
   transform_stamped.header.stamp = this->now();
   transform_stamped.header.frame_id = map_frame_;   // odom_init
   transform_stamped.child_frame_id = odom_frame_;   // camera_init
 
-  const Eigen::Vector3d translation = result_t_.translation();
-  const Eigen::Quaterniond rotation(result_t_.rotation());
+  // 用叠加偏置后的结果赋值
+  const Eigen::Vector3d translation = final_tf.translation();
+  const Eigen::Quaterniond rotation(final_tf.rotation());
 
   transform_stamped.transform.translation.x = translation.x();
   transform_stamped.transform.translation.y = translation.y();
   transform_stamped.transform.translation.z = translation.z();
-
   transform_stamped.transform.rotation.x = rotation.x();
   transform_stamped.transform.rotation.y = rotation.y();
   transform_stamped.transform.rotation.z = rotation.z();

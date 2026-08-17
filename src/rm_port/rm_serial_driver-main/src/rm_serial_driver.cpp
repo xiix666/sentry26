@@ -1,5 +1,9 @@
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2/exceptions.h>
 
+#include <atomic>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/qos.hpp>
 #include <rclcpp/utilities.hpp>
@@ -31,7 +35,13 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(get_logger(), "Start RMSerialDriver!");
 
   getParams();
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  tf_listener_ =
+    std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
+  nav_force_area_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(50),
+    std::bind(&RMSerialDriver::updateNavForceArea, this));
   // Create Publisher
   receive_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveMsg>("/receive_pack",rclcpp::QoS(10));
   receiveLLC_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveLLC>("/receiveLLC_pack",rclcpp::QoS(10));
@@ -66,9 +76,6 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   shoot_mode_sub_ = this->create_subscription<rm_interfaces::msg::ShootMsg>(
     "/shoot_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::shootData, this, std::placeholders::_1));
-  angle_sp_sub_ = this->create_subscription<rm_interfaces::msg::AnglePubMsg>(
-    "/angle_sp", rclcpp::SensorDataQoS(),
-    std::bind(&RMSerialDriver::anglePubData, this, std::placeholders::_1));
   nav_enable_sub_ = this->create_subscription<rm_interfaces::msg::NavMsg>(
     "/nav_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::navData, this, std::placeholders::_1));
@@ -100,6 +107,16 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   outpost_sub = this->create_subscription<std_msgs::msg::Int32>(
     "/outpost_lock_lost", 10,
     std::bind(&RMSerialDriver::outpostData, this, std::placeholders::_1));
+  go_qifu_sub = this->create_subscription<std_msgs::msg::Int32>(
+    "/ally_undulation_pass", 10,
+    std::bind(&RMSerialDriver::go_qifuData, this, std::placeholders::_1));
+  aim_enable_nav_sub_ = this->create_subscription<std_msgs::msg::Int32>(
+    "/aim_enable_nav",
+    rclcpp::QoS(10),
+    std::bind(
+      &RMSerialDriver::aimEnableNavData,
+      this,
+      std::placeholders::_1));
   timer_ = this->create_wall_timer(
     std::chrono::milliseconds(10),  // 10 ms = 100 Hz
     std::bind(&RMSerialDriver::sendData, this));
@@ -257,6 +274,7 @@ void RMSerialDriver::receiveData()
           pub_pack.defence_debuff = packet.defence_debuff;
           pub_pack.attack_buff = packet.attack_buff;
           pub_pack.status_info = packet.status_info;
+          pub_pack.enemy_invincible = packet.enemy_invincible;
           receiveLLC_pub_->publish(pub_pack);
           pub_speed.x = packet.self_speed_x;
           pub_speed.y = packet.self_speed_y;
@@ -374,11 +392,6 @@ void RMSerialDriver::shootData(const rm_interfaces::msg::ShootMsg::SharedPtr msg
     shoot_mode = msg->shoot_mode;
 }
 
-void RMSerialDriver::anglePubData(const rm_interfaces::msg::AnglePubMsg::SharedPtr msg)
-{
-    angle_sp = msg->angle_sp;
-}
-
 void RMSerialDriver::navData(const rm_interfaces::msg::NavMsg::SharedPtr msg)
 {
     nav_enable = msg->nav_unable;
@@ -434,6 +447,10 @@ void RMSerialDriver::outpostData(const std_msgs::msg::Int32::SharedPtr msg)
 {
     outpost_enable = msg->data;
 }
+void RMSerialDriver::go_qifuData(const std_msgs::msg::Int32::SharedPtr msg)
+{  
+    go_qifu = msg->data;
+}
 void RMSerialDriver::sendData()
 {
   try {
@@ -467,9 +484,13 @@ void RMSerialDriver::sendData()
     packet.shoot_mode = shoot_mode;
     packet.area_status = area_status;
     // packet.spin_enable = spin_enable;
-    packet.nav_enable = nav_enable;
+    // packet.nav_enable = nav_enable;
+    const bool force_nav = force_nav_enable_.load() || aim_force_nav_enable_.load();
+
+    packet.nav_enable = force_nav ? uint8_t{1} : nav_enable.load();
     packet.sentry_stance = sentry_stance;
     packet.outpost_enable = outpost_enable;
+    packet.go_qifu = go_qifu;
     {
       std::lock_guard<std::mutex> lock(send_enemy_poses_mutex_);
       packet.send_enemy_poses = send_enemy_poses_;
@@ -592,7 +613,71 @@ void RMSerialDriver::reopenPort()
     }
   }
 }
+void RMSerialDriver::aimEnableNavData(
+  const std_msgs::msg::Int32::SharedPtr msg)
+{
+  aim_force_nav_enable_.store(msg->data == 1);
+}
+void RMSerialDriver::updateNavForceArea()
+{
+  geometry_msgs::msg::TransformStamped transform;
 
+  try {
+    // 查询 base_link 在 map 坐标系下的位置
+    transform = tf_buffer_->lookupTransform(
+      "map",
+      "base_link",
+      tf2::TimePointZero);
+  } catch (const tf2::TransformException & ex) {
+    // TF 短暂中断时保留上一次状态，避免强制标志突然解除
+    RCLCPP_WARN_THROTTLE(
+      get_logger(),
+      *get_clock(),
+      2000,
+      "Cannot lookup map -> base_link: %s",
+      ex.what());
+    return;
+  }
+
+  const double x = transform.transform.translation.x;
+  const double y = transform.transform.translation.y;
+
+  constexpr double kMinX = 12.7;
+  constexpr double kMaxX = 14.2;
+  constexpr double kMinY = 4.0;
+  constexpr double kMaxY = 5.0;
+
+  // 退出缓冲
+  constexpr double kBoundaryBuffer = 0.1;
+
+  const bool was_inside = force_nav_enable_.load();
+
+  bool now_inside = was_inside;
+
+  if (!was_inside) {
+    now_inside =
+      x >= kMinX && x <= kMaxX &&
+      y >= kMinY && y <= kMaxY;
+  } else {
+    now_inside =
+      x >= kMinX - kBoundaryBuffer &&
+      x <= kMaxX + kBoundaryBuffer &&
+      y >= kMinY - kBoundaryBuffer &&
+      y <= kMaxY + kBoundaryBuffer;
+  }
+
+  if (now_inside != was_inside) {
+    force_nav_enable_.store(now_inside);
+
+    // RCLCPP_INFO(
+    //   get_logger(),
+    //   "Nav force area %s: x=%.3f, y=%.3f, serial nav_enable=%d",
+    //   now_inside ? "ENTER" : "EXIT",
+    //   x,
+    //   y,
+    //   now_inside ? 1 : static_cast<int>(nav_enable.load()));
+  }
+}
 }  // namespace rm_serial_driver
 
 #include "rclcpp_components/register_node_macro.hpp"

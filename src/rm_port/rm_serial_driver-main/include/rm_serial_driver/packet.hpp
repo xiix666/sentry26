@@ -116,6 +116,7 @@ struct ReceivePacketUC
   float self_speed_y;
   float operator_x;              //操作手标点
   float operator_y;
+  uint8_t enemy_invincible;    //敌方无敌状态 1为无敌
   uint8_t decision_node;           
   uint16_t checksum = 0;
 } __attribute__((packed));
@@ -142,6 +143,7 @@ struct SendPacket
   uint8_t nav_enable;                                   //默认0为不导航，发1为导航
   uint8_t sentry_stance;                                //1 为进攻姿态，2 为防御姿态，3 为移动姿态，默认为 3                                  
   uint8_t outpost_enable;                                //抬头打前哨
+  uint8_t go_qifu;                                        //起伏路段通过
   std::array<std::array<float, 2>, 5> send_enemy_poses; //发给雷达补盲的消息(顺序：英雄、工程、步兵1、步兵2、哨兵)
   uint16_t checksum = 0;
 } __attribute__((packed));

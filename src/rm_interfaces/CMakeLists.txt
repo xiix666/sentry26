@@ -18,7 +18,6 @@ endif()
 rosidl_generate_interfaces(
   ${PROJECT_NAME}
   "msg/AngleMsg.msg"
-  "msg/AnglePubMsg.msg"
   "msg/CameraMsg.msg"
   "msg/EnemyDetectionMsg.msg"
   "msg/EnergyMsg.msg"

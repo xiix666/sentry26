@@ -90,8 +90,8 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/blank.yaml", description="Full path to map yaml file to load"
-        # "map", default_value="/home/rps/sentry26/src/bringup/map/map_home_new.yaml", description="Full path to map yaml file to load"
-        "map", default_value="/home/rps/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/xx/sentry26/src/bringup/map/map234.yaml", description="Full path to map yaml file to load"
+        # "map", default_value="/home/xx/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
         # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
     )                                                                                                 
 
@@ -101,13 +101,13 @@ def generate_launch_description():
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         "use_sim_time",
-        default_value="false",
+        default_value="true",
         description="Use simulation (Gazebo) clock if true",
     )
 
     declare_params_file_cmd = DeclareLaunchArgument(
         "params_file",
-        default_value=os.path.join(bringup_dir, "config", "nav_params.yaml"),
+        default_value=os.path.join(bringup_dir, "config", "nav_params_1.yaml"),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
     )
 
@@ -225,9 +225,6 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "serial_driver_launch.py")),
     )
     
-    angle_pub_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "angle_pub_launch.py")),
-    )
     omni_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "omni_perception_launch.py")),
     )
@@ -311,11 +308,10 @@ def generate_launch_description():
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)
-    # ld.add_action(angle_pub_cmd)
     ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
 
-    ld.add_action(rviz_cmd)
+    # ld.add_action(rviz_cmd)
     # ld.add_action(save_map_cmd)
     # 决策
     #ld.add_action(rm26_decision)

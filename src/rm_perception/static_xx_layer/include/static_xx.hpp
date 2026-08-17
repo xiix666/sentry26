@@ -39,6 +39,11 @@ private:
 
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr
     rm_task_sub_;
+  std::string fortress_enable_topic_{"/fortress_enable"};
+  std::atomic<int> fortress_enable_value_{0};
+
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr
+    fortress_enable_sub_;
 };
 
 }  // namespace xx_nav2_costmap_2d

@@ -49,7 +49,10 @@ void OmniPidPursuitController::configure(
   double control_frequency = 20.0;
   max_robot_pose_search_dist_ = getCostmapMaxExtent();
   // smoothed_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("/smoothed_path", 1);
-
+  declare_parameter_if_not_declared(
+    node,
+    plugin_name_ + ".rm_task_timeout_sec",
+    rclcpp::ParameterValue(0.5));
   // ========== 核心改动：添加算法选择参数 ==========
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".use_mpc_control", rclcpp::ParameterValue(false));
@@ -291,6 +294,12 @@ void OmniPidPursuitController::configure(
   node->get_parameter(plugin_name_ + ".mpc_curve_a_lat_max", mpc_curve_a_lat_max_);
   node->get_parameter(plugin_name_ + ".mpc_curve_min_speed", mpc_curve_min_speed_);
   node->get_parameter(plugin_name_ + ".mpc_curve_lookahead_dist", mpc_curve_lookahead_dist_);
+  node->get_parameter(
+  plugin_name_ + ".rm_task_timeout_sec",
+  rm_task_timeout_sec_);
+
+  rm_task_timeout_sec_ =
+    std::max(0.2, rm_task_timeout_sec_);
   // minco_tracker_ = std::make_unique<minco_nav2::MincoTracker>();
   // minco_tracker_->setParams(v_linear_max_,acc_max_,control_duration_);
   if (use_mpc_control_) {
@@ -327,12 +336,24 @@ void OmniPidPursuitController::configure(
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
 
   rm_task_sub_ = node->create_subscription<std_msgs::msg::Int32>(
-    "/rm_task",
-    10,
+  "/rm_task",
+  rclcpp::QoS(10),
   [this](const std_msgs::msg::Int32::SharedPtr msg)
   {
-    rm_task_value_.store(msg->data);
+    const int64_t receive_time_ns =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+
+    rm_task_value_.store(
+      msg->data,
+      std::memory_order_relaxed);
+
+    last_rm_task_receive_time_ns_.store(
+      receive_time_ns,
+      std::memory_order_release);
   });
+
   local_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("local_plan", 1);
   carrot_pub_ = node->create_publisher<geometry_msgs::msg::PointStamped>("lookahead_point", 1);
   curvature_points_pub_ =
@@ -474,8 +495,53 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     RCLCPP_WARN(logger_, "Carrot pose invalid (NaN/Inf), return zero vel");
     return cmd_vel;
   }
+  const int64_t now_ns =
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now().time_since_epoch())
+    .count();
 
-  const bool direct_drive_request = (rm_task_value_.load() == 1) || (rm_task_value_.load() == 2);
+  const int64_t last_receive_ns =
+    last_rm_task_receive_time_ns_.load(
+      std::memory_order_acquire);
+
+  const int64_t timeout_ns =
+    static_cast<int64_t>(
+      rm_task_timeout_sec_ * 1e9);
+
+  const bool rm_task_is_fresh =
+    last_receive_ns > 0 &&
+    now_ns >= last_receive_ns &&
+    now_ns - last_receive_ns <= timeout_ns;
+
+  const int raw_rm_task =
+    rm_task_value_.load(
+      std::memory_order_relaxed);
+
+  // 超时或者从未收到消息时，本地有效任务值强制为0。
+  const int effective_rm_task =
+    rm_task_is_fresh ? raw_rm_task : 0;
+
+  if (!rm_task_is_fresh && raw_rm_task != 0) {
+    const double elapsed_sec =
+      last_receive_ns > 0 && now_ns >= last_receive_ns ?
+      static_cast<double>(now_ns - last_receive_ns) * 1e-9 :
+      -1.0;
+
+    RCLCPP_WARN_THROTTLE(
+      logger_,
+      *clock_,
+      1000,
+      "/rm_task timeout: last value=%d, elapsed=%.3f s, "
+      "timeout=%.3f s. Treat rm_task as 0.",
+      raw_rm_task,
+      elapsed_sec,
+      rm_task_timeout_sec_);
+  }
+
+  const bool direct_drive_request =
+    effective_rm_task == 1 ||
+    effective_rm_task == 2;
+  // const bool direct_drive_request = (rm_task_value_.load() == 1) || (rm_task_value_.load() == 2);
   bool direct_drive_mode = false;
 
   if (direct_drive_request) {
@@ -593,19 +659,49 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     lin_dist = std::hypot(target_x, target_y);
     theta_dist = std::atan2(target_y, target_x);
 
-    if (lin_dist > 1e-6) {
+    constexpr double kDirectSlowdownDist = 0.72;
+    constexpr double kDirectStopDist = 0.02;
 
-      lin_vel = translation_kp_ * lin_dist;
+    if (lin_dist <= kDirectStopDist) {
+      lin_vel = 0.0;
+      cmd_vx = 0.0;
+      cmd_vy = 0.0;
+    } else {
+      const double raw_lin_vel = std::clamp(
+        translation_kp_ * lin_dist,
+        0.0,
+        v_linear_max_);
 
-      lin_vel = std::clamp(lin_vel, 0.0, v_linear_max_);
+      lin_vel = raw_lin_vel;
+
+      if (lin_dist < kDirectSlowdownDist) {
+        const double ratio = std::clamp(
+          (lin_dist - kDirectStopDist) /
+          (kDirectSlowdownDist - kDirectStopDist),
+          0.0,
+          1.0);
+
+        const double slowdown_ratio = ratio * ratio;
+
+        const double approach_speed_limit =
+          v_linear_max_ * slowdown_ratio;
+
+        lin_vel = std::min(
+          raw_lin_vel,
+          approach_speed_limit);
+      }
 
       cmd_vx = lin_vel * std::cos(theta_dist);
       cmd_vy = lin_vel * std::sin(theta_dist);
     }
 
-    angle_to_goal = tf2::getYaw(transformed_plan.poses.back().pose.orientation);
+    angle_to_goal =
+      tf2::getYaw(target_pose.pose.orientation);
+
     angular_vel =
-      enable_rotation_ && heading_pid_ ? heading_pid_->calculate(angle_to_goal, 0) : 0.0;
+      enable_rotation_ && heading_pid_
+      ? heading_pid_->calculate(angle_to_goal, 0)
+      : 0.0;
   }
   else if (use_mpc_control_) {
     const auto & target_pose = transformed_plan.poses.back();

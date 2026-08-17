@@ -877,6 +877,7 @@ velocity_smoother:
 
 special_area:
   ros__parameters:
+    fight_outpost_on_island: true
     # left_top_x: 0.494120
     # left_top_y: -5.220203
     # right_bottom_x: 5.402241
@@ -892,7 +893,7 @@ special_area:
     special_active_duration_sec: 20.0
     third_p1_x: 17.02
     third_p1_y: 5.991264
-    third_p2_x: 19.898225
+    third_p2_x: 19.898225sudo apt install screenruler
     third_p2_y: 7.1
     third_hysteresis_margin: 0.2
     # special_left_top_x: 8.4

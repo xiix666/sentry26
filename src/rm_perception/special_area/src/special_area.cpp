@@ -70,6 +70,9 @@ public:
         this->get_parameter("special_p4_y", special_p4_y_);
         this->get_parameter("special_hysteresis_margin", special_hysteresis_margin_);
 
+        fight_outpost_on_island_ =
+            this->declare_parameter<bool>("fight_outpost_on_island", false);
+        // std::cout << "fight_outpost_on_island_ :" << fight_outpost_on_island_ << std::endl;
         // 填充原四边形顶点（顺时针顺序）
         special_polygon_[0] = {special_p1_x_, special_p1_y_};
         special_polygon_[1] = {special_p2_x_, special_p2_y_};
@@ -173,7 +176,7 @@ private:
     bool special_area_has_triggered_ = false;
     bool special_inside_active_ = false;
     double special_gimbal_angle_ = 0.0;
-
+    bool fight_outpost_on_island_ = false;
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr special_area_angle_pub_;
     double left_top_x, left_top_y, right_bottom_x, right_bottom_y;
     double min_x, min_y, max_x, max_y;
@@ -410,11 +413,14 @@ private:
             const bool force_area_status_1 = (rm_task == 1);
             const bool force_area_status_3 = (rm_task == 2);
             const bool force_area_status_2 = (rm_task == 4);
+
+            const bool special_region_requests_area_status_2 =
+                !fight_outpost_on_island_ && special_inside_active_;
             if (force_area_status_3) {
                 area_status = 3;            // rm_task == 2 时最高优先级，强制为 3
             } else if (force_area_status_1) {
                 area_status = 1;            // rm_task == 1 时最高优先级，强制为 1
-            }else if (special_inside_active_ || force_area_status_2) {
+            }else if (special_region_requests_area_status_2 || force_area_status_2) {
                 area_status = 2;            // 前哨 = 2
             } else if (inside_active || third_inside_active_) {
                 area_status = 1;            // 起伏 + 新增区域 = 1

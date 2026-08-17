@@ -61,7 +61,12 @@ public:
     double robot_x, double robot_y,
     double * min_x, double * min_y,
     double * max_x, double * max_y);
-
+  void updateCosts(
+    nav2_costmap_2d::Costmap2D & master_grid,
+    int min_i,
+    int min_j,
+    int max_i,
+    int max_j) override;
 protected:
   void resetMaps() override;
 
@@ -154,6 +159,10 @@ private:
     double * max_x,
     double * max_y);
 
+  void publishAreaObstacleFlag(
+    double robot_x,
+    bool force_zero);
+    
   static double clamp01(double value)
   {
     return std::clamp(value, 0.0, 1.0);
@@ -177,6 +186,36 @@ private:
       mz < static_cast<unsigned int>(size_z_);
   }
 
+  bool isInForcedDynamicObstacleArea(
+    double wx,
+    double wy) const;
+
+  bool isInDynamicClearTriggerArea(
+    double robot_x,
+    double robot_y) const;
+
+  void updateForcedDynamicObstacleAreas(
+    bool mark_as_obstacle,
+    double * min_x,
+    double * min_y,
+    double * max_x,
+    double * max_y);
+
+  void clearDynamicObstacleHistoryInForcedAreas(
+    double * min_x,
+    double * min_y,
+    double * max_x,
+    double * max_y);
+
+  void clearDynamicObstacleHistoryOutsideForcedAreas(
+    double * min_x,
+    double * min_y,
+    double * max_x,
+    double * max_y);
+
+  bool isInForcedAreaClearTriggerRegion(
+    double robot_x,
+    double robot_y) const;
   // --------------------------------------------------------------------------
   // 硬过滤和梯度阈值
   // --------------------------------------------------------------------------
@@ -321,9 +360,12 @@ private:
   // 同一帧发生空闲->障碍跳变的栅格达到该数量，则丢弃本帧。
   int sudden_obstacle_rising_cell_threshold_{30};
 
+  bool task_clear{true};
+  
   // 世界栅格状态最长保留时间，防止unordered_map无限增长。
   double sudden_obstacle_history_retention_{5.0};
-
+  bool publish_pass_enable_{false};
+  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr  area_obstacle_flag_pub_;
   // 世界坐标栅格 -> 自身时序状态。
   std::unordered_map<
     std::uint64_t,

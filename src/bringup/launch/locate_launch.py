@@ -222,9 +222,6 @@ def generate_launch_description():
     port_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "serial_driver_launch.py")),
     )
-    angle_pub_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "angle_pub_launch.py")),
-    )
     omni_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "omni_perception_launch.py")),
     )
@@ -276,7 +273,6 @@ def generate_launch_description():
 
     # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)
-    # ld.add_action(angle_pub_cmd)
     # ld.add_action(delayed_omni_node)
     # ld.add_action(port_cmd)
 

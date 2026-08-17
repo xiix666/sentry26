@@ -12,7 +12,8 @@
 #include "std_msgs/msg/int32.hpp"
 #include <atomic>
 #include <Eigen/QR>
-
+#include <chrono>
+#include <cstdint>
 namespace pb_omni_pid_pursuit_controller
 {
   
@@ -520,8 +521,15 @@ private:
   // std::unique_ptr<minco_nav2::MincoTracker> minco_tracker_;
   const double max_skip_distance = 4.0;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
-  std::atomic<int> rm_task_value_{0};
+  // std::atomic<int> rm_task_value_{0};
+  std::atomic<int32_t> rm_task_value_{0};
 
+  // 使用steady_clock的纳秒时间戳，0表示从未收到过消息。
+  std::atomic<int64_t> last_rm_task_receive_time_ns_{0};
+
+  // 超过该时间没有收到/rm_task，就把本地有效值当作0。
+  double rm_task_timeout_sec_{0.5};
+  
   // Dynamic parameters handler
   std::mutex mutex_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;

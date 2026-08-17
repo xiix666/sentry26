@@ -49,9 +49,10 @@ private:
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void prepareTargetCloud();
+  void cancelRelocalization();
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
-
+  int tmp_points;
   int num_threads_;
   int num_neighbors_;
   float global_leaf_size_;
@@ -65,8 +66,11 @@ private:
   int min_accumulated_scans_{10};
   int min_accumulated_points_{3000};
 
+  bool relocalization_failed_{false};
+  std::size_t max_relocalization_points_{100000};
+  int max_relocalization_scans_{100};
   double max_accumulation_time_sec_{3.0};
-
+  double max_registration_error_{0.5};  
   rclcpp::Time accumulation_start_time_;
   bool accumulation_started_{false};
   std::string map_frame_;
@@ -98,7 +102,7 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-
+  Eigen::Isometry3d fixed_bias_;  // 固定偏置变换
   pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   // small_gicp::PointCloud::Ptr target_ = std::make_shared<small_gicp::PointCloud>();
   // small_gicp::KdTree::Ptr target_tree_;

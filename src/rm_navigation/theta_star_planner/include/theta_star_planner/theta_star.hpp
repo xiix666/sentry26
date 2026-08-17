@@ -85,6 +85,9 @@ public:
     if (hasObstacleAround(cx, cy)) {
       return false;
     }
+    if (isConditionalAreaBlockedCell(cx, cy)) {
+      return false;
+    }
     return (costmap_->getCost(cx, cy) == UNKNOWN_COST && allow_unknown_) ||
            costmap_->getCost(cx, cy) <= MAX_NON_OBSTACLE_COST;
   }
@@ -147,6 +150,18 @@ public:
   const int max_radius) const;
   int nodes_opened = 0;
   bool moveStartAndGoalToNearestFreeCell(const int max_radius);
+
+  void setConditionalForbiddenArea(
+    bool enabled,
+    double x1,
+    double y1,
+    double x2,
+    double y2);
+
+  bool isConditionalAreaAllowedForCurrentPlan() const
+  {
+    return conditional_area_allowed_for_plan_;
+  }
 protected:
   /// for the coordinates (x,y), it stores at node_position_[size_x_ * y + x],
   /// the pointer to the location at which the data of the node is present in nodes_data_
@@ -220,6 +235,9 @@ protected:
   bool isSafe(const int & cx, const int & cy, double & cost) const
   {
     if (hasObstacleAround(cx, cy)) {
+      return false;
+    }
+    if (isConditionalAreaBlockedCell(cx, cy)) {
       return false;
     }
     double curr_cost = getCost(cx, cy);
@@ -345,6 +363,35 @@ protected:
   {
     queue_ = std::priority_queue<tree_node *, std::vector<tree_node *>, comp>();
   }
+
+  bool isInsideConditionalAreaWorld(
+    double wx,
+    double wy,
+    double min_x,
+    double max_x,
+    double min_y,
+    double max_y) const;
+
+  bool isConditionalAreaBlockedCell(
+    int mx,
+    int my) const;
+
+  bool conditional_area_enabled_{true};
+
+  double conditional_area_min_x_{12.5};
+  double conditional_area_max_x_{13.5};
+  double conditional_area_min_y_{-2.6};
+  double conditional_area_max_y_{1.0};
+
+  double conditional_area2_min_x_{19.0};
+  double conditional_area2_max_x_{20.7};
+  double conditional_area2_min_y_{-1.2};
+  double conditional_area2_max_y_{0.8};
+
+  // true 表示本轮起点或目标位于矩形内，因此允许经过矩形
+  bool conditional_area_allowed_for_plan_{false};
+
+  bool conditional_area2_allowed_for_plan_{false};
 };
 }   //  namespace theta_star
 

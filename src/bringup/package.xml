@@ -23,7 +23,6 @@
   <exec_depend>point_lio</exec_depend>
   <exec_depend>pb_omni_pid_pursuit_controller</exec_depend>
   <exec_depend>rviz2</exec_depend>
-  <exec_depend>icp_registration</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
