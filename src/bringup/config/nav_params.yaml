@@ -138,7 +138,7 @@ terrain_analysis_ext:
     localTerrainMapRadius: 4.0
     cloud_in: "/livox/pointcloud2/transframe"
     odom_in: "lidar_odometry"
-    useVoxelPCA: true
+    useVoxelPCA: false
     useInputDownsampling: false
     inputDownsampleLeafSize: 0.1
 slam_toolbox:

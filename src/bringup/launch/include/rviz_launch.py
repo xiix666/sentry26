@@ -7,7 +7,7 @@ from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 
 def generate_launch_description():
 
@@ -41,10 +41,6 @@ def generate_launch_description():
             ("/tf", "tf"),
             ("/tf_static", "tf_static"),
         ],
-    )
-    echo_cmd_vel_base_cmd = ExecuteProcess(
-        cmd=["ros2", "topic", "echo", "/cmd_vel_base"],
-        output="screen",
     )
     exit_event_handler = RegisterEventHandler(
         event_handler=OnProcessExit(

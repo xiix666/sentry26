@@ -151,9 +151,10 @@ inline double calcDurationMs(const TimePoint &start, const TimePoint &end) {
 }
 
 inline NormalVoxelKey getNormalVoxelKey(double x, double y, double z) {
-  return NormalVoxelKey{static_cast<int>(std::floor(x / normalVoxelSize)),
-                        static_cast<int>(std::floor(y / normalVoxelSize)),
-                        static_cast<int>(std::floor(z / normalVoxelSize))};
+  const int voxel_x = static_cast<int>(std::floor(x / normalVoxelSize));
+  const int voxel_y = static_cast<int>(std::floor(y / normalVoxelSize));
+  const int voxel_z = static_cast<int>(std::floor(z / normalVoxelSize));
+  return NormalVoxelKey{voxel_x, voxel_y, voxel_z};
 }
 
 bool isInLocalVoxelArea(float x, float y) {
@@ -488,8 +489,8 @@ double processTerrainAnalysis(
 
       const std::size_t quantile_index = static_cast<std::size_t>(
           std::floor(valid_quantile * static_cast<double>(point_count - 1)));
-      std::nth_element(elevations.begin(), elevations.begin() + quantile_index,
-                       elevations.end());
+      auto quantile_iterator = elevations.begin() + quantile_index;
+      std::nth_element(elevations.begin(), quantile_iterator, elevations.end());
       const float quantile_height = elevations[quantile_index];
 
       planarVoxelElev[i] =
@@ -503,7 +504,7 @@ double processTerrainAnalysis(
         cloudVehicleZ + static_cast<float>(terrainUnderVehicle);
     constexpr float kMaxCenterGroundError = 0.40F;
     const bool center_elevation_invalid =
-        planarPointElev[ind].empty() || !std::isfinite(planarVoxelElev[ind]) ||
+        !planarVoxelHasPoint[ind] || !std::isfinite(planarVoxelElev[ind]) ||
         std::abs(planarVoxelElev[ind] - expected_ground_z) >
             kMaxCenterGroundError;
 
@@ -526,7 +527,7 @@ double processTerrainAnalysis(
           if (indX + dX >= 0 && indX + dX < planarVoxelWidth &&
               indY + dY >= 0 && indY + dY < planarVoxelWidth) {
             ind = planarVoxelWidth * (indX + dX) + indY + dY;
-            if (planarVoxelConn[ind] == 0 && planarPointElev[ind].size() > 0) {
+            if (planarVoxelConn[ind] == 0 && planarVoxelHasPoint[ind]) {
               if (fabs(planarVoxelElev[front] - planarVoxelElev[ind]) <
                   terrainConnThre) {
                 planarVoxelQueue.push(ind);
@@ -600,9 +601,7 @@ double processTerrainAnalysis(
 
       const NormalVoxelKey key = getNormalVoxelKey(p.x, p.y, p.z);
       auto &voxel = normal_voxels[key];
-      const Eigen::Vector3d v(static_cast<double>(p.x),
-                              static_cast<double>(p.y),
-                              static_cast<double>(p.z));
+      const Eigen::Vector3d v(p.x, p.y, p.z);
 
       ++voxel.count;
       voxel.sum += v;
@@ -747,7 +746,7 @@ double processTerrainAnalysis(
     }
   }
 
-  for (int i = 0; i < terrainCloudElev->size(); i++) {
+  for (std::size_t i = 0; i < terrainCloudElev->size(); i++) {
     auto &p = terrainCloudElev->points[i];
     float dis = sqrt((p.x - cloudVehicleX) * (p.x - cloudVehicleX) +
                      (p.y - cloudVehicleY) * (p.y - cloudVehicleY));
@@ -833,15 +832,14 @@ int main(int argc, char **argv) {
   auto pubTerrainCloud =
       nh->create_publisher<sensor_msgs::msg::PointCloud2>("terrain_map_ext", 2);
   auto pubTerrainCloudLocal =
-      nh->create_publisher<sensor_msgs::msg::PointCloud2>("terrain_map_local",
-                                                          2);
+      nh->create_publisher<sensor_msgs::msg::PointCloud2>(
+          "terrain_map_local", 2);
   for (int i = 0; i < kTerrainVoxelNum; i++) {
     terrainVoxelCloud[i].reset(new pcl::PointCloud<pcl::PointXYZINormal>());
   }
 
-  downSizeFilter.setLeafSize(static_cast<float>(inputDownsampleLeafSize),
-                             static_cast<float>(inputDownsampleLeafSize),
-                             static_cast<float>(inputDownsampleLeafSize));
+  const float input_leaf_size = static_cast<float>(inputDownsampleLeafSize);
+  downSizeFilter.setLeafSize(input_leaf_size, input_leaf_size, input_leaf_size);
 
   rclcpp::Rate rate(100);
   bool status = rclcpp::ok();
@@ -851,8 +849,7 @@ int main(int argc, char **argv) {
 
     if (newlaserCloud) {
       newlaserCloud = false;
-      double process_time =
-          processTerrainAnalysis(pubTerrainCloud, pubTerrainCloudLocal);
+      processTerrainAnalysis(pubTerrainCloud, pubTerrainCloudLocal);
     }
 
     status = rclcpp::ok();

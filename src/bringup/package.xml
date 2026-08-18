@@ -22,6 +22,7 @@
   <exec_depend>nav2_smac_planner</exec_depend>
   <exec_depend>pb_nav2_plugins</exec_depend>
   <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>lidar_output</exec_depend>
   <exec_depend>point_lio</exec_depend>
   <exec_depend>pb_omni_pid_pursuit_controller</exec_depend>
   <exec_depend>rviz2</exec_depend>

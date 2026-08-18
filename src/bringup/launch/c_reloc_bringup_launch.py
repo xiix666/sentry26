@@ -11,11 +11,10 @@ from launch.actions import (
 )
 from launch.conditions import (
     IfCondition,
-    LaunchConfigurationEquals,
     LaunchConfigurationNotEquals,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, PushRosNamespace, SetRemap
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
@@ -25,14 +24,10 @@ def generate_launch_description():
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
 
-    rm_decision_dir = get_package_share_directory("rm2026_decision")
-    decisionparams_file = os.path.join(rm_decision_dir, "config", "rm2026_decision_params.yaml")
-    rm_decision_decision_dir = os.path.join(rm_decision_dir, "launch")
-
     namespace = LaunchConfiguration("namespace")
     relocate = LaunchConfiguration("relocate")
+    mapping_mode = LaunchConfiguration("mapping_mode")
     map_yaml_file = LaunchConfiguration("map")
-    pcd_file = LaunchConfiguration("prior_pcd_file")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
     autostart = LaunchConfiguration("autostart")
@@ -41,6 +36,8 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_omni_perception = LaunchConfiguration("use_omni_perception")
+    use_map_save = LaunchConfiguration("use_map_save")
 
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
 
@@ -71,18 +68,17 @@ def generate_launch_description():
     )
 
     declare_relocate_cmd = DeclareLaunchArgument(
-        "relocate", default_value="False", description="Whether to relocate"
+        "relocate", default_value="true", description="Whether to relocate"
+    )
+    declare_mapping_mode_cmd = DeclareLaunchArgument(
+        "mapping_mode", default_value="false", description="Whether to build a map"
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
 
-        "map", default_value="/home/xx/sentry26/src/bringup/map/map234.yaml", description="Full path to map yaml file to load"
+        "map", default_value="/home/xx/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
 
     )                                                                                                 
-
-    declare_pcd_file_cmd = DeclareLaunchArgument(
-        "pcd_file", default_value="", description="Full path to PCD file to load"
-    )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         "use_sim_time",
@@ -92,7 +88,7 @@ def generate_launch_description():
 
     declare_params_file_cmd = DeclareLaunchArgument(
         "params_file",
-        default_value=os.path.join(bringup_dir, "config", "nav_params_1.yaml"),
+        default_value=os.path.join(bringup_dir, "config", "nav_params.yaml"),
         description="Full path to the ROS2 parameters file to use for all launched nodes",
     )
 
@@ -127,6 +123,12 @@ def generate_launch_description():
     declare_use_rviz_cmd = DeclareLaunchArgument(
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
+    declare_use_omni_perception_cmd = DeclareLaunchArgument(
+        "use_omni_perception", default_value="True"
+    )
+    declare_use_map_save_cmd = DeclareLaunchArgument(
+        "use_map_save", default_value="False"
+    )
 
     bringup_cmd_group = GroupAction(
         [
@@ -144,48 +146,27 @@ def generate_launch_description():
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "include", "robot_state_publisher_launch.py")
-                ),
-                launch_arguments={
-                    "namespace": namespace,
-                    "use_sim_time": use_sim_time,
-                }.items(),
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
                     os.path.join(launch_dir, "include", "perception_launch.py")
                 ),
                 launch_arguments={
                     "namespace": namespace,
-                }.items(),
-            ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "include", "slam_launch.py")
-                ),
-                condition=IfCondition(PythonExpression(["not ", relocate])),
-                launch_arguments={
-                    "namespace": namespace,
-                    "use_sim_time": use_sim_time,
-                    "autostart": autostart,
-                    "use_respawn": use_respawn,
-                    "map": map_yaml_file,
                     "params_file": params_file,
                 }.items(),
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(launch_dir, "include", "relocalization_launch.py")
+                    os.path.join(launch_dir, "include", "localization_launch.py")
                 ),
-                condition=IfCondition(relocate),
                 launch_arguments={
                     "namespace": namespace,
+                    "relocate": relocate,
+                    "mapping_mode": mapping_mode,
                     "map": map_yaml_file,
                     "use_sim_time": use_sim_time,
                     "autostart": autostart,
                     "params_file": params_file,
+                    "use_composition": use_composition,
                     "use_respawn": use_respawn,
-                    "container_name": "nav2_container",
                 }.items(),
             ),
             IncludeLaunchDescription(
@@ -212,16 +193,6 @@ def generate_launch_description():
     omni_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "omni_perception_launch.py")),
     )
-    rm26_decision = Node(
-        
-            package="rm2026_decision",
-            executable="rm2026_decision_node",
-            name="rm2026_decision_node",
-            output="screen",
-            parameters=[decisionparams_file],
-        
-    )
-
     rviz_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "rviz_launch.py")),
         condition=IfCondition(use_rviz),
@@ -233,6 +204,7 @@ def generate_launch_description():
     )
 
     save_map_cmd = Node(
+        condition=IfCondition(use_map_save),
         package="map_save",
         executable="map_save",
         name="map_save",
@@ -240,23 +212,15 @@ def generate_launch_description():
         parameters=[configured_params,
         {
             "save_interval": 30.0,
-            "save_path": "/home/rps/sentry26/map/map",
+            "save_path": "/home/xx/sentry26/map/map",
             "map_topic": "/slam_map",
         }
         ],
     )
     delayed_omni_node = TimerAction(
-        period=10.0,  
+        condition=IfCondition(use_omni_perception),
+        period=10.0,
         actions=[omni_cmd]
-    )
-
-    delayed_decision_node = TimerAction(
-        period=10.0,  
-        actions=[rm26_decision]
-    )
-    delayed_port =  TimerAction(
-        period=5.0,  
-        actions=[port_cmd]
     )
 
     ld = LaunchDescription()
@@ -266,8 +230,8 @@ def generate_launch_description():
 
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_relocate_cmd)
+    ld.add_action(declare_mapping_mode_cmd)
     ld.add_action(declare_map_yaml_cmd)
-    ld.add_action(declare_pcd_file_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
     ld.add_action(declare_autostart_cmd)
@@ -276,16 +240,14 @@ def generate_launch_description():
     ld.add_action(declare_log_level_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
+    ld.add_action(declare_use_omni_perception_cmd)
+    ld.add_action(declare_use_map_save_cmd)
 
     ld.add_action(bringup_cmd_group)
     ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
+    ld.add_action(rviz_cmd)
 
-    from launch.actions import ExecuteProcess
-
-    audio_node = ExecuteProcess(
-        cmd=["python3", "/home/rps/sentry26/src/yuyin/yuyin.py"],
-        output="screen"
-    )
+    ld.add_action(save_map_cmd)
 
     return ld
