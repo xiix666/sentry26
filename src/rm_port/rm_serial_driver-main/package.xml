@@ -4,13 +4,16 @@
    schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>rm_nav_serial_driver</name>
-  <version>0.1.0</version>
-  <description>A template for ROS packages.</description>
+  <version>1.0.0</version>
+  <description>Serial communication driver between the navigation system and robot controller.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="chen.junn@outlook.com">Chen Jun</maintainer>
   <license>MIT</license>
+  <author email="chen.junn@outlook.com">Chen Jun</author>
+  <author email="1834364183@qq.com">xx</author>
+
   <url type="website">https://github.com/chenjunnn/ros2_mindvision_camera</url>
   <url type="bugtracker">https://github.com/chenjunnn/ros2_mindvision_camera/issues</url>
-  <author email="chen.junn@outlook.com">Chen Jun</author>
 
   <!-- buildtool_depend: dependencies of the build process -->
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -189,7 +189,7 @@ void OmniMpcController::buildPredictionMatrix(
   }
 
   for (int i = 0; i < Np_; ++i) {
-    // 第 i 个预测状态是 x_{i+1}
+
     A_bar.block<nx, nx>(nx * i, 0) = A_power[i + 1];
 
     for (int j = 0; j < Nc_; ++j) {
@@ -198,12 +198,11 @@ void OmniMpcController::buildPredictionMatrix(
 
       if (!hold_last_control_ || j < Nc_ - 1) {
         if (j <= i) {
-          // x_{i+1} 中 u_j 的系数是 A^{i-j} B
+
           block = A_power[i - j] * B_;
         }
       } else {
-        // 最后一个控制量在预测时域后面保持不变
-        // u_{Nc-1}, u_{Nc}, ... 都看成同一个变量 u_{Nc-1}
+
         if (i >= j) {
           for (int s = 0; s <= i - j; ++s) {
             block += A_power[s] * B_;
@@ -265,12 +264,6 @@ void OmniMpcController::buildQPMatrix(
   VectorXd tracking_error_const = A_bar * x0 - X_ref;
   VectorXd terminal_error_const = A_N * x0 - x_ref_N;
 
-  // 代价：
-  // J = sum_{i=0}^{Np-1} (x_{i+1} - x_ref_{i+1})^T Q
-  //                         (x_{i+1} - x_ref_{i+1})
-  //     + (x_N - x_ref_N)^T S (x_N - x_ref_N)
-  //     + U^T R_bar U
-  //     + sum (u_i - u_{i-1})^T R_delta (u_i - u_{i-1})
   H = 2.0 * (
     B_bar.transpose() * Q_bar * B_bar +
     B_N.transpose() * S_ * B_N +
@@ -280,14 +273,6 @@ void OmniMpcController::buildQPMatrix(
     B_bar.transpose() * Q_bar * tracking_error_const +
     B_N.transpose() * S_ * terminal_error_const);
 
-  // 可选的控制输入平滑项:
-  //
-  // J_delta = sum (u_i - u_{i-1})^T R_delta (u_i - u_{i-1})
-  //
-  // 其中:
-  //   i = 0 时，u_{-1} = last_accel_
-  //
-  // 如果 R_delta 为 0 矩阵，则这一项不起作用。
   if (R_delta_.norm() > 1e-12) {
     MatrixXd D(u_dim, u_dim);
     D.setZero();
@@ -339,19 +324,15 @@ void OmniMpcController::buildConstraintMatrix(
   MatrixXd B_bar;
   buildPredictionMatrix(A_bar, B_bar);
 
-  // 1. 加速度分量硬约束
-
   MatrixXd A_acc = MatrixXd::Identity(u_dim, u_dim);
   VectorXd l_acc = VectorXd::Constant(u_dim, a_min_);
   VectorXd u_acc = VectorXd::Constant(u_dim, a_max_);
 
-  // 2. 速度分量硬约束：
-
   MatrixXd C_v = MatrixXd::Zero(nu * Np_, nx * Np_);
 
   for (int i = 0; i < Np_; ++i) {
-    C_v(nu * i + 0, nx * i + 2) = 1.0;  // vx
-    C_v(nu * i + 1, nx * i + 3) = 1.0;  // vy
+    C_v(nu * i + 0, nx * i + 2) = 1.0;
+    C_v(nu * i + 1, nx * i + 3) = 1.0;
   }
 
   MatrixXd A_vel = C_v * B_bar;
@@ -395,15 +376,6 @@ bool OmniMpcController::solveConstrainedQP(
     return false;
   }
 
-  // 小规模 MPC QP，直接用稠密 ADMM，避免额外引入 OSQP 依赖。
-  //
-  // 标准形式：
-  //   min 0.5 U^T H U + f^T U
-  //   s.t. lower_bound <= A_qp U <= upper_bound
-  //
-  // ADMM 变量分裂：
-  //   z = A_qp U
-  //   z 投影到 [lower_bound, upper_bound]
   const double rho = 10.0;
   const double sigma = 1e-6;
   const int max_iter = 80;
@@ -420,7 +392,6 @@ bool OmniMpcController::solveConstrainedQP(
     return false;
   }
 
-  // 用上一帧解作为初值，能让 ADMM 更快收敛
   if (last_solution_.size() == n) {
     U = last_solution_;
   } else {
@@ -428,7 +399,7 @@ bool OmniMpcController::solveConstrainedQP(
   }
 
   VectorXd z = A_qp * U;
-  VectorXd y = VectorXd::Zero(m);  // scaled dual variable
+  VectorXd y = VectorXd::Zero(m);
 
   for (int i = 0; i < m; ++i) {
     z(i) = std::clamp(z(i), lower_bound(i), upper_bound(i));
@@ -470,8 +441,6 @@ bool OmniMpcController::solveConstrainedQP(
     }
   }
 
-  // 即便 ADMM 没严格收敛，最后一次迭代通常仍然可用；
-  // 但至少要求数值有限，并且约束违反不要太大。
   if (!U.allFinite()) {
     return false;
   }
@@ -597,8 +566,6 @@ Eigen::Vector2d OmniMpcController::solveVelocityCommand(
 
   v_cmd = clipVelocity(v_cmd);
 
-  // 如果速度被裁剪了，需要同步修正 last_accel_，
-  // 否则下一周期的 Δu 平滑项会使用一个不真实的加速度。
   last_accel_ = (v_cmd - v_now) / Ts_;
 
   return v_cmd;
@@ -609,4 +576,3 @@ void OmniMpcController::reset()
   last_accel_.setZero();
   last_solution_ = VectorXd::Zero(2 * Nc_);
 }
-

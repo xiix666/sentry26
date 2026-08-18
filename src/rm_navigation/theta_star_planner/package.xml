@@ -2,11 +2,13 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>theta_star_planner</name>
-  <version>1.1.20</version>
-  <description>Theta* Global Planning Plugin</description>
+  <version>1.0.0</version>
+  <description>Nav2 Theta Star global planner with path safety and reuse enhancements.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="stevenmacenski@gmail.com">Steve Macenski</maintainer>
   <maintainer email="anshumaan567@gmail.com">Anshumaan Singh</maintainer>
   <license>Apache-2.0</license>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -31,4 +33,3 @@
     <nav2_core plugin="${prefix}/global_planner_plugin.xml"/>
   </export>
 </package>
-

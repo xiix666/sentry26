@@ -49,15 +49,7 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
   }
 
   auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
-  // auto result = costmap_client_->async_send_request(request);
-  // if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-  //   RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
-  //   return nav2_behaviors::Status::FAILED;
-  // }
 
-  // // get costmap
-  // auto costmap = result.get()->map;
-  // using ServiceResponseFuture = rclcpp::Client<nav2_msgs::srv::GetCostmap>::SharedFuture;
   auto response_callback = [this](ServiceResponseFuture future) {
     try {
       std::lock_guard<std::mutex> lock(costmap_mutex_);
@@ -79,17 +71,12 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
     costmap_copy = latest_costmap_;
   }
 
-  // if (!nav2_util::getCurrentPose(
-  //       initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
-  //   RCLCPP_ERROR(logger_, "Initial robot pose is not available.");
-  //   return nav2_behaviors::Status::FAILED;
-  // }
   geometry_msgs::msg::TransformStamped tf_stamped;
   geometry_msgs::msg::Pose2D pose;
   try {
     tf_stamped = tf_->lookupTransform(
-      global_frame_,          // target frame
-      robot_base_frame_,      // source frame
+      global_frame_,
+      robot_base_frame_,
       tf2::TimePointZero,
       tf2::durationFromSec(transform_tolerance_));
   init_x = tf_stamped.transform.translation.x;
@@ -103,8 +90,6 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
     return nav2_behaviors::Status::FAILED;
   }
   parseCostmapAndQuery(costmap_copy);
-  // float min_avg_cost = 255.0f;
-  // float best_direction_rad = 0.0f;
 
   int min_leading_obstacle_count = std::numeric_limits<int>::max();
   float min_avg_cost = 256.0f;
@@ -148,7 +133,6 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
     min_leading_obstacle_count,
     min_avg_cost);
 
-  // Calculate move command
   twist_x_ = std::cos(best_direction_rad) * command->speed;
   twist_y_ = std::sin(best_direction_rad) * command->speed;
   command_x_ = command->target.x;
@@ -156,11 +140,6 @@ nav2_behaviors::Status BackUpFreeSpace::onRun(
 
   end_time_ = clock_->now() + command_time_allowance_;
 
-  // if (!nav2_util::getCurrentPose(
-  //       initial_pose_, *tf_, global_frame_, robot_base_frame_, transform_tolerance_)) {
-  //   RCLCPP_ERROR(logger_, "Initial robot pose is not available.");
-  //   return nav2_behaviors::Status::FAILED;
-  // }
   RCLCPP_WARN(
     logger_, "backing up %f meters towards free space at angle %f", command_x_, best_direction_rad);
 
@@ -182,8 +161,8 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
   geometry_msgs::msg::Pose2D pose;
   try {
     tf_stamped = tf_->lookupTransform(
-      global_frame_,          // target frame
-      robot_base_frame_,      // source frame
+      global_frame_,
+      robot_base_frame_,
       tf2::TimePointZero,
       tf2::durationFromSec(transform_tolerance_));
   current_x = tf_stamped.transform.translation.x;
@@ -224,15 +203,6 @@ nav2_behaviors::Status BackUpFreeSpace::onCycleUpdate()
 
     costmap_copy = latest_costmap_;
   }
-
-  // auto request = std::make_shared<nav2_msgs::srv::GetCostmap::Request>();
-  // auto result = costmap_client_->async_send_request(request);
-  // if (result.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-  //   RCLCPP_ERROR(logger_, "Interrupted while waiting for the service. Exiting.");
-  //   return nav2_behaviors::Status::FAILED;
-  // }
-
-  // auto costmap = result.get()->map;
 
   int cost = parseCostmapAndQuery(costmap_copy);
   if (distance >= std::fabs(command_x_) || (cost >= 0 && cost <= 150)) {
@@ -474,7 +444,7 @@ void BackUpFreeSpace::visualize(
   marker_pub_->publish(markers);
 }
 
-}  // namespace pb_nav2_behaviors
+}
 
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(pb_nav2_behaviors::BackUpFreeSpace, nav2_core::Behavior)

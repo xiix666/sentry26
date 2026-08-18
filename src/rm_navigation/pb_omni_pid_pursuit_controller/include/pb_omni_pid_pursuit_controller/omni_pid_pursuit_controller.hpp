@@ -16,26 +16,24 @@
 #include <cstdint>
 namespace pb_omni_pid_pursuit_controller
 {
-  
-// Savitzky-Golay滤波实现
+
 class SavitzkyGolayFilter
 {
 public:
   SavitzkyGolayFilter(int window_size = 5, int poly_order = 2)
     : window_size_(window_size), poly_order_(poly_order)
   {
-    // 窗口大小必须是奇数，且大于多项式阶数
+
     if (window_size % 2 == 0) {
       window_size_ += 1;
     }
     if (window_size_ <= poly_order_) {
       poly_order_ = window_size_ - 1;
     }
-    // 预计算滤波系数
+
     calculateCoefficients();
   }
 
-  // 设置窗口大小（需重新计算系数）
   void setWindowSize(int window_size)
   {
     if (window_size % 2 == 0) {
@@ -48,7 +46,6 @@ public:
     calculateCoefficients();
   }
 
-  // 设置多项式阶数（需重新计算系数）
   void setPolyOrder(int poly_order)
   {
     if (window_size_ <= poly_order) {
@@ -60,39 +57,29 @@ public:
 
   double filter(double new_value)
   {
-    // 1. 纯FIFO滑动窗口：最新值添加到窗口末尾
+
     data_window_.push_back(new_value);
-    // std::cout << "size" << data_window_.size() << std::endl;
-    // 2. 窗口超过设定大小 → 删除最旧的第一个值（保证窗口长度=window_size_）
+
     if (data_window_.size() > window_size_) {
       data_window_.erase(data_window_.begin());
     }
 
-    // 3. 窗口未满（长度<设定大小）→ 直接返回原始值
     if (data_window_.size() < window_size_) {
       return new_value;
     }
 
-    // 4. 窗口已满 → 计算“最新值（末尾）”的SG滤波值
     Eigen::Map<const Eigen::VectorXd> data_map(data_window_.data(), window_size_);
     double filtered_value = (window_weights_.transpose() * data_map)(0, 0);
 
-    // 打印5维系数（验证）
-    // std::cout << "5维窗口系数：";
-    // for (int i = 0; i < window_weights_.size(); ++i) {
-    //   std::cout << window_weights_(i) << " ";
-    // }
-    // std::cout << std::endl;
     return filtered_value;
   }
 
-  // 重置滤波窗口
   void reset()
   {
-    std::fill(data_window_.begin(), data_window_.end(), 0.0); // 窗口值置0
+    std::fill(data_window_.begin(), data_window_.end(), 0.0);
   }
 private:
-  // 计算SG滤波系数
+
   void calculateCoefficients()
   {
     int m = window_size_ / 2;
@@ -108,7 +95,6 @@ private:
       }
     }
 
-    // 计算系数：(V^T V)^{-1} V^T * e_m（e_m是中间位置的单位向量）
     Eigen::VectorXd e_last = Eigen::VectorXd::Zero(window_size_);
     e_last(window_size_-1) = 1.0;
     coeffs = (V.transpose() * V).inverse() * V.transpose() * e_last;
@@ -124,237 +110,96 @@ private:
     window_weights_ = weights;
   }
 
-  int window_size_;          // 滤波窗口大小（奇数）
-  int poly_order_;           // 多项式拟合阶数
+  int window_size_;
+  int poly_order_;
   Eigen::VectorXd window_weights_;
   Eigen::VectorXd coeffs;
-  std::vector<double> data_window_;  // 数据滑动窗口
+  std::vector<double> data_window_;
 
 };
-/**
- * @class pb_omni_pid_pursuit_controller::OmniPidPursuitController
- * @brief Regulated pure pursuit controller plugin
- */
 class OmniPidPursuitController : public nav2_core::Controller
 {
 public:
-  /**
-   * @brief Constructor for
-   * pb_omni_pid_pursuit_controller::OmniPidPursuitController
-   */
   OmniPidPursuitController();
 
-  /**
-   * @brief Destrructor for
-   * pb_omni_pid_pursuit_controller::OmniPidPursuitController
-   */
   ~OmniPidPursuitController() override = default;
 
-  /**
-   * @brief Configure controller state machine
-   * @param parent WeakPtr to node
-   * @param name Name of plugin
-   * @param tf TF buffer
-   * @param costmap_ros Costmap2DROS object of environment
-   */
   void configure(
     const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent, std::string name,
     std::shared_ptr<tf2_ros::Buffer> tf,
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
 
-  /**
-   * @brief Cleanup controller state machine
-   */
   void cleanup() override;
 
-  /**
-   * @brief Activate controller state machine
-   */
   void activate() override;
 
-  /**
-   * @brief Deactivate controller state machine
-   */
   void deactivate() override;
 
-  /**
-   * @brief Compute the best command given the current pose and velocity, with
-   * possible debug information
-   *
-   * Same as above computeVelocityCommands, but with debug results.
-   * If the results pointer is not null, additional information about the twists
-   * evaluated will be in results after the call.
-   *
-   * @param pose      Current robot pose
-   * @param velocity  Current robot velocity
-   * @param goal_checker   Ptr to the goal checker for this task in case useful
-   * in computing commands
-   * @return          Best command
-   */
   geometry_msgs::msg::TwistStamped computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
     nav2_core::GoalChecker * goal_checker) override;
 
-  /**
-   * @brief nav2_core setPlan - Sets the global plan
-   * @param path The global plan
-   */
   void setPlan(const nav_msgs::msg::Path & path) override;
 
-  /**
-   * @brief Limits the maximum linear speed of the robot.
-   * @param speed_limit expressed in absolute value (in m/s)
-   * or in percentage from maximum robot speed.
-   * @param percentage Setting speed limit in percentage if true
-   * or in absolute values in false case.
-   */
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
 protected:
-  /**
-   * @brief Transforms global plan into same frame as pose and clips poses
-   * ineligible for lookaheadPoint Points ineligible to be selected as a
-   * lookahead point if they are any of the following:
-   * - Outside the local_costmap (collision avoidance cannot be assured)
-   * @param pose pose to transform
-   * @return Path in new frame
-   */
   nav_msgs::msg::Path transformGlobalPlan(const geometry_msgs::msg::PoseStamped & pose);
 
-  /**
-   * @brief Transform a pose to another frame.
-   * @param frame Frame ID to transform to
-   * @param in_pose Pose input to transform
-   * @param out_pose transformed output
-   * @return bool if successful
-   */
   bool transformPose(
     const std::string frame, const geometry_msgs::msg::PoseStamped & in_pose,
     geometry_msgs::msg::PoseStamped & out_pose) const;
 
-  // std::vector<OmniMpcController::State> samplePathToTimedMpcRefSeq(
-  //   const std::vector<geometry_msgs::msg::PoseStamped> & path_poses,
-  //   int Np,double v_ref) const;
   std::vector<OmniMpcController::State> samplePathToTimedMpcRefSeq(
     const std::vector<geometry_msgs::msg::PoseStamped> & path_poses,
     int Np,
     double v_des,
     double * v_ref_eff_out = nullptr) const;
   void updateMpcWeights();
-  /**
-   * @brief Gets the maximum extent of the costmap
-   * @return Maximum costmap extent in meters
-   */
   double getCostmapMaxExtent() const;
 
-  /**
-   * @brief Creates a Carrot Point Marker message for visualization
-   * @param carrot_pose Lookahead point pose
-   * @return Unique pointer to the Carrot Point Marker message
-   */
   std::unique_ptr<geometry_msgs::msg::PointStamped> createCarrotMsg(
     const geometry_msgs::msg::PoseStamped & carrot_pose);
 
-  /**
-   * @brief Gets the lookahead point on the transformed plan
-   * @param lookahead_dist Lookahead distance
-   * @param transformed_plan Transformed local plan
-   * @return Lookahead point pose
-   */
   geometry_msgs::msg::PoseStamped getLookAheadPoint(
     const double & lookahead_dist, const nav_msgs::msg::Path & transformed_plan);
 
-  /**
-   * @brief Calculates the intersection point of a circle and a line segment
-   * @param p1 Start point of the line segment
-   * @param p2 End point of the line segment
-   * @param r Radius of the circle
-   * @return Intersection point (geometry_msgs::msg::Point)
-   */
   geometry_msgs::msg::Point circleSegmentIntersection(
     const geometry_msgs::msg::Point & p1, const geometry_msgs::msg::Point & p2, double r);
 
-  /**
-   * @brief Callback function for dynamic parameter updates
-   * @param parameters Vector of updated parameters
-   * @return Result of parameter setting
-   */
   rcl_interfaces::msg::SetParametersResult dynamicParametersCallback(
     std::vector<rclcpp::Parameter> parameters);
 
-  /**
-   * @brief Calculates the lookahead distance based on current velocity
-   * @param speed Current robot velocity
-   * @return Lookahead distance
-   */
   double getLookAheadDistance(const geometry_msgs::msg::Twist & speed);
 
-  /**
-   * @brief Calculates the approach velocity scaling factor based on remaining path distance
-   * @param path Transformed local path
-   * @return Velocity scaling factor
-   */
   double approachVelocityScalingFactor(const nav_msgs::msg::Path & path) const;
 
-  /**
-   * @brief Applies velocity scaling based on approach distance to the goal
-   * @param path Transformed local path
-   * @param linear_vel Linear velocity command (in out)
-   */
   void applyApproachVelocityScaling(const nav_msgs::msg::Path & path, double & linear_vel) const;
 
 private:
     struct Impl
     {
-      // SG滤波实例
+
       std::unique_ptr<SavitzkyGolayFilter> linear_vel_filter_;
-      // 滤波参数
       int sg_window_size_ = 5;
       int sg_poly_order_ = 2;
       bool enable_sg_filter_ = true;
     };
 
-    // 4. 新增：impl_成员变量（智能指针）
     std::unique_ptr<Impl> impl_;
-  /**
-   * @brief Applies curvature based speed limitation
-   * @param path Transformed local path
-   * @param lookahead_pose Lookahead point pose
-   * @param linear_vel Linear velocity command (in out)
-   */
   void applyCurvatureLimitation(
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
     double & linear_vel);
   bool isDirectPathSafeToTarget(
     const geometry_msgs::msg::PoseStamped & target_pose) const;
-  /**
-   * @brief Calculates curvature using three-point circle fitting
-   * @param path Transformed local path
-   * @param lookahead_pose Lookahead pose (current point)
-   * @param forward_dist
-   * @param backward_dist
-   * @return Curvature value
-   */
   double calculateCurvature(
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
     double forward_dist, double backward_dist) const;
 
-  /**
-   * @brief Calculates the radius of curvature using three points
-   * @param near_point Pose before the current point
-   * @param current_point Current pose (lookahead pose)
-   * @param far_point Pose after the current point
-   * @return Radius of curvature
-   */
   double calculateCurvatureRadius(
     const geometry_msgs::msg::Point & near_point, const geometry_msgs::msg::Point & current_point,
     const geometry_msgs::msg::Point & far_point) const;
 
-  /**
-   * @brief Visualizes near and far points used for curvature calculation
-   * @param backward_pose Near point pose
-   * @param forward_pose Far point pose
-   */
   void applyCurvatureLimitation_mpc(
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
     double & vx,double & vy);
@@ -364,20 +209,8 @@ private:
     const geometry_msgs::msg::PoseStamped & backward_pose,
     const geometry_msgs::msg::PoseStamped & forward_pose) const;
 
-  /**
-   * @brief Calculates cumulative distances along the path
-   * @param path The path to calculate distances for
-   * @return Vector of cumulative distances
-   */
   std::vector<double> calculateCumulativeDistances(const nav_msgs::msg::Path & path) const;
 
-  /**
-   * @brief Finds a pose on the path at a given distance
-   * @param path The path to search on
-   * @param cumulative_distances Vector of cumulative distances along the path
-   * @param target_distance The target distance to find the pose at
-   * @return Pose at the target distance, or empty pose if not found
-   */
   geometry_msgs::msg::PoseStamped findPoseAtDistance(
     const nav_msgs::msg::Path & path, const std::vector<double> & cumulative_distances,
     double target_distance) const;
@@ -435,8 +268,8 @@ private:
   std::shared_ptr<PID> move_pid_;
   std::shared_ptr<PID> heading_pid_;
   std::unique_ptr<OmniMpcController> mpc_controller_;
-  int mpc_Np_;         // MPC预测时域
-  int mpc_Nc_;         // MPC控制时域
+  int mpc_Np_;
+  int mpc_Nc_;
   double mpc_ref_speed_{2.5};
   double mpc_S_x{15.0};
   double mpc_S_y{15.0};
@@ -467,15 +300,15 @@ private:
   double pid_curve_sample_ds_{0.10};
   double pid_curve_projection_search_dist_{1.5};
   double pid_curve_projection_trust_dist_{0.50};
-  double pid_curve_recover_rate_{1.0};          // 出弯加速恢复速度，m/s^2
-  double pid_curve_kappa_hysteresis_{0.08};     // 曲率进入/退出滞回
+  double pid_curve_recover_rate_{1.0};
+  double pid_curve_kappa_hysteresis_{0.08};
   bool pid_curve_slow_active_{false};
   double pid_curve_filtered_kappa_{0.0};
   bool has_pid_curve_filtered_kappa_{false};
 
-  double pid_curve_kappa_rise_rate_{3.0};  // 曲率上升速度，越大减速越快
-  double pid_curve_kappa_fall_rate_{1.0};  // 曲率下降速度，越小出弯恢复越慢
-  // Controller parameters
+  double pid_curve_kappa_rise_rate_{3.0};
+  double pid_curve_kappa_fall_rate_{1.0};
+
   double translation_kp_, translation_ki_, translation_kd_;
   bool enable_rotation_;
   double rotation_kp_, rotation_ki_, rotation_kd_;
@@ -517,20 +350,16 @@ private:
   rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr carrot_pub_;
   rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::MarkerArray>::SharedPtr
     curvature_points_pub_;
-  // rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr smoothed_path_pub_;
-  // std::unique_ptr<minco_nav2::MincoTracker> minco_tracker_;
+
   const double max_skip_distance = 4.0;
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr rm_task_sub_;
-  // std::atomic<int> rm_task_value_{0};
+
   std::atomic<int32_t> rm_task_value_{0};
 
-  // 使用steady_clock的纳秒时间戳，0表示从未收到过消息。
   std::atomic<int64_t> last_rm_task_receive_time_ns_{0};
 
-  // 超过该时间没有收到/rm_task，就把本地有效值当作0。
   double rm_task_timeout_sec_{0.5};
-  
-  // Dynamic parameters handler
+
   std::mutex mutex_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
   bool has_latched_goal_{false};
@@ -539,6 +368,6 @@ private:
 
 };
 
-}  // namespace pb_omni_pid_pursuit_controller
+}
 
-#endif  // PB_OMNI_PID_PURSUIT_CONTROLLER__OMNI_PID_PURSUIT_CONTROLLER_HPP_
+#endif

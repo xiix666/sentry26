@@ -17,17 +17,15 @@ from launch.actions import (
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 
-# 定义 QoS 配置（BEST_EFFORT 可靠性 + 易失性耐久性）
 qos_best_effort = QoSProfile(
     reliability=QoSReliabilityPolicy.BEST_EFFORT,
     durability=QoSDurabilityPolicy.VOLATILE,
-    depth=10  # 队列深度，根据需求调整
+    depth=10
 )
 def generate_launch_description():
-    # Getting directories and launch-files
+
     bringup_dir = get_package_share_directory("bringup")
 
-    # Input parameters declaration
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
     autostart = LaunchConfiguration("autostart")
@@ -35,11 +33,9 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     map_yaml_file = LaunchConfiguration("map")
     params_file = LaunchConfiguration("params_file")
-    
-    # Variables
+
     lifecycle_nodes = ["map_server"]
-    # lifecycle_nodes = []
-    # Create our own temporary YAML files that include substitutions
+
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
     
     configured_params = ParameterFile(
@@ -58,7 +54,6 @@ def generate_launch_description():
 
     colorized_output_envvar = SetEnvironmentVariable("RCUTILS_COLORIZED_OUTPUT", "1")
 
-    # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace", default_value="", description="Top-level namespace"
     )
@@ -235,11 +230,9 @@ def generate_launch_description():
 
     ld = LaunchDescription()
 
-    # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
     ld.add_action(colorized_output_envvar)
 
-    # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_params_file_cmd)
@@ -247,20 +240,18 @@ def generate_launch_description():
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
-    # Running Map Saver Server
+
     ld.add_action(start_map_server_cmd)
     ld.add_action(start_lifecycle_manager_cmd)
     ld.add_action(robot_state)
-    # ld.add_action(start_livox_ros_driver2_node)
-    # ld.add_action(lidar_publish)
+
     ld.add_action(start_point_lio_node)
-    # ld.add_action(pointcloud_seg_node)
+
     ld.add_action(start_pointcloud_to_laserscan_node)
     ld.add_action(start_sync_slam_toolbox_node)
-    # ld.add_action(start_static_transform_node)
+
     ld.add_action(gicp_relocalization_node)
     ld.add_action(terrain_node)
     ld.add_action(special_area)
-   
 
     return ld

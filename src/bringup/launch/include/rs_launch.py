@@ -20,7 +20,6 @@ import launch_ros.actions
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 
-
 configurable_parameters = [{'name': 'camera_name',                  'default': 'camera', 'description': 'camera unique name'},
                            {'name': 'camera_namespace',             'default': 'camera', 'description': 'namespace for camera'},
                            {'name': 'serial_no',                    'default': "''", 'description': 'choose device by serial number'},
@@ -101,9 +100,7 @@ def launch_setup(context, params, param_name_suffix=''):
 
     _output = LaunchConfiguration('output' + param_name_suffix)
     if(os.getenv('ROS_DISTRO') == 'foxy'):
-        # Foxy doesn't support output as substitution object (LaunchConfiguration object)
-        # but supports it as string, so we fetch the string from this substitution object
-        # see related PR that was merged for humble, iron, rolling: https://github.com/ros2/launch/pull/577
+
         _output = context.perform_substitution(_output)
 
     return [

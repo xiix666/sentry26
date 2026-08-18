@@ -2,11 +2,13 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>fake_vel_transform</name>
-  <version>1.3.1</version>
-  <description>Adapts to NAV2 local path planner when `robot_base_frame` changes drastically.</description>
+  <version>1.0.0</version>
+  <description>Velocity and frame adapter for Nav2 local planning with changing robot base frames.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
   <license>Apache-2.0</license>
   <author email="lihanchen2004@163.com">Lihan Chen</author>
+  <author email="1834364183@qq.com">xx</author>
 
   <!-- buildtool_depend: dependencies of the build process -->
   <buildtool_depend>ament_cmake</buildtool_depend>

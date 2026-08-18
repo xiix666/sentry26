@@ -1,7 +1,4 @@
-// This is an advanced implementation of the algorithm described in the
-// following paper:
-//    C. Hertzberg,  R.  Wagner,  U.  Frese,  and  L.  Schroder.  Integratinggeneric   sensor   fusion   algorithms   with   sound   state   representationsthrough  encapsulation  of  manifolds.
-//    CoRR,  vol.  abs/1107.1119,  2011.[Online]. Available: http://arxiv.org/abs/1107.1119
+
 
 /*
  *  Copyright (c) 2019--2023, The University of Hong Kong
@@ -70,10 +67,6 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @file mtk/startIdx.hpp 
- * @brief Tools to access sub-elements of compound manifolds.
- */
 #ifndef GET_START_INDEX_H_
 #define GET_START_INDEX_H_
 
@@ -84,23 +77,6 @@
 
 namespace MTK {
 
-
-/** 
- * \defgroup SubManifolds Accessing Submanifolds
- * For compound manifolds constructed using MTK_BUILD_MANIFOLD, member pointers
- * can be used to get sub-vectors or matrix-blocks of a corresponding big matrix.
- * E.g. for a type @a pose consisting of @a orient and @a trans the member pointers
- * @c &pose::orient and @c &pose::trans give all required information and are still
- * valid if the base type gets extended or the actual types of @a orient and @a trans
- * change (e.g. from 2D to 3D).
- * 
- * @todo Maybe require manifolds to typedef MatrixType and VectorType, etc.
- */
-//@{
-
-/**
- * Determine the index of a sub-variable within a compound variable.
- */
 template<class Base, class T, int idx, int dim> 
 int getStartIdx( MTK::SubManifold<T, idx, dim> Base::*)
 {
@@ -113,9 +89,6 @@ int getStartIdx_( MTK::SubManifold<T, idx, dim> Base::*)
 	return dim;
 }
 
-/**
- * Determine the degrees of freedom of a sub-variable within a compound variable.
- */
 template<class Base, class T, int idx, int dim> 
 int getDof( MTK::SubManifold<T, idx, dim> Base::*)
 {
@@ -127,9 +100,6 @@ int getDim( MTK::SubManifold<T, idx, dim> Base::*)
 	return T::DIM;
 }
 
-/**
- * set the diagonal elements of a covariance matrix corresponding to a sub-variable
- */
 template<class Base, class T, int idx, int dim> 
 void setDiagonal(Eigen::Matrix<typename Base::scalar, Base::DOF, Base::DOF> &cov, 
 		MTK::SubManifold<T, idx, dim> Base::*, const typename Base::scalar &val)
@@ -144,15 +114,6 @@ void setDiagonal_(Eigen::Matrix<typename Base::scalar, Base::DIM, Base::DIM> &co
 	cov.diagonal().template segment<T::DIM>(dim).setConstant(val);
 }
 
-/**
- * Get the subblock of corresponding to two members, i.e.
- * \code
- *  Eigen::Matrix<double, Pose::DOF, Pose::DOF> m;
- *  MTK::subblock(m, &Pose::orient, &Pose::trans) = some_expression;
- *  MTK::subblock(m, &Pose::trans, &Pose::orient) = some_expression.trans();
- * \endcode
- * lets you modify mixed covariance entries in a bigger covariance matrix.
- */
 template<class Base, class T1, int idx1, int dim1, class T2, int idx2, int dim2>
 typename MTK::internal::CovBlock<Base, T1, T2>::Type
 subblock(Eigen::Matrix<typename Base::scalar, Base::DOF, Base::DOF> &cov, 
@@ -182,14 +143,6 @@ subblock_(Eigen::Matrix<typename Base1::scalar, Base1::DIM, Base2::DIM> &cov, MT
 {
 	return cov.template block<T1::DIM, T2::DIM>(dim1, dim2);
 }
-/**
- * Get the subblock of corresponding to a member, i.e.
- * \code
- *  Eigen::Matrix<double, Pose::DOF, Pose::DOF> m;
- *  MTK::subblock(m, &Pose::orient) = some_expression;
- * \endcode
- * lets you modify covariance entries in a bigger covariance matrix.
- */
 template<class Base, class T, int idx, int dim>
 typename MTK::internal::CovBlock_<Base, T, T>::Type
 subblock_(Eigen::Matrix<typename Base::scalar, Base::DIM, Base::DIM> &cov, 
@@ -234,7 +187,6 @@ public:
     typedef const type const_type;
 };
 
-
 template<class Base, class T, int idx, int dim>
 vectview<typename Base::scalar, T::DIM>
 subvector_impl_(vectview<typename Base::scalar, Base::DIM> vec, SubManifold<T, idx, dim> Base::*)
@@ -249,9 +201,6 @@ subvector_impl(vectview<typename Base::scalar, Base::DOF> vec, SubManifold<T, id
 	return vec.template segment<T::DOF>(idx);
 }
 
-/**
- * Get the subvector corresponding to a sub-manifold from a bigger vector.
- */
  template<class Scalar, int BaseDIM, class Base, class T, int idx, int dim>
 vectview<Scalar, T::DIM>
 subvector_(vectview<Scalar, BaseDIM> vec, SubManifold<T, idx, dim> Base::* ptr)
@@ -266,9 +215,6 @@ subvector(vectview<Scalar, BaseDOF> vec, SubManifold<T, idx, dim> Base::* ptr)
 	return subvector_impl(vec, ptr);
 }
 
-/**
- * @todo This should be covered already by subvector(vectview<typename Base::scalar,Base::DOF> vec,SubManifold<T,idx> Base::*)
- */
 template<class Scalar, int BaseDOF, class Base, class T, int idx, int dim>
 vectview<Scalar, T::DOF>
 subvector(Eigen::Matrix<Scalar, BaseDOF, 1>& vec, SubManifold<T, idx, dim> Base::* ptr)
@@ -297,10 +243,6 @@ subvector(const Eigen::Matrix<Scalar, BaseDOF, 1>& vec, SubManifold<T, idx, dim>
 	return subvector_impl(vectview<const Scalar, BaseDOF>(vec), ptr);
 }
 
-
-/**
- * const version of subvector(vectview<typename Base::scalar,Base::DOF> vec,SubManifold<T,idx> Base::*)
- */
 template<class Base, class T, int idx, int dim>
 vectview<const typename Base::scalar, T::DOF>
 subvector_impl(const vectview<const typename Base::scalar, Base::DOF> cvec, SubManifold<T, idx, dim> Base::*)
@@ -322,7 +264,6 @@ subvector(const vectview<const Scalar, BaseDOF> cvec, SubManifold<T, idx, dim> B
 	return subvector_impl(cvec, ptr);
 }
 
+}
 
-} // namespace MTK
-
-#endif // GET_START_INDEX_H_
+#endif

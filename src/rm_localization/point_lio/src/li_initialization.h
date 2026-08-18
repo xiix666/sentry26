@@ -8,7 +8,7 @@
 extern bool data_accum_finished, data_accum_start, online_calib_finish, refine_print;
 extern int frame_num_init;
 extern double time_lag_IMU_wtr_lidar, move_start_time,
-  online_calib_starts_time;  //, mean_acc_norm = 9.81;
+  online_calib_starts_time;
 
 extern double timediff_imu_wrt_lidar;
 extern bool timediff_set_flg;
@@ -28,11 +28,7 @@ extern sensor_msgs::msg::Imu imu_last, imu_next;
 extern PointCloudXYZI::Ptr ptr_con;
 extern double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot11[MAXN];
 
-// extern sensor_msgs::msg::Imu::ConstSharedPtr imu_last_ptr;
-
 void standard_pcl_cbk(const sensor_msgs::msg::PointCloud2::SharedPtr & msg);
 void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::SharedPtr & msg);
 void imu_cbk(const sensor_msgs::msg::Imu::ConstSharedPtr & msg_in);
 bool sync_packages(MeasureGroup & meas);
-
-// #endif

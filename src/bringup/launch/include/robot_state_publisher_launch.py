@@ -15,7 +15,7 @@ def generate_launch_description():
             "--y",
             "0.0",
             "--z",
-            # "0.33",
+
             "0.0",
             "--roll",
             "0.0",
@@ -30,31 +30,7 @@ def generate_launch_description():
         ],
         remappings=remappings,
     )
-    # static_transform_node_odom2lidar = Node(
-    #     package="tf2_ros",
-    #     executable="static_transform_publisher",
-    #     name="static_transform_node_odom2lidar",
-    #     output="screen",
-    #     arguments=[
-    #         "--x",
-    #         "0.0",
-    #         "--y",
-    #         "0.0",
-    #         "--z",
-    #         "0.0",
-    #         "--roll",
-    #         "0.0",
-    #         "--pitch",
-    #         "0.0",
-    #         "--yaw",
-    #         "0.0",
-    #         "--frame-id",
-    #         "odom",
-    #         "--child-frame-id",
-    #         "lidar_odom",
-    #     ],
-    #     remappings=remappings,
-    # )
+
     static_transform_node_odom2init = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -159,11 +135,10 @@ def generate_launch_description():
 
     ld = LaunchDescription()
 
-    # Declare the launch options
     ld.add_action(start_static_transform_node_lidar2)
     ld.add_action(start_static_transform_node) 
-    # ld.add_action(static_transform_node_odom2lidar)   
+
     ld.add_action(static_transform_node_odom2init)
     ld.add_action(start_static_transform_lidar2base_node)
-    # ld.add_action(static_transform_node_base2rs)
+
     return ld

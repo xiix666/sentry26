@@ -16,10 +16,6 @@ using BackUpAction = nav2_msgs::action::BackUp;
 namespace pb_nav2_behaviors
 {
 
-/**
- * @class pb_nav2_behaviors::BackUpFreeSpace
- * @brief An enhanced back_up action that move toward free space
- */
 class BackUpFreeSpace : public nav2_behaviors::DriveOnHeading<nav2_msgs::action::BackUp>
 {
 public:
@@ -80,42 +76,15 @@ public:
     for (float c : cost_list) sum += c;
     return sum / cost_list.size();
   }
-  /**
-   * @brief Configuration of behavior action
-   */
   void onConfigure() override;
 
-  /**
-   * @brief Cleanup server on lifecycle transition
-   */
   void onCleanup() override;
 
-  /**
-   * @brief Initialization to run behavior
-   * @param command Goal to execute
-   * @return Status of behavior
-   */
   nav2_behaviors::Status onRun(const std::shared_ptr<const BackUpAction::Goal> command) override;
 
-  /**
-   * @brief Loop function to run behavior
-   * @return Status of behavior
-   */
   nav2_behaviors::Status onCycleUpdate() override;
 
 protected:
-  /**
-   * @brief Gather free points within a specified radius from the center in the costmap.
-   *
-   * This function iterates through the costmap and collects points that are free (costmap value is 0)
-   * and within the specified radius from the given center coordinates (center_x, center_y).
-   *
-   * @param costmap The costmap to search for free points.
-   * @param center_x The x-coordinate of the center point.
-   * @param center_y The y-coordinate of the center point.
-   * @param radius The radius within which to gather free points.
-   * @return A vector of points that are free and within the specified radius.
-   */
   std::vector<geometry_msgs::msg::Point> gatherFreePoints(
     const nav2_msgs::msg::Costmap & costmap, geometry_msgs::msg::Pose2D pose, float radius);
   int parseCostmapAndQuery(const nav2_msgs::msg::Costmap& costmap) ;
@@ -133,7 +102,7 @@ protected:
   double twist_x_, twist_y_;
   double init_x,init_y;
   double current_x, current_y;
-  // parameters
+
   std::string service_name_;
   double max_radius_;
   bool visualize_;
@@ -147,6 +116,6 @@ protected:
   std::mutex costmap_mutex_;
 };
 
-}  // namespace pb_nav2_behaviors
+}
 
-#endif  // PB_NAV2_PLUGINS__BEHAVIORS__BACK_UP_FREE_SPACE_HPP_
+#endif

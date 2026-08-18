@@ -10,9 +10,8 @@ from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
-
 def generate_launch_description():
-    # Get the launch directory
+
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
 
@@ -29,7 +28,6 @@ def generate_launch_description():
 
     lifecycle_nodes = ["map_server"]
 
-    # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
 
     configured_params = ParameterFile(
@@ -98,28 +96,6 @@ def generate_launch_description():
         "log_level", default_value="info", description="log level"
     )
 
-    # start_livox_ros_driver2_node = Node(
-    #     package="livox_ros_driver2",
-    #     executable="livox_ros_driver2_node",
-    #     name="livox_ros_driver2",
-    #     output="screen",
-    #     namespace=namespace,
-    #     parameters=[configured_params],
-    # )
-
-    # start_point_lio_node = Node(
-    #     package="point_lio",
-    #     executable="pointlio_mapping",
-    #     name="point_lio",
-    #     output="screen",
-    #     respawn=use_respawn,
-    #     respawn_delay=2.0,
-    #     parameters=[
-    #         configured_params,
-    #     ],
-    #     arguments=["--ros-args", "--log-level", log_level],
-    # )
-
     load_nodes = GroupAction(
         condition=IfCondition(PythonExpression(["not ", use_composition])),
         actions=[
@@ -168,31 +144,6 @@ def generate_launch_description():
         ],
     )
 
-    # load_composable_nodes = LoadComposableNodes(
-    #     condition=IfCondition(use_composition),
-    #     target_container=container_name_full,
-    #     composable_node_descriptions=[
-    #         ComposableNode(
-    #             package="nav2_map_server",
-    #             plugin="nav2_map_server::MapServer",
-    #             name="map_server",
-    #             parameters=[configured_params],
-    #         ),
-    #         ComposableNode(
-    #             package="nav2_lifecycle_manager",
-    #             plugin="nav2_lifecycle_manager::LifecycleManager",
-    #             name="lifecycle_manager_localization",
-    #             parameters=[
-    #                 {
-    #                     "use_sim_time": use_sim_time,
-    #                     "autostart": autostart,
-    #                     "node_names": lifecycle_nodes,
-    #                 }
-    #             ],
-    #         ),
-    #     ],
-    # )
-
     start_static_transform_node = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -218,14 +169,11 @@ def generate_launch_description():
         ],
     )
 
-    # Create the launch description and populate
     ld = LaunchDescription()
 
-    # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
     ld.add_action(colorized_output_envvar)
 
-    # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_map_yaml_cmd)
     ld.add_action(declare_use_sim_time_cmd)
@@ -236,11 +184,7 @@ def generate_launch_description():
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
 
-    # Add the actions to launch all of the localiztion nodes
-    # ld.add_action(start_livox_ros_driver2_node)
-    # ld.add_action(start_point_lio_node)
     ld.add_action(start_static_transform_node)
     ld.add_action(load_nodes)
-    # ld.add_action(load_composable_nodes)
 
     return ld

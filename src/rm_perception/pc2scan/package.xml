@@ -2,10 +2,11 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="2">
   <name>pc2scan</name>
-  <version>2.0.1</version>
-  <description>TODO: Package description</description>
-  <maintainer email="1834364183@qq.com">chakfan</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>Point cloud to laser scan conversion with height, intensity, and gradient filtering.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
+  <license>Apache-2.0</license>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 

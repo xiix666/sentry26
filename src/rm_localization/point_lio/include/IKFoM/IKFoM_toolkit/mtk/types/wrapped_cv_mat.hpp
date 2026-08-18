@@ -15,9 +15,9 @@
  *     copyright notice, this list of conditions and the following
  *     disclaimer in the documentation and/or other materials provided
  *     with the distribution.
- *   * Neither the name of the Universitaet Bremen nor the DFKI GmbH 
- *     nor the names of its contributors may be used to endorse or 
- *     promote products derived from this software without specific 
+ *   * Neither the name of the Universitaet Bremen nor the DFKI GmbH
+ *     nor the names of its contributors may be used to endorse or
+ *     promote products derived from this software without specific
  *     prior written permission.
  *
  *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
@@ -57,9 +57,6 @@ struct cv_f_type<float>
 	enum {value = CV_32F};
 };
 
-/**
- * cv_mat wraps a CvMat around an Eigen Matrix
- */
 template<int rows, int cols, class f_type = double>
 class cv_mat : public matrix<rows, cols, f_type, cols==1 ? Eigen::ColMajor : Eigen::RowMajor>
 {
@@ -96,8 +93,7 @@ public:
 		base_type::operator=(value);
 		return *this;
 	}
-	
-	// FIXME: Maybe overloading operator& is not a good idea ...
+
 	CvMat* operator&()
 	{
 		return &cv_mat_;
@@ -108,6 +104,6 @@ public:
 	}
 };
 
-} // namespace MTK
+}
 
-#endif /* WRAPPED_CV_MAT_HPP_ */
+#endif

@@ -34,70 +34,53 @@
  *
  */
 
-/*
- * Author: Paul Bovbel
- */
+#ifndef PC2SCAN__PC2SCAN_NODE_HPP_
+#define PC2SCAN__PC2SCAN_NODE_HPP_
 
- #ifndef PC2SCAN__PC2SCAN_NODE_HPP_
- #define PC2SCAN__PC2SCAN_NODE_HPP_
- 
- #include <atomic>
- #include <memory>
- #include <string>
- #include <thread>
- #include "pc2scan/visibility_control.h"
- #include "message_filters/subscriber.h"
- #include "tf2_ros/buffer.h"
- #include "tf2_ros/message_filter.h"
- #include "tf2_ros/transform_listener.h"
- 
- #include "rclcpp/rclcpp.hpp"
- #include "sensor_msgs/msg/laser_scan.hpp"
- #include "sensor_msgs/msg/point_cloud2.hpp"
- 
-//  #include "pointcloud_to_laserscan/visibility_control.h"
- 
- namespace pc2scan
- {
- typedef tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> MessageFilter;
- 
- /**
- * Class to process incoming pointclouds into laserscans.
- * Some initial code was pulled from the defunct turtlebot pointcloud_to_laserscan implementation.
- */
- class pc2scan : public rclcpp::Node
- {
- public:
-    POINTCLOUD_TO_LASERSCAN_PUBLIC
-   explicit pc2scan(const rclcpp::NodeOptions & options);
- 
-   ~pc2scan() override;
- 
- private:
-   void cloudCallback(sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_msg);
- 
-   void subscriptionListenerThreadLoop();
- 
-   std::unique_ptr<tf2_ros::Buffer> tf2_;
-   std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
-   message_filters::Subscriber<sensor_msgs::msg::PointCloud2> sub_;
-   std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::LaserScan>> pub_;
-   std::unique_ptr<MessageFilter> message_filter_;
- 
-   std::thread subscription_listener_thread_;
-   std::atomic_bool alive_{true};
- 
-   // ROS Parameters
-   int input_queue_size_;
-   std::string target_frame_;
-   double tolerance_;
-   double min_height_, max_height_, min_intensity_, max_intensity_, angle_min_, angle_max_, angle_increment_, scan_time_, range_min_,
-     range_max_, max_gradient_threshold_;
-   bool use_inf_;
-   double inf_epsilon_;
- };
- 
- }  // namespace pointcloud_to_laserscan
- 
- #endif  // POINTCLOUD_TO_LASERSCAN__POINTCLOUD_TO_LASERSCAN_NODE_HPP_
- 
+#include <atomic>
+#include <memory>
+#include <string>
+#include <thread>
+#include "pc2scan/visibility_control.h"
+#include "message_filters/subscriber.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/message_filter.h"
+#include "tf2_ros/transform_listener.h"
+
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/laser_scan.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+
+namespace pc2scan {
+typedef tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> MessageFilter;
+
+class pc2scan : public rclcpp::Node {
+public:
+  POINTCLOUD_TO_LASERSCAN_PUBLIC
+  explicit pc2scan(const rclcpp::NodeOptions &options);
+
+  ~pc2scan() override;
+
+private:
+  void cloudCallback(sensor_msgs::msg::PointCloud2::ConstSharedPtr cloud_msg);
+
+  void subscriptionListenerThreadLoop();
+  std::unique_ptr<tf2_ros::Buffer> tf2_;
+  std::unique_ptr<tf2_ros::TransformListener> tf2_listener_;
+  message_filters::Subscriber<sensor_msgs::msg::PointCloud2> sub_;
+  std::shared_ptr<rclcpp::Publisher<sensor_msgs::msg::LaserScan>> pub_;
+  std::unique_ptr<MessageFilter> message_filter_;
+  std::thread subscription_listener_thread_;
+  std::atomic_bool alive_{true};
+  int input_queue_size_;
+  std::string target_frame_;
+  double tolerance_;
+  double min_height_, max_height_, min_intensity_, max_intensity_, angle_min_,
+      angle_max_, angle_increment_, scan_time_, range_min_, range_max_,
+      max_gradient_threshold_;
+  bool use_inf_;
+  double inf_epsilon_;
+};
+} // namespace pc2scan
+
+#endif

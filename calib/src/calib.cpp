@@ -1,6 +1,5 @@
-//
-// Created by thesky on 25-4-2.
-//
+
+
 #include <chrono>
 #include <vector>
 #include <deque>
@@ -22,13 +21,11 @@
 #include <message_filters/sync_policies/approximate_time.h>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
-// 简化类型别名
 using PointCloudXYZ = pcl::PointCloud<pcl::PointXYZ>;
 using PointCloudXYZINormal = pcl::PointCloud<pcl::PointXYZINormal>;
 using PointCloud2Msg = sensor_msgs::msg::PointCloud2;
 using ApproxSyncPolicy = message_filters::sync_policies::ApproximateTime<PointCloud2Msg, PointCloud2Msg>;
 
-// 辅助函数：旋转矩阵转欧拉角（弧度）
 void rotationMatrixToEulerAngles(const Eigen::Matrix3d& R, 
             double& roll, double& pitch, double& yaw) {
     double sin_pitch = -R(2, 0);
@@ -46,46 +43,38 @@ void rotationMatrixToEulerAngles(const Eigen::Matrix3d& R,
     }
 }
 
-// 辅助函数：弧度转角度
 double rad2deg(double rad) {
     return rad * 180.0 / M_PI;
 }
 
-// 辅助函数：角度转弧度
 double deg2rad(double deg) {
     return deg * M_PI / 180.0;
 }
 
-// 辅助函数：生成初始变换矩阵（固定值：x=0.0, y=-0.245, z=-0.245；roll=1.62°, pitch=0.0°, yaw=-0.0°）
 Eigen::Matrix4d createFixedInitialTransform() {
     Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
     
-    // 1. 固定初始变换参数（从命令行参数复制）
-    const double roll_deg = 1.57;    // --roll 1.62
-    const double pitch_deg = 0.0;    // --pitch 0.0
-    const double yaw_deg = 0.0;     // --yaw -0.0
-    const double tx = 0.0;           // --x 0.0
-    const double ty = -0.245;        // --y -0.245
-    const double tz = -0.245;        // --z -0.245
+    const double roll_deg = 1.57;
+    const double pitch_deg = 0.0;
+    const double yaw_deg = 0.0;
+    const double tx = 0.0;
+    const double ty = -0.245;
+    const double tz = -0.245;
 
-    // 2. 欧拉角（度）转弧度
     double roll_rad = deg2rad(roll_deg);
     double pitch_rad = deg2rad(pitch_deg);
     double yaw_rad = deg2rad(yaw_deg);
 
-    // 3. 欧拉角转旋转矩阵（Z-Y-X顺序：yaw-pitch-roll）
     Eigen::AngleAxisd roll_angle(roll_rad, Eigen::Vector3d::UnitX());
     Eigen::AngleAxisd pitch_angle(pitch_rad, Eigen::Vector3d::UnitY());
     Eigen::AngleAxisd yaw_angle(yaw_rad, Eigen::Vector3d::UnitZ());
     Eigen::Matrix3d R = (yaw_angle * pitch_angle * roll_angle).toRotationMatrix();
 
-    // 4. 设置旋转和平移矩阵
     T.block<3,3>(0,0) = R;
     T(0,3) = tx;
     T(1,3) = ty;
     T(2,3) = tz;
 
-    // 打印固定初始变换（方便验证）
     RCLCPP_WARN(rclcpp::get_logger("CalibLidar"), "=== Fixed Initial Transform ===");
     RCLCPP_WARN(rclcpp::get_logger("CalibLidar"), "Rotation (deg): Roll=%.2f, Pitch=%.2f, Yaw=%.2f",
                 roll_deg, pitch_deg, yaw_deg);
@@ -106,11 +95,9 @@ public:
         RCLCPP_WARN(this->get_logger(), "CalibLidar start");
 
         T = createFixedInitialTransform();
-        // 1. 初始化订阅器
         mid70_sub.subscribe(this, "/livox/lidar/pointcloud_192_168_2_120");
         avia_sub.subscribe(this, "/livox/lidar/pointcloud_192_168_2_121");
 
-        // 2. 初始化时间同步器
         sync = std::make_unique<message_filters::Synchronizer<ApproxSyncPolicy>>(
             ApproxSyncPolicy(20),  
             avia_sub,              
@@ -119,46 +106,37 @@ public:
         sync->setMaxIntervalDuration(rclcpp::Duration(0, 10000000)); 
         sync->registerCallback(&CalibLidar::PcTimeSynC, this);
 
-        // 3. 基础参数配置（移除初始变换相关参数，改用固定值）
         this->declare_parameter<int>("accumulate_time", 5);
         this->declare_parameter<double>("icp_cost_thres", 0.1);
         this->declare_parameter<double>("voxel_size", 0.1);
         
-        // 读取基础参数
         accumulate_time = this->get_parameter("accumulate_time").as_int();
         icp_cost_thres_ = this->get_parameter("icp_cost_thres").as_double();
         voxel_size_ = this->get_parameter("voxel_size").as_double();
 
-
-        // 禁用手动选点（直接用固定初始值）
         use_manual_init_ = false;
-        manual_aligned_ = true; // 标记初始变换已生成，无需手动选点
+        manual_aligned_ = true;
     }
 
     ~CalibLidar(){}
 
 private:
-    // 订阅器和同步器
     message_filters::Subscriber<PointCloud2Msg> mid70_sub;
     message_filters::Subscriber<PointCloud2Msg> avia_sub;
     std::unique_ptr<message_filters::Synchronizer<ApproxSyncPolicy>> sync;
 
-    // 配准参数
     int accumulate_time = 30;
     double icp_cost_thres_ = 0.3;
     double voxel_size_ = 0.2;
-    bool manual_aligned_ = false;    // 手动配准完成标志（直接设为true）
-    bool auto_aligned_ = false;      // 自动ICP完成标志
-    bool use_manual_init_ = false;   // 禁用手动初始值
-    Eigen::Matrix4d T = Eigen::Matrix4d::Identity(); // 变换矩阵（初始+优化）
+    bool manual_aligned_ = false;
+    bool auto_aligned_ = false;
+    bool use_manual_init_ = false;
+    Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
     int num = 0;
-    // 累加点云
-    std::vector<PointCloudXYZ::Ptr> accumulated_clouds_1; // Avia
-    std::vector<PointCloudXYZ::Ptr> accumulated_clouds_2; // Mid70
 
-    /**
-     * @brief Open3D手动选点（保留但禁用，如需启用可改use_manual_init_为true）
-     */
+    std::vector<PointCloudXYZ::Ptr> accumulated_clouds_1;
+    std::vector<PointCloudXYZ::Ptr> accumulated_clouds_2;
+
     std::vector<size_t> select_points(std::shared_ptr<const open3d::geometry::PointCloud> pcd){
         RCLCPP_INFO(this->get_logger(), "Select points...");
         RCLCPP_INFO(this->get_logger(), "  Use [shift + left click] to pick points.");
@@ -173,9 +151,6 @@ private:
         return vis_.GetPickedPoints();
     }
 
-    /**
-     * @brief 手动配准（保留但禁用）
-     */
     Eigen::Matrix4d manual_trans(std::shared_ptr<open3d::geometry::PointCloud> source, 
                                  std::shared_ptr<open3d::geometry::PointCloud> target){
         auto picked_source = select_points(source);
@@ -191,22 +166,17 @@ private:
         return pointToPoint.ComputeTransformation(*source, *target, correspondences);
     }
 
-    /**
-     * @brief 同步回调函数：处理Avia和Mid70点云
-     */
     void PcTimeSynC(const PointCloud2Msg::SharedPtr msg1, const PointCloud2Msg::SharedPtr msg2) {
-        // 1. 转换ROS点云到PCL点云
+
         PointCloudXYZ::Ptr avia_cloud(new PointCloudXYZ());
         PointCloudXYZ::Ptr mid70_cloud(new PointCloudXYZ());
         pcl::fromROSMsg(*msg1, *avia_cloud);
         pcl::fromROSMsg(*msg2, *mid70_cloud);
 
-        // 2. 移除NaN点
         std::vector<int> indices;
         pcl::removeNaNFromPointCloud(*avia_cloud, *avia_cloud, indices);
         pcl::removeNaNFromPointCloud(*mid70_cloud, *mid70_cloud, indices);
 
-        // 3. 点云累加
         if(accumulated_clouds_1.size() < accumulate_time){
             accumulated_clouds_1.push_back(avia_cloud);
             accumulated_clouds_2.push_back(mid70_cloud);
@@ -218,11 +188,9 @@ private:
             accumulated_clouds_2.push_back(mid70_cloud);
         }
 
-        // 4. 合并累加点云并滤波
-        PointCloudXYZ::Ptr target_cloud(new PointCloudXYZ()); // Avia（目标）
-        PointCloudXYZ::Ptr source_cloud(new PointCloudXYZ()); // Mid70（源）
+        PointCloudXYZ::Ptr target_cloud(new PointCloudXYZ());
+        PointCloudXYZ::Ptr source_cloud(new PointCloudXYZ());
 
-        // 4.1 合并Avia点云
         for(auto& acc_cloud : accumulated_clouds_1){
             for (const auto& point : *acc_cloud){
                 if(point.x > -35 && point.x < 35 && 
@@ -233,7 +201,6 @@ private:
             }
         }
 
-        // 4.2 合并Mid70点云
         for(auto& acc_cloud : accumulated_clouds_2){
             for (const auto& point : *acc_cloud){
                 if(point.x > -35 && point.x < 35 && 
@@ -244,7 +211,6 @@ private:
             }
         }
 
-        // 5. 跳过手动配准（直接用固定初始值）
         if(use_manual_init_ && !manual_aligned_){
             auto avia_o3d = std::make_shared<open3d::geometry::PointCloud>();
             auto mid70_o3d = std::make_shared<open3d::geometry::PointCloud>();
@@ -268,9 +234,8 @@ private:
                         T(0,3), T(1,3), T(2,3));
         }
 
-        // 6. 自动ICP细标定（基于固定初始变换）
         if(!auto_aligned_){
-            // 6.1 降采样
+
             PointCloudXYZ::Ptr downsampled_target = std::make_shared<PointCloudXYZ>(); 
             PointCloudXYZ::Ptr downsampled_source = std::make_shared<PointCloudXYZ>(); 
 
@@ -281,11 +246,9 @@ private:
             voxelgrid.setInputCloud(source_cloud);
             voxelgrid.filter(*downsampled_source);
 
-            // 6.2 应用固定初始变换到源点云
             PointCloudXYZ::Ptr source_transformed = std::make_shared<PointCloudXYZ>();
             pcl::transformPointCloud(*downsampled_source, *source_transformed, T.cast<float>());
 
-            // 6.3 计算法向量
             PointCloudXYZINormal::Ptr sourceCloudNormal = std::make_shared<PointCloudXYZINormal>();
             PointCloudXYZINormal::Ptr targetCloudNormal = std::make_shared<PointCloudXYZINormal>();
             pcl::copyPointCloud(*source_transformed, *sourceCloudNormal);
@@ -310,7 +273,6 @@ private:
             ne.compute(*target_normals);
             pcl::copyPointCloud(*target_normals, *targetCloudNormal);
 
-            // 6.4 GICP细标定
             auto gicp = std::make_shared<pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZINormal, pcl::PointXYZINormal>>();
             pcl::search::KdTree<pcl::PointXYZINormal>::Ptr tree_1 = std::make_shared<pcl::search::KdTree<pcl::PointXYZINormal>>();
             pcl::search::KdTree<pcl::PointXYZINormal>::Ptr tree_2 = std::make_shared<pcl::search::KdTree<pcl::PointXYZINormal>>();
@@ -326,23 +288,19 @@ private:
             gicp->setEuclideanFitnessEpsilon(1e-6);
             gicp->setUseReciprocalCorrespondences(true);
 
-            // 6.5 执行ICP配准
             PointCloudXYZINormal::Ptr aligned(new PointCloudXYZINormal());
             gicp->align(*aligned);
 
-            // 6.6 输出配准结果
             double fitness_score = gicp->getFitnessScore();
             RCLCPP_INFO(this->get_logger(), "ICP iteration %d, fitness score: %.6f (thres=%.6f)",
                         num+1, fitness_score, icp_cost_thres_);
             std::cout << gicp->getFinalTransformation() << std::endl;
 
-            // 6.7 更新变换矩阵
             if (gicp->hasConverged()) {
                 Eigen::Matrix4f icp_delta = gicp->getFinalTransformation();
                 T = (icp_delta.cast<double>() * T).eval();
                 num ++ ;
 
-                // 6.8 判断配准成功
                 if(fitness_score < icp_cost_thres_){
                     auto_aligned_ = true;
                     double roll, pitch, yaw;
@@ -366,7 +324,6 @@ private:
             }
         }
 
-        // 7. 打印最终结果
         if(auto_aligned_){
             RCLCPP_WARN(this->get_logger(), "=== Calibration Done! Final Matrix ===");
             std::cout << T << std::endl;

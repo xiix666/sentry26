@@ -37,9 +37,7 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
   this->declare_parameter<std::string>("input_cmd_vel_topic", "");
   this->declare_parameter<std::string>("output_cmd_vel_topic", "");
   this->declare_parameter<std::string>("output_safe_cmd_vel_topic", "cmd_vel_safe");
-    // this->declare_parameter<std::string>("local_plan_topic", "local_plan");
-  // this->declare_parameter<float>("init_spin_speed", 0.0);
-  // this->declare_parameter<std::string>("cmd_spin_topic", "cmd_spin");
+
   this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("fake_robot_base_frame", fake_robot_base_frame_);
   this->get_parameter("odom_topic", odom_topic_);
@@ -67,9 +65,6 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
     std::max(
       EPSILON,
       max_linear_deceleration_);
-  // this->get_parameter("local_plan_topic", local_plan_topic_);
-  // this->get_parameter("cmd_spin_topic", cmd_spin_topic_);
-  // this->get_parameter("init_spin_speed", spin_speed_);
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
  
@@ -77,8 +72,7 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
     this->create_publisher<geometry_msgs::msg::Twist>(output_cmd_vel_topic_, 1);
   cmd_vel_safe_pub_ =
     this->create_publisher<geometry_msgs::msg::Twist>(output_safe_cmd_vel_topic_, 1);
-  // cmd_spin_sub_ = this->create_subscription<example_interfaces::msg::Float32>(
-  //   cmd_spin_topic_, 1, std::bind(&FakeVelTransform::cmdSpinCallback, this, std::placeholders::_1));
+
   cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
     input_cmd_vel_topic_, 10,
     std::bind(&FakeVelTransform::cmdVelCallback, this, std::placeholders::_1));
@@ -86,7 +80,6 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
   odom_sub_filter_.subscribe(this, odom_topic_);
   odom_sub_filter_.registerCallback(
     std::bind(&FakeVelTransform::odometryCallback, this, std::placeholders::_1));
-  // 初始化缓存
   last_cmd_vel_ =
     std::make_shared<geometry_msgs::msg::Twist>();
 
@@ -98,11 +91,7 @@ FakeVelTransform::FakeVelTransform(const rclcpp::NodeOptions & options)
 
   last_cmd_vel_time_ = now;
   last_velocity_limit_time_ = now;
-  // In Navigation2 Humble release, the velocity is published by the controller without timestamped.
-  // We consider the velocity is published at the same time as local_plan.
-  // Therefore, we use ApproximateTime policy to synchronize `cmd_vel` and `odometry`.
 
-  // 50Hz Timer to send transform from `robot_base_frame` to `fake_robot_base_frame`
   timer_ = this->create_wall_timer(
     std::chrono::milliseconds(20), std::bind(&FakeVelTransform::publishTransformAndSafeVel, this));
 
@@ -127,7 +116,6 @@ void FakeVelTransform::cmdVelCallback(
   std::lock_guard<std::mutex> lock(
     cmd_vel_mutex_);
 
-  // 只缓存控制器给出的目标速度。
   *last_cmd_vel_ = *msg;
 
   last_cmd_vel_time_ =
@@ -139,8 +127,7 @@ FakeVelTransform::applyLinearDecelerationLimit(
   const geometry_msgs::msg::Twist & target,
   double dt) const
 {
-  // 先让所有分量直接跟随目标。
-  // 因此angular.z不会进行任何平滑处理。
+
   geometry_msgs::msg::Twist output = target;
 
   if (!enable_linear_deceleration_limit_) {
@@ -169,8 +156,6 @@ FakeVelTransform::applyLinearDecelerationLimit(
       target_vx,
       target_vy);
 
-  // 目标速度没有减小，则直接跟随。
-  // 因此这里只限制减速度，不限制加速度。
   if (
     target_speed >=
     current_speed - EPSILON)
@@ -195,7 +180,6 @@ FakeVelTransform::applyLinearDecelerationLimit(
     max_linear_deceleration_ *
     dt;
 
-  // 本次允许的变化量足够达到目标值。
   if (
     delta_velocity <=
     max_delta_velocity ||
@@ -216,21 +200,9 @@ FakeVelTransform::applyLinearDecelerationLimit(
     current_vy +
     delta_vy * scale;
 
-  // angular.z仍然保持target.angular.z，
-  // 不经过任何限速和平滑。
   return output;
 }
-// void FakeVelTransform::publishTransform()
-// {
-//   geometry_msgs::msg::TransformStamped t;
-//   t.header.stamp = this->get_clock()->now();
-//   t.header.frame_id = robot_base_frame_;
-//   t.child_frame_id = fake_robot_base_frame_;
-//   tf2::Quaternion q;
-//   q.setRPY(0, 0, -current_robot_base_angle_);
-//   t.transform.rotation = tf2::toMsg(q);
-//   tf_broadcaster_->sendTransform(t);
-// }
+
 void FakeVelTransform::publishTransformAndSafeVel()
 {
   const auto now =
@@ -252,7 +224,6 @@ void FakeVelTransform::publishTransformAndSafeVel()
 
     last_velocity_limit_time_ = now;
 
-    // 防止定时器阻塞或时间跳变造成单次速度变化过大。
     dt = std::clamp(
       dt,
       0.001,
@@ -291,9 +262,6 @@ void FakeVelTransform::publishTransformAndSafeVel()
       safe_vel;
   }
 
-  // ============================================================
-  // 1. 发布TF变换
-  // ============================================================
   geometry_msgs::msg::TransformStamped t;
 
   t.header.stamp = now;
@@ -315,15 +283,9 @@ void FakeVelTransform::publishTransformAndSafeVel()
 
   tf_broadcaster_->sendTransform(t);
 
-  // ============================================================
-  // 2. 发布未变换的安全速度
-  // ============================================================
   cmd_vel_safe_pub_->publish(
     safe_vel);
 
-  // ============================================================
-  // 3. 转换到底盘坐标系并发布
-  // ============================================================
   const auto chassis_vel =
     transformVelocity(
       safe_vel,
@@ -357,7 +319,7 @@ FakeVelTransform::transformVelocity(
   return aft_tf_vel;
 }
 
-}  // namespace fake_vel_transform
+}
 
 #include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(fake_vel_transform::FakeVelTransform)

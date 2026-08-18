@@ -25,7 +25,7 @@ MTK_BUILD_MANIFOLD(
   state_input, ((vect3, pos))((SO3, rot))((SO3, offset_R_L_I))((vect3, offset_T_L_I))((vect3, vel))(
                  (vect3, bg))((vect3, ba))((vect3, gravity)));
 
-MTK_BUILD_MANIFOLD( //imu不作为核心输入，角速度加速度也加入估计
+MTK_BUILD_MANIFOLD(
   state_output,
   ((vect3, pos))((SO3, rot))((SO3, offset_R_L_I))((vect3, offset_T_L_I))((vect3, vel))(
     (vect3, omg))((vect3, acc))((vect3, gravity))((vect3, bg))((vect3, ba)));
@@ -35,7 +35,7 @@ MTK_BUILD_MANIFOLD(input_ikfom, ((vect3, acc))((vect3, gyro)));
 MTK_BUILD_MANIFOLD(process_noise_input, ((vect3, ng))((vect3, na))((vect3, nbg))((vect3, nba))); 
 
 MTK_BUILD_MANIFOLD(
-  process_noise_output, ((vect3, vel))((vect3, ng))((vect3, na))((vect3, nbg))((vect3, nba)));//多了速度噪声，因为imu不直接作为输入速度的不确定更高
+  process_noise_output, ((vect3, vel))((vect3, ng))((vect3, na))((vect3, nbg))((vect3, nba)));
 
 extern esekfom::esekf<state_input, 24, input_ikfom> kf_input;
 extern esekfom::esekf<state_output, 30, input_ikfom> kf_output;
@@ -44,9 +44,9 @@ extern esekfom::esekf<state_output, 30, input_ikfom> kf_output;
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 
 #define PI_M (3.14159265358)
-// #define G_m_s2 (9.81)         // Gravaty const in GuangDong/China
-#define DIM_STATE (24)   // Dimension of states (Let Dim(SO(3)) = 3)
-#define DIM_PROC_N (12)  // Dimension of process noise (Let Dim(SO(3)) = 3)
+
+#define DIM_STATE (24)
+#define DIM_PROC_N (12)
 #define CUBE_LEN (6.0)
 #define LIDAR_SP_LEN (2)
 #define INIT_COV (0.0001)
@@ -82,7 +82,7 @@ const M3F Eye3f(M3F::Identity());
 const V3D Zero3d(0, 0, 0);
 const V3F Zero3f(0, 0, 0);
 
-struct MeasureGroup  // Lidar data and imu dates for the curent process
+struct MeasureGroup
 {
   MeasureGroup()
   {
@@ -118,46 +118,42 @@ std::vector<int> time_compressing(const PointCloudXYZI::Ptr & point_cloud)
   int points_size = point_cloud->points.size();
   int j = 0;
   std::vector<int> time_seq;
-  // time_seq.clear();
+
   time_seq.reserve(points_size);
   for (int i = 0; i < points_size - 1; i++) {
     j++;
-    if (point_cloud->points[i + 1].curvature > point_cloud->points[i].curvature) {//下一个点的曲率大于当前点的曲率
+    if (point_cloud->points[i + 1].curvature > point_cloud->points[i].curvature) {
       time_seq.emplace_back(j);
       j = 0;
     }
   }
-  //   if (j == 0)
-  //   {
-  //     time_seq.emplace_back(1);
-  //   }
-  //   else
+
   {
     time_seq.emplace_back(j + 1);
   }
   return time_seq;
 }
 static std::vector<int> build_time_seq_by_ms_bin(
-  const PointCloudXYZI::Ptr& cloud,double bin_ms,std::vector<double>* bin_t_ref_sec) //bin_t_ref_sec每个bin的参考时间
+  const PointCloudXYZI::Ptr& cloud,double bin_ms,std::vector<double>* bin_t_ref_sec)
 {
   std::vector<int> seq;
   if(bin_t_ref_sec) bin_t_ref_sec->clear();
   if(!cloud||cloud->empty()) return seq;
-  auto ms_of = [&](const PointType& p)->double { return (double)p.curvature; };//返回时间戳（相对帧开始）
+  auto ms_of = [&](const PointType& p)->double { return (double)p.curvature; };
   double first_ms = ms_of(cloud->points[0]);
-  int cur_bin = (int)std::floor(first_ms / bin_ms);//向下取整（下取整函数）：把一个实数变成不大于它的最大整数。
+  int cur_bin = (int)std::floor(first_ms / bin_ms);
   int cnt = 0;
   auto bin_end_ms = [&](int bin_id)->double { return (bin_id + 1) * bin_ms; };
 
   for (size_t i = 0; i < cloud->size(); ++i) {
     double ms = ms_of(cloud->points[i]);
-    int b = (int)std::floor(ms / bin_ms);  //开始是0
+    int b = (int)std::floor(ms / bin_ms);
     if (b == cur_bin) {
       cnt++;
     } else {
       seq.push_back(cnt);
       if (bin_t_ref_sec) bin_t_ref_sec->push_back(bin_end_ms(cur_bin) / 1000.0);
-      cur_bin = b;//更新cur_bin
+      cur_bin = b;
       cnt = 1;
     }
   }
@@ -167,13 +163,7 @@ static std::vector<int> build_time_seq_by_ms_bin(
   return seq;
 
 }
-/* comment
-plane equation: Ax + By + Cz + D = 0
-convert to: A/D*x + B/D*y + C/D*z = -1
-solve: A0*x0 = b0
-where A0_i = [x_i, y_i, z_i], x0 = [A/D, B/D, C/D]^T, b0 = [-1, ..., -1]^T
-normvec:  normalized x0
-*/
+
 template <typename T>
 bool esti_normvector(
   Matrix<T, 3, 1> & normvec, const PointVector & point, const T & threshold, const int & point_num)

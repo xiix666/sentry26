@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+ColumnLimit: 80
+IndentWidth: 2
+ContinuationIndentWidth: 4
+MaxEmptyLinesToKeep: 1
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: true
+SortIncludes: Never

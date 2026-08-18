@@ -1,7 +1,4 @@
-// This is a NEW implementation of the algorithm described in the
-// following paper:
-//    C. Hertzberg,  R.  Wagner,  U.  Frese,  and  L.  Schroder.  Integratinggeneric   sensor   fusion   algorithms   with   sound   state   representationsthrough  encapsulation  of  manifolds.
-//    CoRR,  vol.  abs/1107.1119,  2011.[Online]. Available: http://arxiv.org/abs/1107.1119
+
 
 /*
  *  Copyright (c) 2019--2023, The University of Hong Kong
@@ -70,10 +67,6 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @file mtk/types/S2.hpp
- * @brief Unit vectors on the sphere, or directions in 3D.
- */
 #ifndef S2_H_
 #define S2_H_
 
@@ -84,12 +77,6 @@
 namespace MTK
 {
 
-/**
- * Manifold representation of @f$ S^2 @f$. 
- * Used for unit vectors on the sphere or directions in 3D.
- * 
- * @todo add conversions from/to polar angles?
- */
 template <class _scalar = double, int den = 1, int num = 1, int S2_typ = 3>
 struct S2
 {
@@ -100,10 +87,6 @@ struct S2
   scalar length = scalar(den) / scalar(num);
   enum { DOF = 2, TYP = 1, DIM = 3 };
 
-  //private:
-  /**
-	 * Unit vector on the sphere, or vector pointing in a direction
-	 */
   vect_type vec;
 
 public:
@@ -127,9 +110,8 @@ public:
 
   void oplus(MTK::vectview<const scalar, 3> delta, scalar scale = 1)
   {
-    // SO3_type res;
-    // res.w() = MTK::exp<scalar, 3>(res.vec(), delta, scalar(scale/2));
-    vec = SO3_type::exp(delta) * vec;  // res.normalized().toRotationMatrix() * vec;
+
+    vec = SO3_type::exp(delta) * vec;
   }
 
   void boxplus(MTK::vectview<const scalar, 2> delta, scalar scale = 1)
@@ -137,9 +119,8 @@ public:
     Eigen::Matrix<scalar, 3, 2> Bx;
     S2_Bx(Bx);
     vect_type Bu = Bx * delta;
-    // SO3_type res;
-    // res.w() = MTK::exp<scalar, 3>(res.vec(), Bu, scalar(scale/2));
-    vec = SO3_type::exp(delta) * vec;  // res.normalized().toRotationMatrix() * vec;
+
+    vec = SO3_type::exp(delta) * vec;
   }
 
   void boxminus(MTK::vectview<scalar, 2> res, const S2<scalar, den, num, S2_typ> & other) const
@@ -254,10 +235,9 @@ public:
       res = -MTK::hat(vec) * Bx;
     } else {
       vect_type Bu = Bx * delta;
-      // SO3_type exp_delta;
-      // exp_delta.w() = MTK::exp<scalar, 3>(exp_delta.vec(), Bu, scalar(1/2));
+
       res = -SO3_type::exp(Bu) * MTK::hat(vec) * MTK::A_matrix(Bu).transpose() *
-            Bx;  // exp_delta.normalized().toRotationMatrix()
+            Bx;
     }
   }
 
@@ -288,6 +268,6 @@ public:
   }
 };
 
-}  // namespace MTK
+}
 
-#endif /*S2_H_*/
+#endif

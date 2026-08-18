@@ -2,11 +2,13 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>small_gicp_relocalization</name>
-  <version>1.0.4</version>
-  <description>Using small_gicp to relocalize robot pose</description>
+  <version>1.0.0</version>
+  <description>Global relocalization node based on small_gicp point cloud registration.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
   <license>Apache-2.0</license>
   <author email="lihanchen2004@163.com">Lihan Chen</author>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

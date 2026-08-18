@@ -1,7 +1,4 @@
-// This is an advanced implementation of the algorithm described in the
-// following paper:
-//    C. Hertzberg,  R.  Wagner,  U.  Frese,  and  L.  Schroder.  Integratinggeneric   sensor   fusion   algorithms   with   sound   state   representationsthrough  encapsulation  of  manifolds.
-//    CoRR,  vol.  abs/1107.1119,  2011.[Online]. Available: http://arxiv.org/abs/1107.1119
+
 
 /*
  *  Copyright (c) 2019--2023, The University of Hong Kong
@@ -36,7 +33,7 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
- 
+
 /*
  *  Copyright (c) 2008--2011, Universitaet Bremen
  *  All rights reserved.
@@ -70,11 +67,6 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @file mtk/build_manifold.hpp
- * @brief Macro to automatically construct compound manifolds.
- * 
- */
 #ifndef MTK_AUTOCONSTRUCT_HPP_
 #define MTK_AUTOCONSTRUCT_HPP_
 
@@ -88,7 +80,6 @@
 #include "startIdx.hpp"
 
 #ifndef PARSED_BY_DOXYGEN
-//////// internals //////
 
 #define MTK_APPLY_MACRO_ON_TUPLE(r, macro, tuple) macro tuple
 
@@ -128,22 +119,21 @@ BOOST_PP_FOR_1( \
 		MTK_ENTRIES_TEST, MTK_ENTRIES_NEXT, MTK_ENTRIES_OUTPUT)
 
 #define MTK_PUT_TYPE(type, id, dof, dim, S2state, SO3state, SENstate) \
-	MTK::SubManifold<type, dof, dim> id; 
+	MTK::SubManifold<type, dof, dim> id;
 #define MTK_PUT_TYPE_AND_ENUM(type, id, dof, dim, S2state, SO3state, SENstate) \
 	MTK_PUT_TYPE(type, id, dof, dim, S2state, SO3state, SENstate) \
 	enum {DOF = type::DOF + dof}; \
 	enum {DIM = type::DIM+dim}; \
-	typedef type::scalar scalar; 
+	typedef type::scalar scalar;
 
 #define MTK_ENTRIES_OUTPUT(r, state) MTK_ENTRIES_OUTPUT_I state
 #define MTK_ENTRIES_OUTPUT_I(s, head, seq, dof, dim, S2state, SO3state, SENstate) \
 	MTK_APPLY_MACRO_ON_TUPLE(~, \
 		BOOST_PP_IF(BOOST_PP_DEC(s), MTK_PUT_TYPE, MTK_PUT_TYPE_AND_ENUM), \
-		( BOOST_PP_TUPLE_REM_2 head, dof, dim, S2state, SO3state, SENstate)) 
+		( BOOST_PP_TUPLE_REM_2 head, dof, dim, S2state, SO3state, SENstate))
 
 #define MTK_ENTRIES_TEST(r, state) MTK_TUPLE_ELEM_4_0 state
 
-//! this used to be BOOST_PP_TUPLE_ELEM_4_0:
 #define MTK_TUPLE_ELEM_4_0(a,b,c,d,e,f, g, h) a
 
 #define MTK_ENTRIES_NEXT(r, state) MTK_ENTRIES_NEXT_I state
@@ -157,32 +147,8 @@ BOOST_PP_FOR_1( \
 		SO3state,\
 		SENstate )
 
-#endif /* not PARSED_BY_DOXYGEN */
+#endif
 
-
-/**
- * Construct a manifold.
- * @param name is the class-name of the manifold, 
- * @param entries is the list of sub manifolds 
- * 
- * Entries must be given in a list like this:
- * @code
- * typedef MTK::trafo<MTK::SO3<double> > Pose;
- * typedef MTK::vect<double, 3> Vec3;
- * MTK_BUILD_MANIFOLD(imu_state,
- *    ((Pose, pose))
- *    ((Vec3, vel))
- *    ((Vec3, acc_bias))
- * )
- * @endcode
- * Whitespace is optional, but the double parentheses are necessary.
- * Construction is done entirely in preprocessor.
- * After construction @a name is also a manifold. Its members can be 
- * accessed by names given in @a entries.
- * 
- * @note Variable types are not allowed to have commas, thus types like
- *       @c vect<double, 3> need to be typedef'ed ahead.
- */
 #define MTK_BUILD_MANIFOLD(name, entries) \
 struct name { \
 	typedef name self; \
@@ -243,6 +209,4 @@ struct name { \
 	} \
 };
 
-
-
-#endif /*MTK_AUTOCONSTRUCT_HPP_*/
+#endif

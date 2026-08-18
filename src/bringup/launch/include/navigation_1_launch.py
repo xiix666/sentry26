@@ -9,9 +9,8 @@ from launch_ros.actions import LoadComposableNodes, Node
 from launch_ros.descriptions import ComposableNode, ParameterFile
 from nav2_common.launch import RewrittenYaml
 
-
 def generate_launch_description():
-    # Get the launch directory
+
     bringup_dir = get_package_share_directory("bringup")
 
     namespace = LaunchConfiguration("namespace")
@@ -34,7 +33,6 @@ def generate_launch_description():
         "velocity_smoother",
     ]
 
-    # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "autostart": autostart}
 
     configured_params = ParameterFile(
@@ -121,7 +119,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
-                # remappings=[("cmd_vel", "cmd_vel_controller")],
+
             ),
             Node(
                 package="nav2_smoother",
@@ -162,7 +160,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
-                # remappings=[("cmd_vel", "cmd_vel_nav2_result"),],
+
             ),
             Node(
                 package="nav2_waypoint_follower",
@@ -183,10 +181,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=["--ros-args", "--log-level", log_level],
-                # remappings=[
-                #     ("cmd_vel", "cmd_vel_controller"),  # remap input
-                #     ("cmd_vel_smoothed", "cmd_vel_nav2_result"),  # remap output
-                # ],
+
             ),
             Node(
                 package="nav2_lifecycle_manager",
@@ -207,12 +202,7 @@ def generate_launch_description():
         condition=IfCondition(use_composition),
         target_container=container_name_full,
         composable_node_descriptions=[
-            # ComposableNode(
-            #     package="fake_vel_transform",
-            #     plugin="fake_vel_transform::FakeVelTransform",
-            #     name="fake_vel_transform",
-            #     parameters=[configured_params],
-            # ),
+
             ComposableNode(
                 package="nav2_controller",
                 plugin="nav2_controller::ControllerServer",
@@ -238,7 +228,7 @@ def generate_launch_description():
                 name="behavior_server",
                 parameters=[configured_params],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", "cmd_vel_nav2_result"),
                 ],
             ),
             ComposableNode(
@@ -259,8 +249,8 @@ def generate_launch_description():
                 name="velocity_smoother",
                 parameters=[configured_params],
                 remappings=[
-                    ("cmd_vel", "cmd_vel_controller"),  # remap input
-                    ("cmd_vel_smoothed", "cmd_vel_nav2_result"),  # remap output
+                    ("cmd_vel", "cmd_vel_controller"),
+                    ("cmd_vel_smoothed", "cmd_vel_nav2_result"),
                 ],
             ),
             ComposableNode(
@@ -278,14 +268,11 @@ def generate_launch_description():
         ],
     )
 
-    # Create the launch description and populate
     ld = LaunchDescription()
 
-    # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
     ld.add_action(colorized_output_envvar)
 
-    # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_params_file_cmd)
@@ -294,7 +281,7 @@ def generate_launch_description():
     ld.add_action(declare_container_name_cmd)
     ld.add_action(declare_use_respawn_cmd)
     ld.add_action(declare_log_level_cmd)
-    # Add the actions to launch all of the navigation nodes
+
     ld.add_action(load_nodes)
     ld.add_action(load_composable_nodes)
 

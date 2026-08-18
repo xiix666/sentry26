@@ -1,7 +1,4 @@
-// This is an advanced implementation of the algorithm described in the
-// following paper:
-//    C. Hertzberg,  R.  Wagner,  U.  Frese,  and  L.  Schroder.  Integratinggeneric   sensor   fusion   algorithms   with   sound   state   representationsthrough  encapsulation  of  manifolds.
-//    CoRR,  vol.  abs/1107.1119,  2011.[Online]. Available: http://arxiv.org/abs/1107.1119
+
 
 /*
  *  Copyright (c) 2019--2023, The University of Hong Kong
@@ -70,10 +67,6 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @file mtk/types/SOn.hpp
- * @brief Standard Orthogonal Groups i.e.\ rotatation groups.
- */
 #ifndef SON_H_
 #define SON_H_
 
@@ -85,11 +78,6 @@
 namespace MTK
 {
 
-/**
- * Two-dimensional orientations represented as scalar.
- * There is no guarantee that the representing scalar is within any interval,
- * but the result of boxminus will always have magnitude @f$\le\pi @f$.
- */
 template <class _scalar = double, int Options = Eigen::AutoAlign>
 struct SO2 : public Eigen::Rotation2D<_scalar>
 {
@@ -99,35 +87,25 @@ struct SO2 : public Eigen::Rotation2D<_scalar>
   typedef Eigen::Rotation2D<scalar> base;
   typedef vect<DIM, scalar, Options> vect_type;
 
-  //! Construct from angle
   SO2(const scalar & angle = 0) : base(angle) {}
 
-  //! Construct from Eigen::Rotation2D
   SO2(const base & src) : base(src) {}
 
-  /**
-	 * Construct from 2D vector.
-	 * Resulting orientation will rotate the first unit vector to point to vec.
-	 */
   SO2(const vect_type & vec) : base(atan2(vec[1], vec[0])){};
 
-  //! Calculate @c this->inverse() * @c r
   SO2 operator%(const base & r) const { return base::inverse() * r; }
 
-  //! Calculate @c this->inverse() * @c r
   template <class Derived>
   vect_type operator%(const Eigen::MatrixBase<Derived> & vec) const
   {
     return base::inverse() * vec;
   }
 
-  //! Calculate @c *this * @c r.inverse()
   SO2 operator/(const SO2 & r) const { return *this * r.inverse(); }
 
-  //! Gets the angle as scalar.
   operator scalar() const { return base::angle(); }
   void S2_hat(Eigen::Matrix<scalar, 3, 3> & res) { res = Eigen::Matrix<scalar, 3, 3>::Zero(); }
-  //! @name Manifold requirements
+
   void S2_Nx_yy(Eigen::Matrix<scalar, 2, 3> & res)
   {
     std::cerr << "wrong idx for S2" << '\n';
@@ -168,12 +146,7 @@ struct SO2 : public Eigen::Rotation2D<_scalar>
   void Jacob_right(Eigen::VectorXd & v, Eigen::MatrixXd & res) { std::cout << "wrong idx" << '\n'; }
 };
 
-/**
- * Three-dimensional orientations represented as Quaternion.
- * It is assumed that the internal Quaternion always stays normalized,
- * should this not be the case, call inherited member function @c normalize().
- */
-template <class _scalar = double>  //, int Options = Eigen::AutoAlign>
+template <class _scalar = double>
 struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
 {
   enum { DOF = 3, DIM = 3, TYP = 2 };
@@ -182,38 +155,12 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
   typedef Eigen::Matrix<scalar, 3, 3> Matrix;
   typedef vect<DIM, scalar> vect_type;
 
-  /**
-	 * Construct from Eigen::Quaternion.
-	 * @note Non-normalized input may result result in spurious behavior.
-	 */
   SO3(const base & src = base::Identity()) : base(src) {}
 
-  /**
-	 * Construct from rotation matrix.
-	 * @note Invalid rotation matrices may lead to spurious behavior.
-	 */
   template <class Derived>
   SO3(const Eigen::MatrixBase<Derived> & matrix) : base(matrix)
   {
   }
-
-  /**
-	 * Construct from arbitrary rotation type.
-	 * @note Invalid rotation matrices may lead to spurious behavior.
-	 */
-  // template<class Derived>
-  // SO3(const Eigen::RotationBase<Derived, 3>& rotation) : base(rotation.derived()) {}
-
-  //! @name Manifold requirements
-
-  // SO3 operator=(const base &r) const {
-  // 	return r;
-  // }
-
-  // //! Calculate @c *this * @c r.inverse()
-  // SO3 operator*(const SO3 &r) const {
-  // 	return *this * r;
-  // }
 
   void boxplus(MTK::vectview<const scalar, DOF> vec, scalar scale = 1)
   {
@@ -224,7 +171,6 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
   {
     res = SO3::log(other.transpose() * *this);
   }
-  //}
 
   void oplus(MTK::vectview<const scalar, DOF> vec, scalar scale = 1)
   {
@@ -232,15 +178,13 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
     *this = *this * delta;
   }
 
-  // void hat(MTK::vectview<const scalar, DOF>& v, Eigen::Matrix<scalar, 3, 3> &res) {
   void hat(Eigen::VectorXd & v, Eigen::MatrixXd & res)
   {
-    // Eigen::Matrix<scalar, 3, 3> res;
+
     res << 0, -v[2], v[1], v[2], 0, -v[0], -v[1], v[0], 0;
-    // return res;
+
   }
 
-  // void Jacob_right_inv(MTK::vectview<const scalar, DOF> vec, Eigen::Matrix<scalar, 3, 3> & res){
   void Jacob_right_inv(Eigen::VectorXd & vec, Eigen::MatrixXd & res)
   {
     Eigen::MatrixXd hat_v;
@@ -252,10 +196,9 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
     } else {
       res = Eigen::Matrix<scalar, 3, 3>::Identity();
     }
-    // return res;
+
   }
 
-  // void Jacob_right(MTK::vectview<const scalar, DOF> & v, Eigen::Matrix<scalar, 3, 3> &res){
   void Jacob_right(Eigen::VectorXd & v, Eigen::MatrixXd & res)
   {
     Eigen::MatrixXd hat_v;
@@ -268,7 +211,7 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
       res = Eigen::Matrix<scalar, 3, 3>::Identity() - (1 - std::cos(norm)) / squaredNorm * hat_v +
             (1 - std::sin(norm) / norm) / squaredNorm * hat_v * hat_v;
     }
-    // return res;
+
   }
 
   void S2_hat(Eigen::Matrix<scalar, 3, 3> & res) { res = Eigen::Matrix<scalar, 3, 3>::Zero(); }
@@ -287,26 +230,18 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
   }
 
   friend std::ostream & operator<<(std::ostream & os, const SO3<scalar> & q)
-  {  // wrong!
+  {
     return os << q.data() << " ";
   }
 
   friend std::istream & operator>>(std::istream & is, SO3<scalar> & q)
-  {  // wrong!
+  {
     SO3<scalar> coeffs;
     is >> coeffs;
     q = coeffs;
     return is;
   }
 
-  //! @name Helper functions
-  //{
-  /**
-	 * Calculate the exponential map. In matrix terms this would correspond 
-	 * to the Rodrigues formula.
-	 */
-  // FIXME vectview<> can't be constructed from every MatrixBase<>, use const Vector3x& as workaround
-  //	static SO3 exp(MTK::vectview<const scalar, 3> dvec, scalar scale = 1){
   static SO3 exp(const Eigen::Matrix<scalar, 3, 1> & dvec, scalar scale = 1)
   {
     Eigen::Matrix<scalar, 3, 1> ang = dvec * scale;
@@ -316,17 +251,12 @@ struct SO3 : public Eigen::Matrix<_scalar, 3, 3>
       Eigen::Matrix<double, 3, 1> r_axis = ang / ang_norm;
       Eigen::Matrix<double, 3, 3> K;
       K << 0.0, -r_axis(2), r_axis(1), r_axis(2), 0.0, -r_axis(0), -r_axis(1), r_axis(0),
-        0.0;  // SKEW_SYM_MATRX(r_axis);
-      /// Roderigous Tranformation
+        0.0;
       return Eye3 + std::sin(ang_norm) * K + (1.0 - std::cos(ang_norm)) * K * K;
     } else {
       return Eye3;
     }
   }
-  /**
-	 * Calculate the inverse of @c exp.
-	 * Only guarantees that <code>exp(log(x)) == x </code>
-	 */
   static Eigen::Vector3d log(const SO3 & orient)
   {
     double theta = (orient.trace() > 3.0 - 1e-6) ? 0.0 : std::acos(0.5 * (orient.trace() - 1));
@@ -350,8 +280,8 @@ struct UnalignedType<SO3<Scalar> >
   typedef SO3<Scalar> type;
 };
 
-}  // namespace internal
+}
 
-}  // namespace MTK
+}
 
-#endif /*SON_H_*/
+#endif

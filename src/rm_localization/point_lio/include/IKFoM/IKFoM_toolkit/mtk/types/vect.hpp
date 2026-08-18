@@ -1,7 +1,4 @@
-// This is an advanced implementation of the algorithm described in the
-// following paper:
-//    C. Hertzberg,  R.  Wagner,  U.  Frese,  and  L.  Schroder.  Integratinggeneric   sensor   fusion   algorithms   with   sound   state   representationsthrough  encapsulation  of  manifolds.
-//    CoRR,  vol.  abs/1107.1119,  2011.[Online]. Available: http://arxiv.org/abs/1107.1119
+
 
 /*
  *  Copyright (c) 2019--2023, The University of Hong Kong
@@ -70,13 +67,6 @@
  *  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @file mtk/types/vect.hpp
- * @brief Basic vectors interpreted as manifolds.
- * 
- * This file also implements a simple wrapper for matrices, for arbitrary scalars
- * and for positive scalars.
- */
 #ifndef VECT_H_
 #define VECT_H_
 
@@ -92,11 +82,6 @@ namespace MTK
 static const Eigen::IOFormat IO_no_spaces(
   Eigen::StreamPrecision, Eigen::DontAlignCols, ",", ",", "", "", "[", "]");
 
-/**
- * A simple vector class.
- * Implementation is basically a wrapper around Eigen::Matrix with manifold 
- * requirements added.
- */
 template <int D = 3, class _scalar = double, int _Options = Eigen::AutoAlign>
 struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
 {
@@ -104,18 +89,13 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
   enum { DOF = D, DIM = D, TYP = 0 };
   typedef _scalar scalar;
 
-  //using base::operator=;
-
-  /** Standard constructor. Sets all values to zero. */
   vect(const base & src = base::Zero()) : base(src) {}
 
-  /** Constructor copying the value of the expression \a other */
   template <typename OtherDerived>
   EIGEN_STRONG_INLINE vect(const Eigen::DenseBase<OtherDerived> & other) : base(other)
   {
   }
 
-  /** Construct from memory. */
   vect(const scalar * src, int size = DOF) : base(base::Map(src, size)) {}
 
   void boxplus(MTK::vectview<const scalar, D> vec, scalar scale = 1) { *this += scale * vec; }
@@ -151,14 +131,14 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
 
   friend std::ostream & operator<<(std::ostream & os, const vect<D, scalar, _Options> & v)
   {
-    // Eigen sometimes messes with the streams flags, so output manually:
+
     for (int i = 0; i < DOF; ++i) os << v(i) << " ";
     return os;
   }
   friend std::istream & operator>>(std::istream & is, vect<D, scalar, _Options> & v)
   {
     char term = 0;
-    is >> std::ws;  // skip whitespace
+    is >> std::ws;
     switch (is.peek()) {
       case '(':
         term = ')';
@@ -188,7 +168,7 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
     } else
       for (int i = 0; i < v.size(); ++i) {
         is >> v[i];
-        if (is.peek() == ',') {  // ignore commas between values
+        if (is.peek() == ',') {
           is.ignore(1);
         }
       }
@@ -197,7 +177,7 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
       is >> x;
       if (x != term) {
         is.setstate(is.badbit);
-        //				assert(x==term && "start and end bracket do not match!");
+
       }
     }
     return is;
@@ -229,11 +209,6 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options>
   }
 };
 
-/**
- * A simple matrix class.
- * Implementation is basically a wrapper around Eigen::Matrix with manifold 
- * requirements added, i.e., matrix is viewed as a plain vector for that.
- */
 template <
   int M, int N, class _scalar = double, int _Options = Eigen::Matrix<_scalar, M, N>::Options>
 struct matrix : public Eigen::Matrix<_scalar, M, N, _Options>
@@ -244,16 +219,13 @@ struct matrix : public Eigen::Matrix<_scalar, M, N, _Options>
 
   using base::operator=;
 
-  /** Standard constructor. Sets all values to zero. */
   matrix() { base::setZero(); }
 
-  /** Constructor copying the value of the expression \a other */
   template <typename OtherDerived>
   EIGEN_STRONG_INLINE matrix(const Eigen::MatrixBase<OtherDerived> & other) : base(other)
   {
   }
 
-  /** Construct from memory. */
   matrix(const scalar * src) : base(src) {}
 
   void boxplus(MTK::vectview<const scalar, DOF> vec, scalar scale = 1)
@@ -307,11 +279,8 @@ struct matrix : public Eigen::Matrix<_scalar, M, N, _Options>
     }
     return is;
   }
-};  // @todo What if M / N = Eigen::Dynamic?
+};
 
-/**
- * A simple scalar type.
- */
 template <class _scalar = double>
 struct Scalar
 {
@@ -361,10 +330,6 @@ struct Scalar
   void Jacob_right(Eigen::VectorXd & v, Eigen::MatrixXd & res) { std::cout << "wrong idx" << '\n'; }
 };
 
-/**
- * Positive scalars.
- * Boxplus is implemented using multiplication by @f$x\boxplus\delta = x\cdot\exp(\delta) @f$.
- */
 template <class _scalar = double>
 struct PositiveScalar
 {
@@ -506,8 +471,8 @@ struct UnalignedType<vect<dim, Scalar, Options> >
   typedef vect<dim, Scalar, Options | Eigen::DontAlign> type;
 };
 
-}  // namespace internal
+}
 
-}  // namespace MTK
+}
 
-#endif /*VECT_H_*/
+#endif

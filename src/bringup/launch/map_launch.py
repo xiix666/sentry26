@@ -18,7 +18,7 @@ def generate_launch_description():
             "--y",
             "0.0",
             "--z",
-            # "0.33",
+
             "0.0",
             "--roll",
             "0.0",
@@ -31,7 +31,7 @@ def generate_launch_description():
             "--child-frame-id",
             "odom",
         ],
-        # remappings=remappings,
+
     )
 
     map_path_arg = DeclareLaunchArgument(
@@ -55,13 +55,11 @@ def generate_launch_description():
         output='screen',
         parameters=[
             {'use_sim_time': False},
-            {'autostart': True},  # 自动启动/激活节点
-            {'node_names': ['map_server']}  # 要激活的节点名
+            {'autostart': True},
+            {'node_names': ['map_server']}
         ]
     )
 
-
-    # 组装启动描述
     ld = LaunchDescription()
     ld.add_action(map_path_arg)
     ld.add_action(start_static_transform_node)

@@ -65,11 +65,11 @@ struct dyn_share_modified
   bool valid;
   bool converge;
   T M_Noise;
-  Eigen::Matrix<T, Eigen::Dynamic, 1> z;// m*1 残差向量
-  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> h_x;// m*n 观测矩阵
-  Eigen::Matrix<T, 6, 1> z_IMU;//角速度+线加速度残差
-  Eigen::Matrix<T, 6, 1> R_IMU;//测量噪声的方差向量
-  bool satu_check[6];//
+  Eigen::Matrix<T, Eigen::Dynamic, 1> z;
+  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> h_x;
+  Eigen::Matrix<T, 6, 1> z_IMU;
+  Eigen::Matrix<T, 6, 1> R_IMU;
+  bool satu_check[6];
 };
 
 template <
@@ -86,7 +86,7 @@ public:
   typedef Matrix<scalar_type, m, n> cov_;
   typedef SparseMatrix<scalar_type> spMt;
   typedef Matrix<scalar_type, n, 1> vectorized_state;
-  typedef Matrix<scalar_type, m, 1> flatted_state;//m*1列向量
+  typedef Matrix<scalar_type, m, 1> flatted_state;
   typedef flatted_state processModel(state &, const input &);
   typedef Eigen::Matrix<scalar_type, m, n> processMatrix1(state &, const input &);
   typedef Eigen::Matrix<scalar_type, m, process_noise_dof> processMatrix2(state &, const input &);
@@ -112,9 +112,9 @@ public:
   {
     f = f_in;
     f_x = f_x_in;
-    // f_w = f_w_in;
+
     h_dyn_share_modified_1 = h_dyn_share_in1;
-    // h_dyn_share_modified_3 = h_dyn_share_in3;
+
     maximum_iter = 1;
     x_.build_S2_state();
     x_.build_SO3_state();
@@ -129,10 +129,10 @@ public:
   {
     f = f_in;
     f_x = f_x_in;
-    // f_w = f_w_in;
+
     h_dyn_share_modified_1 = h_dyn_share_in1;
     h_dyn_share_modified_2 = h_dyn_share_in2;
-    // h_dyn_share_modified_3 = h_dyn_share_in3;
+
     maximum_iter = 1;
     x_.build_S2_state();
     x_.build_SO3_state();
@@ -140,7 +140,6 @@ public:
     x_.build_SEN_state();
   }
 
-  // iterated error state EKF propogation
   void predict(
     double & dt, processnoisecovariance & Q, const input & i_in, bool predict_state, bool prop_cov)
   {
@@ -151,7 +150,6 @@ public:
 
     if (prop_cov) {
       flatted_state f_ = f(x_, i_in);
-      // state x_before = x_;
 
       cov_ f_x_ = f_x(x_, i_in);
       cov f_x_final;
@@ -177,10 +175,9 @@ public:
         for (int i = 0; i < 3; i++) {
           seg_SO3(i) = -1 * f_(dim + i) * dt;
         }
-        // MTK::SO3<scalar_type> res;
-        // res.w() = MTK::exp<scalar_type, 3>(res.vec(), seg_SO3, scalar_type(1/2));
+
         F_x1.template block<3, 3>(idx, idx) =
-          MTK::SO3<scalar_type>::exp(seg_SO3);  // res.normalized().toRotationMatrix();
+          MTK::SO3<scalar_type>::exp(seg_SO3);
         res_temp_SO3 = MTK::A_matrix(seg_SO3);
         for (int i = 0; i < n; i++) {
           f_x_final.template block<3, 1>(idx, i) =
@@ -193,7 +190,7 @@ public:
     }
   }
 
-  bool update_iterated_dyn_share_modified() //处理雷达数据
+  bool update_iterated_dyn_share_modified()
   {
     dyn_share_modified<scalar_type> dyn_share;
     state x_propagated = x_;
@@ -205,19 +202,14 @@ public:
         x_, P_.template block<3, 3>(0, 0), P_.template block<3, 3>(3, 3), dyn_share);
       if (!dyn_share.valid) {
         return false;
-        // continue;
+
       }
-      Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> z = dyn_share.z; //雷达观测残差
-      // Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> R = dyn_share.R;
-      Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> h_x = dyn_share.h_x; //雅克比矩阵
-      // Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> h_v = dyn_share.h_v;
-      dof_Measurement = h_x.rows(); //观测维度
-      m_noise = dyn_share.M_Noise; //观测噪声
-      // dof_Measurement_noise = dyn_share.R.rows();
-      // vectorized_state dx, dx_new;
-      // x_.boxminus(dx, x_propagated);
-      // dx_new = dx;
-      // P_ = P_propagated;
+      Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> z = dyn_share.z;
+
+      Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> h_x = dyn_share.h_x;
+
+      dof_Measurement = h_x.rows();
+      m_noise = dyn_share.M_Noise;
 
       Matrix<scalar_type, n, Eigen::Dynamic> PHT;
       Matrix<scalar_type, Eigen::Dynamic, Eigen::Dynamic> HPHT;
@@ -237,8 +229,7 @@ public:
         K_ = P_inv.template block<n, 12>(0, 0) * h_x.transpose() * m_noise;
       }
       Matrix<scalar_type, n, 1> dx_ =
-        K_ * z;  // - h) + (K_x - Matrix<scalar_type, n, n>::Identity()) * dx_new;
-      // state x_before = x_;
+        K_ * z;
 
       x_.boxplus(dx_);
       {
@@ -248,18 +239,18 @@ public:
     return true;
   }
 
-  void update_iterated_dyn_share_IMU()   //处理imu数据
+  void update_iterated_dyn_share_IMU()
   {
-    dyn_share_modified<scalar_type> dyn_share;// 
+    dyn_share_modified<scalar_type> dyn_share;
     for (int i = 0; i < maximum_iter; i++) {
       dyn_share.valid = true;
-      h_dyn_share_modified_2(x_, dyn_share); // 测量残差
+      h_dyn_share_modified_2(x_, dyn_share);
 
       Matrix<scalar_type, 6, 1> z = dyn_share.z_IMU;
 
-      Matrix<double, 30, 6> PHT; // 
-      Matrix<double, 6, 30> HP; //
-      Matrix<double, 6, 6> HPHT; //
+      Matrix<double, 30, 6> PHT;
+      Matrix<double, 6, 30> HP;
+      Matrix<double, 6, 6> HPHT;
       PHT.setZero();
       HP.setZero();
       HPHT.setZero();
@@ -273,7 +264,7 @@ public:
         if (!dyn_share.satu_check[l_]) {
           HPHT.col(l_) = HP.col(15 + l_) + HP.col(24 + l_);
         }
-        HPHT(l_, l_) += dyn_share.R_IMU(l_);  //, l);
+        HPHT(l_, l_) += dyn_share.R_IMU(l_);
       }
       Eigen::Matrix<double, 30, 6> K = PHT * HPHT.inverse();
 
@@ -303,8 +294,8 @@ public:
 
   const state & get_x() const { return x_; }
   const cov & get_P() const { return P_; }
-  cov P_; // covariance
-  state x_;// 状态估计值
+  cov P_;
+  state x_;
 
 private:
   measurement m_;
@@ -338,6 +329,6 @@ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
-}  // namespace esekfom
+}
 
-#endif  //  ESEKFOM_EKF_HPP
+#endif

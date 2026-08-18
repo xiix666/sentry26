@@ -1,9 +1,11 @@
 <package format="3">
   <name>terrain_analysis</name>
-  <version>0.0.1</version>
-  <description>Terrain Analysis in Extended Scale</description>
+  <version>1.0.0</version>
+  <description>Terrain analysis node for traversability and elevation point cloud generation.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="zhangji@cmu.edu">Ji Zhang</maintainer>
   <license>BSD</license>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

@@ -8,14 +8,8 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
-
 def generate_launch_description():
-    # Map fully qualified names to relative ones so the node's namespace can be prepended.
-    # In case of the transforms (tf), currently, there doesn't seem to be a better alternative
-    # https://github.com/ros/geometry2/issues/32
-    # https://github.com/ros/robot_state_publisher/pull/30
-    # TODO(orduno) Substitute with `PushNodeRemapping`
-    #              https://github.com/ros2/launch_ros/issues/56
+
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
     namespace = LaunchConfiguration("namespace")
@@ -45,11 +39,11 @@ def generate_launch_description():
         name="livox_to_lidar_link_tf",
         output="screen",
         arguments=[
-            # 平移 (x, y, z)：livox_frame相对于lidar_link的偏移（米）
+
             "0.0", "0.0", "0.0",
-            # 旋转 (rx, ry, rz)：欧拉角（弧度），或用四元数格式（qx qy qz qw）
+
             "0.0", "0.0", "0.0",
-            # 父坐标系（Point-LIO预期的雷达系）、子坐标系（Livox原始系）
+
             "lidar_link", "livox_frame"
         ],
         parameters=[{"use_sim_time": False}],
@@ -77,12 +71,6 @@ def generate_launch_description():
         ],
     )
 
-    # lidar_node = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join("/home/rps/RPS2025_sentry_nav/src/rm_hardware_driver/livox_ros_driver2_humble/src/launch/msg_MID360_launch.py")
-    #     ),
-    # )
-
     ld = LaunchDescription()
 
     ld.add_action(declare_namespace)
@@ -90,7 +78,5 @@ def generate_launch_description():
     ld.add_action(declare_point_lio_cfg_dir)
     ld.add_action(static_tf_livox_to_lidar)
     ld.add_action(start_point_lio_node)
-    # ld.add_action(start_rviz_node)
-    # ld.add_action(lidar_node)
 
     return ld

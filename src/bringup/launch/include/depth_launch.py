@@ -12,11 +12,11 @@ def generate_launch_description():
             ('scan', '/scan')
         ],
         parameters=[{
-            'scan_time': 0.033, #扫描时间间隔，30HZ
-            'range_min': 0.30, #投影点的最小距离单位（米），更近的被丢弃
-            'range_max': 5.0, #投影点的最大距离单位（米），更远的被丢弃
-            'scan_height': 1, #depthimage中用于转成laserscan的行
-            'output_frame': 'depth_frame' #发布的帧 ID
+            'scan_time': 0.033,
+            'range_min': 0.30,
+            'range_max': 5.0,
+            'scan_height': 1,
+            'output_frame': 'depth_frame'
         }]
     )
 

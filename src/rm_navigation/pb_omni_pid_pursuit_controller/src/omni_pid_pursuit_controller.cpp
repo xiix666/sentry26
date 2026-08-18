@@ -3,7 +3,6 @@
 #include "nav2_core/exceptions.hpp"
 #include "nav2_util/geometry_utils.hpp"
 #include "nav2_util/node_utils.hpp"
-// 新增：SG滤波所需头文件
 
 using nav2_util::declare_parameter_if_not_declared;
 using nav2_util::geometry_utils::euclidean_distance;
@@ -11,7 +10,7 @@ using std::abs;
 using std::hypot;
 using std::max;
 using std::min;
-using namespace nav2_costmap_2d;  // NOLINT
+using namespace nav2_costmap_2d;
 using rcl_interfaces::msg::ParameterType;
 
 namespace pb_omni_pid_pursuit_controller
@@ -19,13 +18,11 @@ namespace pb_omni_pid_pursuit_controller
 
 OmniPidPursuitController::OmniPidPursuitController()
   : impl_(std::make_unique<Impl>()),
-    use_mpc_control_(false)  // 默认使用PID
+    use_mpc_control_(false)
 {
-  // 初始化SG滤波器
   impl_->linear_vel_filter_ = std::make_unique<SavitzkyGolayFilter>(
     impl_->sg_window_size_, impl_->sg_poly_order_);
 }
-
 
 void OmniPidPursuitController::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent, std::string name,
@@ -48,15 +45,14 @@ void OmniPidPursuitController::configure(
   double transform_tolerance = 1.0;
   double control_frequency = 20.0;
   max_robot_pose_search_dist_ = getCostmapMaxExtent();
-  // smoothed_path_pub_ = node->create_publisher<nav_msgs::msg::Path>("/smoothed_path", 1);
+
   declare_parameter_if_not_declared(
     node,
     plugin_name_ + ".rm_task_timeout_sec",
     rclcpp::ParameterValue(0.5));
-  // ========== 核心改动：添加算法选择参数 ==========
+
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".use_mpc_control", rclcpp::ParameterValue(false));
-  // ========== 新增：声明SG滤波相关参数 ==========
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".enable_sg_filter", rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
@@ -64,7 +60,6 @@ void OmniPidPursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".sg_poly_order", rclcpp::ParameterValue(2));
 
-  // ========== MPC参数：无论是否启用都声明（方便动态切换） ==========
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".mpc_Np", rclcpp::ParameterValue(5));
   declare_parameter_if_not_declared(
@@ -100,7 +95,6 @@ void OmniPidPursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".acc_max", rclcpp::ParameterValue(5.5));
 
-  // 公共参数声明（PID/MPC均需使用）
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".translation_kp", rclcpp::ParameterValue(3.0));
   declare_parameter_if_not_declared(
@@ -190,7 +184,6 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".min_dist", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".mpc_ref_speed", rclcpp::ParameterValue(2.5));
-    // 公共参数读取（PID/MPC均需使用）
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".pid_curve_kappa_fall_rate", rclcpp::ParameterValue(1.5));
   declare_parameter_if_not_declared(
@@ -252,14 +245,12 @@ void OmniPidPursuitController::configure(
   node->get_parameter("controller_frequency", control_frequency);
   node->get_parameter(plugin_name_ + ".last_vel", last_vel_);
   node->get_parameter(plugin_name_ + ".lower_speed", lower_speed_);
-  // SG滤波参数读取
   node->get_parameter(plugin_name_ + ".enable_sg_filter", impl_->enable_sg_filter_);
   node->get_parameter(plugin_name_ + ".sg_window_size", impl_->sg_window_size_);
   node->get_parameter(plugin_name_ + ".sg_poly_order", impl_->sg_poly_order_);
 
   node->get_parameter(plugin_name_ + ".use_mpc_control", use_mpc_control_);
 
-  // MPC参数读取（无论是否启用都读取，方便动态切换）
   node->get_parameter(plugin_name_ + ".mpc_S_x", mpc_S_x);
   node->get_parameter(plugin_name_ + ".mpc_S_y", mpc_S_y);
   node->get_parameter(plugin_name_ + ".mpc_S_vx", mpc_S_vx);
@@ -300,18 +291,16 @@ void OmniPidPursuitController::configure(
 
   rm_task_timeout_sec_ =
     std::max(0.2, rm_task_timeout_sec_);
-  // minco_tracker_ = std::make_unique<minco_nav2::MincoTracker>();
-  // minco_tracker_->setParams(v_linear_max_,acc_max_,control_duration_);
+
   if (use_mpc_control_) {
-    // MPC模式：初始化MPC控制器
     mpc_controller_ = std::make_unique<OmniMpcController>(
-    control_duration_,   // Ts
-    mpc_Np_,             // Np
-    mpc_Nc_,             // Nc
-    -acc_max_,           // a_min
-    acc_max_,            // a_max
-    v_linear_min_,       // v_min
-    v_linear_max_        // v_max
+    control_duration_,
+    mpc_Np_,
+    mpc_Nc_,
+    -acc_max_,
+    acc_max_,
+    v_linear_min_,
+    v_linear_max_
     );
 
     updateMpcWeights();
@@ -402,7 +391,6 @@ void OmniPidPursuitController::cleanup()
   carrot_pub_.reset();
   curvature_points_pub_.reset();
   
-  // 释放控制器资源
   if (use_mpc_control_) {
     mpc_controller_.reset();
   } else {
@@ -424,7 +412,6 @@ void OmniPidPursuitController::activate()
   carrot_pub_->on_activate();
   curvature_points_pub_->on_activate();
   
-  // Add callback for dynamic parameters
   auto node = node_.lock();
   dyn_params_handler_ = node->add_on_set_parameters_callback(
     std::bind(&OmniPidPursuitController::dynamicParametersCallback, this, std::placeholders::_1));
@@ -448,7 +435,7 @@ void OmniPidPursuitController::deactivate()
 geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityCommands(
   const geometry_msgs::msg::PoseStamped & pose,
   const geometry_msgs::msg::Twist & velocity,
-  nav2_core::GoalChecker * /*goal_checker*/)
+  nav2_core::GoalChecker * )
 {
   double lin_dist = 0.0;
   double theta_dist = 0.0;
@@ -517,7 +504,6 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     rm_task_value_.load(
       std::memory_order_relaxed);
 
-  // 超时或者从未收到消息时，本地有效任务值强制为0。
   const int effective_rm_task =
     rm_task_is_fresh ? raw_rm_task : 0;
 
@@ -541,7 +527,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   const bool direct_drive_request =
     effective_rm_task == 1 ||
     effective_rm_task == 2;
-  // const bool direct_drive_request = (rm_task_value_.load() == 1) || (rm_task_value_.load() == 2);
+
   bool direct_drive_mode = false;
 
   if (direct_drive_request) {
@@ -761,14 +747,6 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
           min_approach_linear_velocity_,
           v_linear_max_);
 
-        // auto mpc_ref_seq =
-        //   samplePathToTimedMpcRefSeq(
-        //     transformed_plan.poses,
-        //     mpc_Np_,
-        //     v_des);
-
-        // mpc_controller_->setAccelerationLimits(-acc_max_, acc_max_);
-        // mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
         double v_ref_eff_for_constraint = v_des;
 
         auto mpc_ref_seq =
@@ -848,8 +826,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
   cmd_vel.twist.linear.x = cmd_vx;
   cmd_vel.twist.linear.y = cmd_vy;
-  // cmd_vel.twist.linear.x = 0.0;
-  // cmd_vel.twist.linear.y = 0.0;
+
   cmd_vel.twist.angular.z = angular_vel;
 
   prev_cmd_vel_ = cmd_vel;
@@ -898,14 +875,12 @@ void OmniPidPursuitController::setPlan(const nav_msgs::msg::Path & path)
     latched_goal_ = new_goal;
     has_latched_goal_ = true;
 
-    // 这里只挂一个标志，不直接 reset。
-    // 真正 reset 放到 computeVelocityCommands() 里做。
     pending_controller_soft_reset_ = true;
   }
 }
 
 void OmniPidPursuitController::setSpeedLimit(
-  const double & /*speed_limit*/, const bool & /*percentage*/)
+  const double & , const bool & )
 {
   RCLCPP_WARN(logger_, "Speed limit is not implemented in this controller.");
 }
@@ -917,28 +892,22 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
     throw nav2_core::PlannerException("Received plan with zero length");
   }
 
-  // let's get the pose of the robot in the frame of the plan
   geometry_msgs::msg::PoseStamped robot_pose;
   if (!transformPose(global_plan_.header.frame_id, pose, robot_pose)) {
     throw nav2_core::PlannerException("Unable to transform robot pose into global plan's frame");
   }
 
-  // We'll discard points on the plan that are outside the local costmap
   double max_costmap_extent = getCostmapMaxExtent();
 
   auto closest_pose_upper_bound = nav2_util::geometry_utils::first_after_integrated_distance(
     global_plan_.poses.begin(), global_plan_.poses.end(), max_robot_pose_search_dist_);
 
-  // First find the closest pose on the path to the robot
-  // bounded by when the path turns around (if it does) so we don't get a pose from a later
-  // portion of the path
   auto transformation_begin = nav2_util::geometry_utils::min_by(
     global_plan_.poses.begin(), closest_pose_upper_bound,
     [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
       return euclidean_distance(robot_pose, ps);
   });
 
-  // Find points up to max_transform_dist so we only transform them.
   auto transformation_end = std::find_if(
     transformation_begin, global_plan_.poses.end(),
     [&](const auto & pose) { return euclidean_distance(pose, robot_pose) > max_costmap_extent; });
@@ -949,16 +918,6 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
 
   global_segment.poses.reserve(std::distance(transformation_begin, transformation_end));
 
-  // Lambda to transform a PoseStamped from global frame to local
-  // auto transform_global_pose_to_local = [&](const auto & global_plan_pose) {
-  //   geometry_msgs::msg::PoseStamped stamped_pose, transformed_pose;
-  //   stamped_pose.header.frame_id = global_plan_.header.frame_id;
-  //   stamped_pose.header.stamp = robot_pose.header.stamp;
-  //   stamped_pose.pose = global_plan_pose.pose;
-  //   transformPose(costmap_ros_->getBaseFrameID(), stamped_pose, transformed_pose);
-  //   transformed_pose.pose.position.z = 0.0;
-  //   return transformed_pose;
-  // };
   for (auto it = transformation_begin; it != transformation_end; ++it) {
     geometry_msgs::msg::PoseStamped p = *it;
     p.header.frame_id = global_plan_.header.frame_id;
@@ -970,14 +929,7 @@ nav_msgs::msg::Path OmniPidPursuitController::transformGlobalPlan(
   if (global_segment.poses.empty()) {
     throw nav2_core::PlannerException("Resulting global segment has 0 poses in it.");
   }
-  // Transform the near part of the global plan into the robot's frame of reference.
-  // nav_msgs::msg::Path transformed_plan;
-  // std::transform(
-  //   transformation_begin, transformation_end, std::back_inserter(transformed_plan.poses),
-  //   transform_global_pose_to_local);
-  // transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
-  // transformed_plan.header.stamp = robot_pose.header.stamp;
-  // std::cout << "Original transformed plan size: " << transformed_plan.poses.size() << std::endl;
+
   bool robot_in_obstacle = false;
   {
     auto costmap = costmap_ros_->getCostmap();
@@ -1045,7 +997,7 @@ std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCor
   if (path.size() < 4)
       return path;
   const double OBSTACLE_NEAR_DISTANCE = 0.3;
-  // cut zigzag segment
+
   std::vector<geometry_msgs::msg::PoseStamped> optimized_path;
   geometry_msgs::msg::PoseStamped pose1 = path[0];
   geometry_msgs::msg::PoseStamped pose2 = path[1];
@@ -1073,15 +1025,14 @@ std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCor
       if (!checkLineCollision(pose1, pose2))
           cost2 = euclideanDistance(pose1, pose2);
       else
-          // cost2 = euclideanDistance(pose1, pose2);
+
           cost2 = std::numeric_limits<double>::infinity();
 
       if (!checkLineCollision(prev_pose, pose2))
           cost3 = euclideanDistance(prev_pose, pose2);
       else
-          // cost3 = euclideanDistance(pose1, pose2);
+
           cost3 = std::numeric_limits<double>::infinity();
-      // std::cout << "cost1: " << cost1 << " cost2: " << cost2 << " cost3: " << cost3 << std::endl;
       if (cost3 < cost1 + cost2) {
           cost1 = cost3;  
       } else {
@@ -1090,25 +1041,20 @@ std::vector<geometry_msgs::msg::PoseStamped> OmniPidPursuitController::removeCor
           prev_pose = pose1;
       }
   }
-  // for (size_t i = 0; i < optimized_path.size(); ++i) {
-  //   const auto &p = optimized_path[i].pose.position;
-  //   std::cout << "  [" << i << "]: (" 
-  //             << std::fixed << std::setprecision(3) 
-  //             << p.x << ", " << p.y << ")" << std::endl;
-  // }
+
   optimized_path.push_back(path.back());
   auto final_path = softSmoothPathCorners(
     optimized_path,
-    0.20,   // 最大平滑半径
-    8,      // 最大插值点数量
-    15.0,    // 小于 15 度认为基本直线，不插
-    60.0,   // 大于 60 度认为明显转弯，满权重
-    0.25,   // 固定距离窗口，前后各看 0.35m
-    0.05,   // 插值点最小间距
-    2       // 少于 2 个插值点就不插
+    0.20,
+    8,
+    15.0,
+    60.0,
+    0.25,
+    0.05,
+    2
   );
   return final_path;
-  // return optimized_path;
+
 }
 
 std::vector<geometry_msgs::msg::PoseStamped>
@@ -1355,9 +1301,6 @@ OmniPidPursuitController::softSmoothPathCorners(
     return true;
   };
 
-  // ============================================================
-  // 第一步：扫描所有“可插值候选点”
-  // ============================================================
   std::vector<SmoothCandidate> candidates;
   candidates.reserve(path.size());
 
@@ -1499,10 +1442,6 @@ OmniPidPursuitController::softSmoothPathCorners(
     return path;
   }
 
-  // ============================================================
-  // 第二步：把连续候选点聚成“弯道区间”
-  // sign 不同必须分开，避免 S 弯两个方向混成一个区间
-  // ============================================================
   struct SmoothRegion
   {
     std::vector<size_t> candidate_indices;
@@ -1552,10 +1491,6 @@ OmniPidPursuitController::softSmoothPathCorners(
     return path;
   }
 
-// ============================================================
-// 第三步：为每个弯道区间选择一个稳定的插值候选点
-// ============================================================
-
   struct SelectedSmoothRegion
   {
     size_t region_idx{0};
@@ -1578,7 +1513,6 @@ OmniPidPursuitController::softSmoothPathCorners(
     int matched_lock_idx = -1;
     double best_lock_dist = std::numeric_limits<double>::infinity();
 
-    // 1. 当前 region 尝试匹配旧锁定区间
     for (size_t li = 0; li < locked_smooth_regions_.size(); ++li) {
       const auto & lock = locked_smooth_regions_[li];
 
@@ -1608,12 +1542,10 @@ OmniPidPursuitController::softSmoothPathCorners(
       }
     }
 
-    // 2. 在当前 region 内选一个控制点
     size_t selected_candidate_idx = r.candidate_indices.front();
 
     if (matched_lock_idx >= 0) {
-      // 如果这个区间上次已经锁定过，则优先选离上次 control 最近的候选点
-      // 这样同一个弯内部不会 path[i] / path[i+1] 来回跳
+
       const auto & lock =
         locked_smooth_regions_[static_cast<size_t>(matched_lock_idx)];
 
@@ -1630,7 +1562,7 @@ OmniPidPursuitController::softSmoothPathCorners(
 
       lock_used[static_cast<size_t>(matched_lock_idx)] = true;
     } else {
-      // 新区间：选 score 最大的点
+
       double best_score = -1.0;
 
       for (size_t ci : r.candidate_indices) {
@@ -1650,7 +1582,7 @@ OmniPidPursuitController::softSmoothPathCorners(
   }
 
   if (selected_regions.empty()) {
-    // 没有可插值区间，旧锁定区间计数递增
+
     std::vector<LockedSmoothRegion> new_locks;
     new_locks.reserve(locked_smooth_regions_.size());
 
@@ -1670,11 +1602,6 @@ OmniPidPursuitController::softSmoothPathCorners(
 
     return path;
   }
-
-  // ============================================================
-  // 第四步：输出路径
-  // 多个 selected region 按 start_s 顺序依次插入
-  // ============================================================
 
   std::vector<geometry_msgs::msg::PoseStamped> smoothed;
   smoothed.reserve(path.size() + selected_regions.size() * (max_num_interpolation + 2) + 4);
@@ -1716,12 +1643,10 @@ OmniPidPursuitController::softSmoothPathCorners(
   for (size_t i = 1; i < path.size(); ++i) {
     const double si = cum_s[i];
 
-    // 当前路径点已经被上一个平滑段覆盖
     if (si <= last_output_s + min_output_s_gap) {
       continue;
     }
 
-    // 可能有多个平滑区间的 start_s 都已经到达
     while (next_selected_idx < selected_regions.size()) {
       const auto & selected_meta = selected_regions[next_selected_idx];
       const auto & selected =
@@ -1731,7 +1656,6 @@ OmniPidPursuitController::softSmoothPathCorners(
         break;
       }
 
-      // 如果这个区间和上一个插值区间重叠太多，就跳过，避免插值段互相覆盖
       if (selected.start_s <= last_output_s + min_output_s_gap) {
         next_selected_idx++;
         continue;
@@ -1765,15 +1689,9 @@ OmniPidPursuitController::softSmoothPathCorners(
     smoothed.push_back(last_p);
   }
 
-  // ============================================================
-  // 第五步：更新多区间锁定缓存
-  // selected region 变成新的有效锁；没有匹配到的旧锁 miss_count++
-  // ============================================================
-
   std::vector<LockedSmoothRegion> new_locks;
   new_locks.reserve(selected_regions.size() + locked_smooth_regions_.size());
 
-  // 1. 先写入本帧选中的所有 region
   for (const auto & selected_meta : selected_regions) {
     const auto & r =
       regions[selected_meta.region_idx];
@@ -1800,7 +1718,6 @@ OmniPidPursuitController::softSmoothPathCorners(
     new_locks.push_back(lock);
   }
 
-  // 2. 没有匹配到的旧锁保留几帧，避免 region 短暂消失后立刻丢锁
   for (size_t li = 0; li < locked_smooth_regions_.size(); ++li) {
     if (li < lock_used.size() && lock_used[li]) {
       continue;
@@ -2173,14 +2090,6 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
         std::min<size_t>(2, sample_count),
         std::min<size_t>(5, sample_count));
 
-    // double kappa_sum = 0.0;
-
-    // for (size_t i = 0; i < top_count; ++i) {
-    //   kappa_sum += mpc_curvature_samples[i].kappa;
-    // }
-
-    // robust_kappa_ahead =
-    //   kappa_sum / static_cast<double>(top_count);
   if (top_count == 1) {
       robust_kappa_ahead =
       mpc_curvature_samples.front().kappa;
@@ -2308,8 +2217,6 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
   {
     tangent.setZero();
 
-    // 用 5 个等弧长采样点做三次局部拟合。
-    // 注意：这里只用多项式求导，不改变 ref(0), ref(1) 的位置参考。
     const int sample_count = 5;
     const int max_order = 3;
 
@@ -2515,25 +2422,24 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
     d.setZero();
 
     if (i == 0) {
-      // 第一个点：直接用机器人原点 -> 第一个参考点方向
-      // 因为 path 已经在 base_link 下，机器人就是 (0,0)
+
       d = ref_pos[0];
 
       if (d.norm() < 1e-4 && ref_pos.size() >= 2) {
         d = ref_pos[1] - ref_pos[0];
       }
     } else if (i + 1 < static_cast<int>(ref_pos.size())) {
-      // 后面的点：用中心差分
+
       d = ref_pos[i + 1] - ref_pos[i - 1];
     } else if (i > 0) {
-      // 最后一个点：用后向差分
+
       d = ref_pos[i] - ref_pos[i - 1];
     }
 
     return normalize_vec(d, tangent);
   };
 
-  const double max_poly_weight = 0.2;  // 先小一点，避免多项式导数滞后拖尾
+  const double max_poly_weight = 0.2;
   const double min_poly_weight = 0.0;
 
   for (int i = 0; i < Np; ++i) {
@@ -2561,13 +2467,13 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
       estimate_tangent_by_local_poly(ref_s[i], poly_dir);
 
     if (i == 0) {
-      // 第一个点必须快速响应当前路径，不用多项式
+
       if (diff_ok) {
         dir = diff_dir;
       }
     } else {
       if (diff_ok && poly_ok) {
-        // 越靠后的预测点，多项式权重越大
+
         const double horizon_ratio =
           static_cast<double>(i) /
           std::max(1.0, static_cast<double>(Np - 1));
@@ -2619,12 +2525,6 @@ OmniPidPursuitController::samplePathToTimedMpcRefSeq(
 
     ref_seq.push_back(ref);
   }
-  // std::cout << "total_s: " << total_s
-  //         << " start_s: " << start_s
-  //         << " remaining_s: " << remaining_s
-  //         << " v_des: " << v_des
-  //         << " v_ref_eff: " << v_ref_eff
-  //         << std::endl;
   return ref_seq;
 }
 std::unique_ptr<geometry_msgs::msg::PointStamped> OmniPidPursuitController::createCarrotMsg(
@@ -2634,28 +2534,23 @@ std::unique_ptr<geometry_msgs::msg::PointStamped> OmniPidPursuitController::crea
   carrot_msg->header = carrot_pose.header;
   carrot_msg->point.x = carrot_pose.pose.position.x;
   carrot_msg->point.y = carrot_pose.pose.position.y;
-  carrot_msg->point.z = 0.01;  // publish right over map to stand out
+  carrot_msg->point.z = 0.01;
   return carrot_msg;
 }
 
 geometry_msgs::msg::PoseStamped OmniPidPursuitController::getLookAheadPoint(
   const double & lookahead_dist, const nav_msgs::msg::Path & transformed_plan)
 {
-  // Find the first pose which is at a distance greater than the lookahead distance
+
   auto goal_pose_it = std::find_if(
     transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
       return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist;
     });
 
-  // If the no pose is not far enough, take the last pose
   if (goal_pose_it == transformed_plan.poses.end()) {
     goal_pose_it = std::prev(transformed_plan.poses.end());
   } else if (use_interpolation_ && goal_pose_it != transformed_plan.poses.begin()) {
-    // Find the point on the line segment between the two poses
-    // that is exactly the lookahead distance away from the robot pose (the origin)
-    // This can be found with a closed form for the intersection of a segment and a circle
-    // Because of the way we did the std::find_if, prev_pose is guaranteed to be inside the circle,
-    // and goal_pose is guaranteed to be outside the circle.
+
     auto prev_pose_it = std::prev(goal_pose_it);
     auto point = circleSegmentIntersection(
       prev_pose_it->pose.position, goal_pose_it->pose.position, lookahead_dist);
@@ -2672,14 +2567,7 @@ geometry_msgs::msg::PoseStamped OmniPidPursuitController::getLookAheadPoint(
 geometry_msgs::msg::Point OmniPidPursuitController::circleSegmentIntersection(
   const geometry_msgs::msg::Point & p1, const geometry_msgs::msg::Point & p2, double r)
 {
-  // Formula for intersection of a line with a circle centered at the origin,
-  // modified to always return the point that is on the segment between the two points.
-  // https://mathworld.wolfram.com/Circle-LineIntersection.html
-  // This works because the poses are transformed into the robot frame.
-  // This can be derived from solving the system of equations of a line and a circle
-  // which results in something that is just a reformulation of the quadratic formula.
-  // Interactive illustration in doc/circle-segment-intersection.ipynb as well as at
-  // https://www.desmos.com/calculator/td5cwbuocd
+
   double x1 = p1.x;
   double x2 = p2.x;
   double y1 = p1.y;
@@ -2690,7 +2578,6 @@ geometry_msgs::msg::Point OmniPidPursuitController::circleSegmentIntersection(
   double dr2 = dx * dx + dy * dy;
   double d = x1 * y2 - x2 * y1;
 
-  // Augmentation to only return point within segment
   double d1 = x1 * x1 + y1 * y1;
   double d2 = x2 * x2 + y2 * y2;
   double dd = d2 - d1;
@@ -2787,20 +2674,18 @@ bool OmniPidPursuitController::isDirectPathSafeToTarget(
 }
 double OmniPidPursuitController::getLookAheadDistance(const geometry_msgs::msg::Twist & speed)
 {
-  // If using velocity-scaled look ahead distances, find and clamp the dist
-  // Else, use the static look ahead distance
 
   double lookahead_dist = lookahead_dist_;
   if (use_velocity_scaled_lookahead_dist_) {
     double vel_to_use = 0.0;
     if (has_prev_cmd_vel_) {
-      // 计算历史速度的合成线速度（vx, vy的模长）
+
       vel_to_use = hypot(
         prev_cmd_vel_.twist.linear.x,
         prev_cmd_vel_.twist.linear.y
       );
     } else {
-      // 第一次运行，用当前反馈速度
+
       vel_to_use = hypot(speed.linear.x, speed.linear.y);
     }
     lookahead_dist = vel_to_use * lookahead_time_;
@@ -2813,13 +2698,11 @@ double OmniPidPursuitController::getLookAheadDistance(const geometry_msgs::msg::
 double OmniPidPursuitController::approachVelocityScalingFactor(
   const nav_msgs::msg::Path & transformed_path) const
 {
-  // Waiting to apply the threshold based on integrated distance ensures we don't
-  // erroneously apply approach scaling on curvy paths that are contained in a large local costmap.
+
   double remaining_distance = nav2_util::geometry_utils::calculate_path_length(transformed_path);
   if (remaining_distance < approach_velocity_scaling_dist_) {
     auto & last = transformed_path.poses.back();
-    // Here we will use a regular euclidean distance from the robot frame (origin)
-    // to get smooth scaling, regardless of path density.
+
     double distance_to_last_pose = std::hypot(last.pose.position.x, last.pose.position.y);
     return distance_to_last_pose / approach_velocity_scaling_dist_;
   } else {
@@ -2839,7 +2722,6 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
     approach_vel = unbounded_vel;
   }
 
-  // Use the lowest velocity between approach and other constraints, if all overlapping
   linear_vel = std::min(linear_vel, approach_vel);
 }
 
@@ -3104,8 +2986,6 @@ void OmniPidPursuitController::applyCurvatureLimitation(
         return a.kappa > b.kappa;
       });
 
-    // 取最大的前 25% 曲率点做加权平均
-    // 这样可以保留“前方弯道预判”，但不会被单个异常点支配
     const size_t sample_count = curvature_samples.size();
 
     size_t top_count =
@@ -3122,11 +3002,10 @@ void OmniPidPursuitController::applyCurvatureLimitation(
       max_kappa_ahead =
         curvature_samples.front().kappa;
     } else {
-      // 最大曲率固定占 50%
+
       max_kappa_ahead =
         0.5 * curvature_samples.front().kappa;
 
-      // 其余曲率共同占另外 50%
       double remaining_weight_base_sum = 0.0;
 
       for (size_t i = 1; i < top_count; ++i) {
@@ -3150,7 +3029,6 @@ void OmniPidPursuitController::applyCurvatureLimitation(
       }
     }
 
-    // 可视化还是显示原始最大曲率点，方便你看最危险的位置
     best_back_pose = curvature_samples.front().back;
     best_fwd_pose = curvature_samples.front().fwd;
     has_best_curvature_pose = true;
@@ -3187,7 +3065,6 @@ void OmniPidPursuitController::applyCurvatureLimitation(
         std::max(pid_curve_kappa_max_, raw_kappa_for_debug));
   }
 
-  // 后面的 slow 判断和速度公式全部用 filtered_kappa
   max_kappa_ahead = pid_curve_filtered_kappa_;
 
   max_kappa_ahead = pid_curve_filtered_kappa_;
@@ -3207,11 +3084,6 @@ void OmniPidPursuitController::applyCurvatureLimitation(
       pid_curve_slow_active_ = true;
     }
   }
-  // std::cout << "max_kappa_ahead: " << max_kappa_ahead
-  //           << " kappa_min: " << kappa_min
-  //           << " kappa_max: " << kappa_max
-  //           << " pid_curve_slow_active_: " << pid_curve_slow_active_
-  //           << std::endl;
   double target_vel = raw_linear_vel;
 
   if (pid_curve_slow_active_) {
@@ -3487,45 +3359,43 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
 {
   rcl_interfaces::msg::SetParametersResult result;
   std::lock_guard<std::mutex> lock_reinit(mutex_);
-  bool need_reinit_controller = false;  // 标记是否需要重新初始化控制器
-  bool new_use_mpc = use_mpc_control_;  // 暂存新的MPC启用状态
-
+  bool need_reinit_controller = false;
+  bool new_use_mpc = use_mpc_control_;
 
   for (const auto & parameter : parameters) {
     const auto & type = parameter.get_type();
     const auto & name = parameter.get_name();
 
     if (type == ParameterType::PARAMETER_DOUBLE) {
-      // 原有PID参数处理
       if (name == plugin_name_ + ".translation_kp") {
         translation_kp_ = parameter.as_double();
         if (!use_mpc_control_ && move_pid_) {
-          // move_pid_->setKp(translation_kp_); // 实时更新PID参数
+
         }
       } else if (name == plugin_name_ + ".translation_ki") {
         translation_ki_ = parameter.as_double();
         if (!use_mpc_control_ && move_pid_) {
-          // move_pid_->setKi(translation_ki_);
+
         }
       } else if (name == plugin_name_ + ".translation_kd") {
         translation_kd_ = parameter.as_double();
         if (!use_mpc_control_ && move_pid_) {
-          // move_pid_->setKd(translation_kd_);
+
         }
       } else if (name == plugin_name_ + ".rotation_kp") {
         rotation_kp_ = parameter.as_double();
         if (heading_pid_) {
-          // heading_pid_->setKp(rotation_kp_);
+
         }
       } else if (name == plugin_name_ + ".rotation_ki") {
         rotation_ki_ = parameter.as_double();
         if (heading_pid_) {
-          // heading_pid_->setKi(rotation_ki_);
+
         }
       } else if (name == plugin_name_ + ".rotation_kd") {
         rotation_kd_ = parameter.as_double();
         if (heading_pid_) {
-          // heading_pid_->setKd(rotation_kd_);
+
         }
       } else if (name == plugin_name_ + ".lookahead_dist") {
         lookahead_dist_ = parameter.as_double();
@@ -3544,7 +3414,7 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       } else if (name == plugin_name_ + ".v_linear_max") {
         v_linear_max_ = parameter.as_double();
         if (!use_mpc_control_ && move_pid_) {
-          // move_pid_->setMaxOutput(v_linear_max_);
+
         }
         if (use_mpc_control_ && mpc_controller_) {
           mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
@@ -3552,7 +3422,7 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       } else if (name == plugin_name_ + ".v_linear_min") {
         v_linear_min_ = parameter.as_double();
         if (!use_mpc_control_ && move_pid_) {
-          // move_pid_->setMinOutput(v_linear_min_);
+
         }
         if (use_mpc_control_ && mpc_controller_) {
           mpc_controller_->setVelocityLimits(v_linear_min_, v_linear_max_);
@@ -3560,12 +3430,12 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       } else if (name == plugin_name_ + ".v_angular_max") {
         v_angular_max_ = parameter.as_double();
         if (heading_pid_) {
-          // heading_pid_->setMaxOutput(v_angular_max_);
+
         }
       } else if (name == plugin_name_ + ".v_angular_min") {
         v_angular_min_ = parameter.as_double();
         if (heading_pid_) {
-          // heading_pid_->setMinOutput(v_angular_min_);
+
         }
       } else if (name == plugin_name_ + ".curvature_min") {
         curvature_min_ = parameter.as_double();
@@ -3610,7 +3480,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       else if (name == plugin_name_ + ".pid_curve_kappa_fall_rate") {
         pid_curve_kappa_fall_rate_ = parameter.as_double();
       }
-      // MPC权重参数动态更新
       else if (name == plugin_name_ + ".mpc_S_x") {
         mpc_S_x = parameter.as_double();
         if (use_mpc_control_ && mpc_controller_) {
@@ -3691,15 +3560,13 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
           impl_->linear_vel_filter_->reset();
         }
       }
-      // 核心：算法切换参数
       else if (name == plugin_name_ + ".use_mpc_control") {
         new_use_mpc = parameter.as_bool();
         if (new_use_mpc != use_mpc_control_) {
-          need_reinit_controller = true; // 标记需要重新初始化控制器
+          need_reinit_controller = true;
         }
       }
     } 
-    // SG滤波整型参数（窗口大小/多项式阶数）
     else if (type == ParameterType::PARAMETER_INTEGER) {
       if (name == plugin_name_ + ".sg_window_size") {
         impl_->sg_window_size_ = parameter.as_int();
@@ -3708,7 +3575,7 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         impl_->sg_poly_order_ = parameter.as_int();
         impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
       }
-      // MPC预测/控制时域
+
     else if (name == plugin_name_ + ".mpc_Np") {
       mpc_Np_ = parameter.as_int();
       if (use_mpc_control_ && mpc_controller_) {
@@ -3723,7 +3590,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
     }
   }
 
-  // 2. 算法切换：重新初始化控制器
   if (need_reinit_controller) {
     auto node = node_.lock();
     if (!node) {
@@ -3733,7 +3599,6 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       return result;
     }
 
-    // 更新全局MPC启用状态
     use_mpc_control_ = new_use_mpc;
 
     if (use_mpc_control_) {
@@ -3748,33 +3613,30 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
       acc_max_,
       v_linear_min_,
       v_linear_max_);
-      // 重新设置MPC权重
+
     updateMpcWeights();
       RCLCPP_INFO(logger_, "Successfully switched to MPC control mode");
     } else {
-      // 切换到PID模式：释放MPC资源，初始化PID
+
       mpc_controller_.reset();
-      // 重新初始化PID控制器
       move_pid_ = std::make_shared<PID>(
         control_duration_, v_linear_max_, v_linear_min_, 
         translation_kp_, translation_kd_, translation_ki_);
       heading_pid_ = std::make_shared<PID>(
         control_duration_, v_angular_max_, v_angular_min_, 
         rotation_kp_, rotation_kd_, rotation_ki_);
-      // 更新滤波器参数
       impl_->linear_vel_filter_->setWindowSize(impl_->sg_window_size_);
       impl_->linear_vel_filter_->setPolyOrder(impl_->sg_poly_order_);
       RCLCPP_INFO(logger_, "Successfully switched to PID control mode");
     }
   }
 
-  // 3. 返回参数设置结果
   result.successful = true;
   result.reason = "Parameters updated successfully";
   return result;
 }
-};  // namespace pb_omni_pid_pursuit_controller
-// Register this controller as a nav2_core plugin
+};
+
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(
   pb_omni_pid_pursuit_controller::OmniPidPursuitController, nav2_core::Controller)

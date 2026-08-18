@@ -77,6 +77,6 @@ id(const T &x)
 	return x;
 }
 
-} // namespace esekfom
+}
 	
-#endif // __MEKFOM_UTIL_HPP__
+#endif

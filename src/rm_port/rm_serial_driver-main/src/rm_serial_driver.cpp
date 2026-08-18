@@ -11,7 +11,6 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include "std_msgs/msg/int32.hpp"
 
-// C++ system
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -23,7 +22,7 @@
 #include "rm_serial_driver/packet.hpp"
 #include "rm_serial_driver/rm_serial_driver.hpp"
 
-constexpr double ANGLE_EPSILON = 1e-6; // 浮点数比较阈值
+constexpr double ANGLE_EPSILON = 1e-6;
 
 namespace rm_serial_driver
 {
@@ -42,12 +41,11 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   nav_force_area_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50),
     std::bind(&RMSerialDriver::updateNavForceArea, this));
-  // Create Publisher
   receive_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveMsg>("/receive_pack",rclcpp::QoS(10));
   receiveLLC_pub_ = this->create_publisher<rm_interfaces::msg::ReceiveLLC>("/receiveLLC_pack",rclcpp::QoS(10));
   lidar_pub_ = this->create_publisher<rm_interfaces::msg::LidarMsg>("/lidar_pack",rclcpp::QoS(10));
   decision_pub_ = this->create_publisher<std_msgs::msg::Int32>("/decision_change", rclcpp::QoS(10));
-  // goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose_op",10);
+
   goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose_op",10);
   pub_speed_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/self_speed", rclcpp::QoS(10));
   try {
@@ -63,7 +61,6 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
     throw ex;
   }
 
-  // Create Subscription
   special_area_angle_pub_ = this->create_subscription<std_msgs::msg::Float32>(
     "/special_area_angle", rclcpp::QoS(10),
     std::bind(&RMSerialDriver::specialAreaAngleData, this, std::placeholders::_1));
@@ -103,7 +100,7 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
   stance_sub_ = this->create_subscription<rm_interfaces::msg::StatusMsg>(
     "/status_pack", rclcpp::SensorDataQoS(),
     std::bind(&RMSerialDriver::stanceData, this, std::placeholders::_1));
-  // Create a timer to run sendData at 100 Hz
+
   outpost_sub = this->create_subscription<std_msgs::msg::Int32>(
     "/outpost_lock_lost", 10,
     std::bind(&RMSerialDriver::outpostData, this, std::placeholders::_1));
@@ -118,12 +115,9 @@ RMSerialDriver::RMSerialDriver(const rclcpp::NodeOptions & options)
       this,
       std::placeholders::_1));
   timer_ = this->create_wall_timer(
-    std::chrono::milliseconds(10),  // 10 ms = 100 Hz
+    std::chrono::milliseconds(10),
     std::bind(&RMSerialDriver::sendData, this));
-  
-  // timer_reset = this->create_wall_timer(
-  //   std::chrono::milliseconds(10000),  // 0.1Hz
-  //   std::bind(&RMSerialDriver::timer_callback, this));
+
 }
 
 RMSerialDriver::~RMSerialDriver()
@@ -148,40 +142,29 @@ void RMSerialDriver::receiveData()
   std::vector<uint8_t> data_ul;
   std::vector<uint8_t> data_uc;
   std::vector<uint8_t> data_b;
-  // std::vector<uint8_t> data;
+
   data_a.reserve(sizeof(ReceivePacketA));
-  // data.reserve(sizeof(ReceivePacket));
-  // data_ul.reserve(sizeof(ReceivePacketUL));
+
   data_uc.reserve(sizeof(ReceivePacketUC));
   data_b.reserve(sizeof(ReceivePacketB));
 
   while (rclcpp::ok()) {
     try {
       serial_driver_->port()->receive(header);
-      // std::cout << "sizeof:" << sizeof(ReceivePacketUL)  <<std::endl;
       if (header[0] == 0xA5) {
         data_a.resize(sizeof(ReceivePacketA) - 1);
         serial_driver_->port()->receive(data_a);
 
         data_a.insert(data_a.begin(), header[0]);
 
-        // std::cout<< "A5" << std::endl;
-        // std::cout << "Size of ReceivePacketA: " << sizeof(ReceivePacketA) << " bytes" << std::endl;
-
-        // for(long unsigned int i=0;i<data_a.size();i++){
-        //   std::cout<< std::hex<<std::setw(2)<<std::setfill('0') << static_cast<int>(data_a[i]) <<"  ";
-        // }
-        // std::cout<<std::endl;
-
         ReceivePacketA packet = fromVectorA(data_a);
 
         bool crc_ok =
           crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
         if (crc_ok) {
-          // timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
-          // rclcpp::Time now_time = rclcpp::Clock().now() + rclcpp::Duration::from_seconds(timestamp_offset_);
+
           rm_interfaces::msg::ReceiveMsg pub_pack;
-          // pub_pack.header.stamp = now_time;
+
           pub_pack.game_progress = packet.game_progress;
           pub_pack.stage_remain_time = packet.stage_remain_time;
           pub_pack.red_blue = packet.red_blue;
@@ -224,21 +207,12 @@ void RMSerialDriver::receiveData()
 
         data_uc.insert(data_uc.begin(), header[0]);
 
-        // std::cout<< "A5" << std::endl;
-        // std::cout << "Size of ReceivePacketA: " << sizeof(ReceivePacketA) << " bytes" << std::endl;
-
-        // for(long unsigned int i=0;i<data_a.size();i++){
-        //   std::cout<< std::hex<<std::setw(2)<<std::setfill('0') << static_cast<int>(data_a[i]) <<"  ";
-        // }
-        // std::cout<<std::endl;
-
         ReceivePacketUC packet = fromVectoruc(data_uc);
 
         bool crc_ok =
           crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
         if (crc_ok) {
-          // timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
-          // rclcpp::Time now_time = rclcpp::Clock().now() + rclcpp::Duration::from_seconds(timestamp_offset_);
+
           rm_interfaces::msg::ReceiveLLC pub_pack;
           geometry_msgs::msg::Point pub_speed;
           geometry_msgs::msg::PoseStamped pose_pack;
@@ -266,8 +240,7 @@ void RMSerialDriver::receiveData()
           pub_pack.self_infantry3_pose_y = packet.self_infantry3_pose_y;
           pub_pack.self_infantry4_pose_x = packet.self_infantry4_pose_x;
           pub_pack.self_infantry4_pose_y = packet.self_infantry4_pose_y;
-          // pub_pack.center_status = packet.center_status;
-          // pub_pack.center_status = 0;
+
           pub_pack.remain_gold = packet.remain_gold;
           pub_pack.recovery_buff = packet.recovery_buff;
           pub_pack.defence_buff = packet.defence_buff;
@@ -296,14 +269,6 @@ void RMSerialDriver::receiveData()
         serial_driver_->port()->receive(data_b);
 
         data_b.insert(data_b.begin(), header[0]);
-
-        // std::cout<< "A6" << std::endl;
-        // std::cout << "Size of ReceivePacketB: " << sizeof(ReceivePacketB) << " bytes" << std::endl;
-
-        // for(long unsigned int i=0;i<data_b.size();i++){
-        //   std::cout<< std::hex<<std::setw(2)<<std::setfill('0') << static_cast<int>(data_b[i]) <<"  ";
-        // }
-        // std::cout<<std::endl;
 
         ReceivePacketB packet = fromVectorB(data_b);
 
@@ -339,20 +304,18 @@ else {
                       static_cast<uint8_t>(header[0]));
   
   std::vector<uint8_t> all_invalid_data;
-  all_invalid_data.push_back(header[0]); // 先加入无效头字节
+  all_invalid_data.push_back(header[0]);
 
-  // 定义最大读取后续字节数（可按需调整，如32/64/128，建议64）
   const size_t MAX_FOLLOW_BYTES = 41;
   uint8_t temp_byte;
-  // 定长读取后续字节，循环MAX_FOLLOW_BYTES次
+
   for (size_t i = 0; i < MAX_FOLLOW_BYTES; ++i) {
     try {
-      // 修正receive()参数：仅传uint8_t*，匹配接口声明（无需长度参数）
-      std::vector<uint8_t> temp_vec(1); // 长度=要接收的字节数
+      std::vector<uint8_t> temp_vec(1);
       serial_driver_->port()->receive(temp_vec);
       all_invalid_data.push_back(temp_byte);
     } catch (const std::exception& e) {
-      // 捕获读取异常（如缓冲区无数据），立即终止循环，避免阻塞
+
       break;
     }
   }
@@ -464,16 +427,6 @@ void RMSerialDriver::sendData()
       packet.speed_y = speed_y;
     }
 
-    // if (area_status == 1) {
-    //   packet.angle = gimbal_angle;
-    //   packet.pitch = 0.0;
-    // } else if (area_status == 2) {
-    //   packet.angle = area_angle;
-    //   packet.pitch = 0.0;
-    // } else {
-    //   packet.angle = angle;
-    //   packet.pitch = pitch;
-    // }
     if (area_status == 1 || area_status == 2 || area_status == 3) {
       packet.angle = gimbal_angle;
       packet.pitch = 0.0;
@@ -483,8 +436,7 @@ void RMSerialDriver::sendData()
     }
     packet.shoot_mode = shoot_mode;
     packet.area_status = area_status;
-    // packet.spin_enable = spin_enable;
-    // packet.nav_enable = nav_enable;
+
     const bool force_nav = force_nav_enable_.load() || aim_force_nav_enable_.load();
 
     packet.nav_enable = force_nav ? uint8_t{1} : nav_enable.load();
@@ -501,8 +453,6 @@ void RMSerialDriver::sendData()
     std::vector<uint8_t> data = toVector(packet);
 
     serial_driver_->port()->send(data); 
-      // RCLCPP_INFO(get_logger(), "%f", packet.speed_x);
-  // RCLCPP_INFO(get_logger(), "%f", packet.speed_y);
   } catch (const std::exception & ex) {
     RCLCPP_ERROR(get_logger(), "Error while sending data: %s", ex.what());
     reopenPort();
@@ -513,7 +463,7 @@ void RMSerialDriver::timer_callback()
 {
   speed_x = 0.0;
   speed_y = 0.0;
-  // angle = 0.0;
+
 }
 
 void RMSerialDriver::getParams()
@@ -623,13 +573,13 @@ void RMSerialDriver::updateNavForceArea()
   geometry_msgs::msg::TransformStamped transform;
 
   try {
-    // 查询 base_link 在 map 坐标系下的位置
+
     transform = tf_buffer_->lookupTransform(
       "map",
       "base_link",
       tf2::TimePointZero);
   } catch (const tf2::TransformException & ex) {
-    // TF 短暂中断时保留上一次状态，避免强制标志突然解除
+
     RCLCPP_WARN_THROTTLE(
       get_logger(),
       *get_clock(),
@@ -647,7 +597,6 @@ void RMSerialDriver::updateNavForceArea()
   constexpr double kMinY = 4.0;
   constexpr double kMaxY = 5.0;
 
-  // 退出缓冲
   constexpr double kBoundaryBuffer = 0.1;
 
   const bool was_inside = force_nav_enable_.load();
@@ -669,20 +618,10 @@ void RMSerialDriver::updateNavForceArea()
   if (now_inside != was_inside) {
     force_nav_enable_.store(now_inside);
 
-    // RCLCPP_INFO(
-    //   get_logger(),
-    //   "Nav force area %s: x=%.3f, y=%.3f, serial nav_enable=%d",
-    //   now_inside ? "ENTER" : "EXIT",
-    //   x,
-    //   y,
-    //   now_inside ? 1 : static_cast<int>(nav_enable.load()));
   }
 }
-}  // namespace rm_serial_driver
+}
 
 #include "rclcpp_components/register_node_macro.hpp"
 
-// Register the component with class_loader.
-// This acts as a sort of entry point, allowing the component to be discoverable when its library
-// is being loaded into a running process.
 RCLCPP_COMPONENTS_REGISTER_NODE(rm_serial_driver::RMSerialDriver)

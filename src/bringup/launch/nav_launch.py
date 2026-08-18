@@ -21,17 +21,14 @@ from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import ReplaceString, RewrittenYaml
 
 def generate_launch_description():
-    # Get the launch directory
+
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
- 
 
-    # 决策
     rm_decision_dir = get_package_share_directory("rm2026_decision")
     decisionparams_file = os.path.join(rm_decision_dir, "config", "rm2026_decision_params.yaml")
     rm_decision_decision_dir = os.path.join(rm_decision_dir, "launch")
 
-    # Create the launch configuration variables
     namespace = LaunchConfiguration("namespace")
     relocate = LaunchConfiguration("relocate")
     map_yaml_file = LaunchConfiguration("map")
@@ -45,18 +42,7 @@ def generate_launch_description():
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
 
-    # Create our own temporary YAML files that include substitutions
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
-
-    # Only it applies when `namespace` is not empty.
-    # '<robot_namespace>' keyword shall be replaced by 'namespace' launch argument
-    # in config file 'nav2_multirobot_params.yaml' as a default & example.
-    # User defined config file should contain '<robot_namespace>' keyword for the replacements.
-    # params_file = ReplaceString(
-    #     source_file=params_file,
-    #     replacements={"<robot_namespace>": ("")},
-    #     condition=LaunchConfigurationEquals("namespace", ""),
-    # )
 
     params_file = ReplaceString(
         source_file=params_file,
@@ -89,9 +75,9 @@ def generate_launch_description():
     )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
-        # "map", default_value="/home/rps/RPS2025_sentry_nav/src/bringup/map/25uc_final.yaml", description="Full path to map yaml file to load"
+
         "map", default_value="/home/rps/sentry26/src/bringup/map/mapuc.yaml", description="Full path to map yaml file to load"
-        # "map", default_value="/home/rps/sentry26/src/bringup/map/ul26.yaml", description="Full path to map yaml file to load"
+
     )                                                                                                 
 
     declare_pcd_file_cmd = DeclareLaunchArgument(
@@ -142,7 +128,6 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
-    # Specify the actions
     bringup_cmd_group = GroupAction(
         [
             PushRosNamespace(namespace=namespace),
@@ -235,14 +220,7 @@ def generate_launch_description():
             parameters=[decisionparams_file],
         
     )
-    # sentry_exec = Node(
-    
-    #     package="sentry_executor",
-    #     executable="sentry_executor",
-    #     name="sentry_executor",
-    #     output="screen",
-        
-    # )
+
     rviz_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "rviz_launch.py")),
         condition=IfCondition(use_rviz),
@@ -253,9 +231,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    # decision_cmd = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(os.path.join(rm_decision_decision_dir, "rmuc_decision.launch.py")),
-    # )
     save_map_cmd = Node(
         package="map_save",
         executable="map_save",
@@ -283,14 +258,11 @@ def generate_launch_description():
         actions=[port_cmd]
     )
 
-    # Create the launch description and populate
     ld = LaunchDescription()
 
-    # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
     ld.add_action(colorized_output_envvar)
 
-    # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_relocate_cmd)
     ld.add_action(declare_map_yaml_cmd)
@@ -304,15 +276,12 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(declare_use_rviz_cmd)
 
-    # Add the actions to launch all of the navigation nodes
     ld.add_action(bringup_cmd_group)
     ld.add_action(delayed_omni_node)
     ld.add_action(port_cmd)
 
-    # ld.add_action(rviz_cmd)
     ld.add_action(save_map_cmd)
-    # 决策
-    #ld.add_action(rm26_decision)
+
     ld.add_action(delayed_decision_node)
 
     return ld

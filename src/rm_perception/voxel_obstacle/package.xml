@@ -1,12 +1,11 @@
 <?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>voxel_obstacle</name>
   <version>1.0.0</version>
-  <description>Extra plugin libs for Navigation2.</description>
-  <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
+  <description>Nav2 voxel obstacle layer with dynamic filtering and temporal obstacle tracking.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <license>Apache-2.0</license>
-  <author email="lihanchen2004@163.com">Lihan Chen</author>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>nav2_common</build_depend>

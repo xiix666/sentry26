@@ -93,7 +93,6 @@ void ThetaStarPlanner::cleanup()
 void ThetaStarPlanner::activate()
 {
   RCLCPP_INFO(logger_, "Activating plugin %s of type theta_star_planner", name_.c_str());
-  // Add callback for dynamic parameters
   auto node = parent_node_.lock();
   dyn_params_handler_ = node->add_on_set_parameters_callback(
     std::bind(&ThetaStarPlanner::dynamicParametersCallback, this, std::placeholders::_1));
@@ -113,7 +112,6 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
 
   std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*(planner_->costmap_->getMutex()));
 
-  // Corner case of start and goal beeing on the same cell
   unsigned int mx_start, my_start, mx_goal, my_goal;
   if (!planner_->costmap_->worldToMap(
       start.pose.position.x, start.pose.position.y, mx_start, my_start))
@@ -141,9 +139,7 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
     pose.pose.position.z = 0.0;
 
     pose.pose = start.pose;
-    // if we have a different start and goal orientation, set the unique path pose to the goal
-    // orientation, unless use_final_approach_orientation=true where we need it to be the start
-    // orientation to avoid movement from the local planner
+
     if (start.pose.orientation != goal.pose.orientation && !use_final_approach_orientation_) {
       pose.pose.orientation = goal.pose.orientation;
     }
@@ -151,7 +147,6 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
     return global_path;
   }
 
-  // 每次规划周期都先运行 Theta*，得到当前代价地图下的新候选路径。
   nav_msgs::msg::Path new_path;
   planner_->setStartAndGoal(start, goal);
 
@@ -174,16 +169,11 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
     global_path = std::move(new_path);
   }
 
-  // check if a plan is generated
   size_t plan_size = global_path.poses.size();
   if (plan_size > 0) {
     global_path.poses.back().pose.orientation = goal.pose.orientation;
   }
 
-  // If use_final_approach_orientation=true, interpolate the last pose orientation from the
-  // previous pose to set the orientation to the 'final approach' orientation of the robot so
-  // it does not rotate.
-  // And deal with corner case of plan of length 1
   if (use_final_approach_orientation_) {
     if (plan_size == 1) {
       global_path.poses.back().pose.orientation = start.pose.orientation;
@@ -198,8 +188,7 @@ nav_msgs::msg::Path ThetaStarPlanner::createPlan(
         nav2_util::geometry_utils::orientationAroundZAxis(theta);
     }
   }
-  // 只有采用本轮 Theta* 路径时才更新缓存。继续使用旧路径时，
-  // tryReuseLastPath() 已经推进 last_progress_index_。
+
   if (!reused_last_path && !global_path.poses.empty()) {
     cachePath(global_path, goal);
   }
@@ -266,10 +255,8 @@ bool ThetaStarPlanner::segmentCostAndSafe(
   const double distance = std::hypot(dx, dy);
   const double resolution = planner_->costmap_->getResolution();
 
-  // 距离代价，换算成栅格长度
   cost += compare_distance_weight_ * distance / resolution;
 
-  // 每半个栅格检查一次，防止线段穿过障碍
   const int steps = std::max(
     1,
     static_cast<int>(
@@ -328,7 +315,6 @@ bool ThetaStarPlanner::pathCostAndSafe(
     return false;
   }
 
-  // 新旧路径都从同一个机器人当前位置开始计价，保证代价可直接比较。
   double segment_cost = 0.0;
   if (!segmentCostAndSafe(start, path.poses.front(), segment_cost)) {
     return false;
@@ -365,7 +351,6 @@ bool ThetaStarPlanner::tryReuseLastPath(
     return false;
   }
 
-  // 必须还是同一个目标点。
   const double goal_distance = std::hypot(
     goal.pose.position.x - last_goal_.pose.position.x,
     goal.pose.position.y - last_goal_.pose.position.y);
@@ -374,8 +359,6 @@ bool ThetaStarPlanner::tryReuseLastPath(
     return false;
   }
 
-  // 在旧路径尚未走完的线段上寻找机器人投影点。使用点到线段距离，
-  // 避免路径点疏密影响偏离判断。
   const size_t search_begin = std::min(
     last_progress_index_,
     last_path_.poses.size() - 2);
@@ -431,8 +414,6 @@ bool ThetaStarPlanner::tryReuseLastPath(
   reused_path.header.stamp = clock_->now();
   reused_path.header.frame_id = global_frame_;
 
-  // 发布路径直接从旧路径线段上的投影点开始，不把机器人当前位置强行
-  // 塞进 Path，避免形成“当前位置 -> 旧路径 -> 原方向”的人为折角。
   auto projection_pose = last_path_.poses[nearest_segment];
   const auto & segment_start =
     last_path_.poses[nearest_segment].pose.position;
@@ -462,13 +443,10 @@ bool ThetaStarPlanner::tryReuseLastPath(
     reused_path.poses.push_back(pose);
   }
 
-  // 临近终点只剩一个点时交给本轮 Theta*，避免控制器收到过短路径。
   if (reused_path.poses.size() < 2) {
     return false;
   }
 
-  // 连接段虽然不发布，但必须参与安全检查和总代价比较；这样新旧路径
-  // 都以机器人当前位置作为统一起点。
   double old_cost = 0.0;
   if (!pathCostAndSafe(start, reused_path, old_cost)) {
     RCLCPP_INFO(
@@ -481,8 +459,6 @@ bool ThetaStarPlanner::tryReuseLastPath(
   const bool new_path_valid =
     pathCostAndSafe(start, new_path, new_cost);
 
-  // 新路径至少明显优于旧路径 switch_improvement_ratio_ 才切换。
-  // 若本轮 Theta* 没有有效结果而旧路径仍安全，则继续使用旧路径。
   if (new_path_valid &&
     new_cost <= old_cost * (1.0 - switch_improvement_ratio_))
   {
@@ -580,7 +556,7 @@ ThetaStarPlanner::dynamicParametersCallback(std::vector<rclcpp::Parameter> param
   return result;
 }
 
-}  // namespace theta_star_planner
+}
 
 #include "pluginlib/class_list_macros.hpp"
 PLUGINLIB_EXPORT_CLASS(theta_star_planner::ThetaStarPlanner, nav2_core::GlobalPlanner)

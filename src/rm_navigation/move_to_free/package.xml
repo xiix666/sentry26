@@ -3,10 +3,12 @@
 <package format="3">
   <name>move_to_free</name>
   <version>1.0.0</version>
-  <description>Extra plugin libs for Navigation2.</description>
+  <description>Nav2 recovery behavior for moving the robot toward nearby free space.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="lihanchen2004@163.com">Lihan Chen</maintainer>
   <license>Apache-2.0</license>
   <author email="lihanchen2004@163.com">Lihan Chen</author>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>nav2_common</build_depend>

@@ -18,7 +18,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <atomic>
-// C++ system
+
 #include <future>
 #include <memory>
 #include <string>
@@ -35,7 +35,6 @@
 #include "rm_interfaces/msg/send_to_lidar_msg.hpp"
 #include "rm_interfaces/msg/receive_llc.hpp"
 #include "rm_interfaces/msg/status_msg.hpp"
-
 
 namespace rm_serial_driver
 {
@@ -54,7 +53,6 @@ private:
   void angleData(const geometry_msgs::msg::Point32::SharedPtr msg);
 
   void shootData(const rm_interfaces::msg::ShootMsg::SharedPtr msg);
-
 
   void navData(const rm_interfaces::msg::NavMsg::SharedPtr msg);
 
@@ -111,7 +109,7 @@ private:
   std::mutex send_enemy_poses_mutex_;
   std::atomic<float> gimbal_angle{0.0f};
   std::atomic_bool aim_force_nav_enable_{false};
-  // Serial port
+
   std::unique_ptr<IoContext> owned_ctx_;
   std::string device_name_;
   std::unique_ptr<drivers::serial_driver::SerialPortConfig> device_config_;
@@ -121,11 +119,9 @@ private:
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   rclcpp::TimerBase::SharedPtr nav_force_area_timer_;
 
-  // true 时无条件覆盖串口 nav_enable 为 1
   std::atomic_bool force_nav_enable_{false};
 
   rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr aim_enable_nav_sub_;
-  // double timestamp_offset_ = 0;
 
   rclcpp::Publisher<rm_interfaces::msg::ReceiveMsg>::SharedPtr receive_pub_;
   rclcpp::Publisher<rm_interfaces::msg::ReceiveLLC>::SharedPtr receiveLLC_pub_;
@@ -155,6 +151,6 @@ private:
   std::thread receive_thread_;
   uint32_t baud_rate{};
 };
-}  // namespace rm_serial_driver
+}
 
-#endif  // RM_SERIAL_DRIVER__RM_SERIAL_DRIVER_HPP_
+#endif

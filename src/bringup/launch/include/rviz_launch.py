@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-# from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
+
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
@@ -10,14 +10,12 @@ from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler, ExecuteProcess
 
 def generate_launch_description():
-    # Get the launch directory
+
     bringup_dir = get_package_share_directory("bringup")
 
-    # Create the launch configuration variables
     namespace = LaunchConfiguration("namespace")
     rviz_config_file = LaunchConfiguration("rviz_config")
 
-    # Declare the launch arguments
     declare_namespace_cmd = DeclareLaunchArgument(
         "namespace",
         default_value="",
@@ -33,7 +31,6 @@ def generate_launch_description():
         description="Full path to the RViz config file to use",
     )
 
-    # Launch rviz
     start_rviz_cmd = Node(
         package="rviz2",
         executable="rviz2",
@@ -56,17 +53,13 @@ def generate_launch_description():
         ),
     )
 
-    # Create the launch description and populate
     ld = LaunchDescription()
 
-    # Declare the launch options
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
 
-    # Add any conditioned actions
     ld.add_action(start_rviz_cmd)
-    # ld.add_action(echo_cmd_vel_base_cmd)
-    # Add other nodes and processes we need
+
     ld.add_action(exit_event_handler)
 
     return ld

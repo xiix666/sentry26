@@ -30,71 +30,14 @@
 #include <limits>
 #include <type_traits>
 
-// Version 1.1 - 29 August 2019
-
-//
-// N dimensional hilbert curve encoding & decoding based on the paper
-// "Programming the Hilbert Curve" by John Skilling.
-//
-// The interface assumes an std::array of some unsigned integer type.  This
-// contains an index in lexographic order, or a set of coordinates on the
-// hilbert curve.
-//
-// Two implementations are included.
-//
-// hilbert::v1 contains a fairly straightforward implementation of the paper,
-// with standard looping constructs.
-//
-// hilbert::v2 performs uses template metaprogramming to unroll loops and
-// theoretically improve performance on some systems.
-//
-// v1 produces smaller code, which may be more performant on machines with
-// small caches.  v2 produces relatively large code that seems more efficient
-// on modern systems for dimension up to about 100.
-//
-// v2 should be built with -O3 for best results.  -O0 is extremely slow
-// on most systems.
-//
-
-// Interface is as follows:
-//
-// Find the position of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-// sort order.
-//template<typename T, size_t N>
-//std::array<T, N>
-//IndexToPosition(std::array<T, N> const &in);
-
-// Find the index of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-//  sort order.
-//template<typename T, size_t N>
-//std::array<T, N>
-//PositionToIndex(std::array<T, N> const &in);
-//
-
 namespace hilbert
 {
-// Fairly straightforward implementation.  Loops are loops and code mostly
-// does what one would expect.
+
 namespace v1
 {
 namespace internal
 {
-// Extract bits from transposed form.
-//
-// e.g.
-//
-// a d g j    a b c d
-// b e h k -> e f g h
-// c f i l    i j k l
-//
+
 template <typename T, size_t N>
 std::array<T, N> UntransposeBits(std::array<T, N> const & in)
 {
@@ -106,8 +49,6 @@ std::array<T, N> UntransposeBits(std::array<T, N> const & in)
 
   std::fill(out.begin(), out.end(), 0);
 
-  // go through all bits in input, msb first.  Shift distances are
-  // from msb.
   for (size_t b = 0; b < bit_count; b++) {
     size_t src_bit, dst_bit, src, dst;
     src = b % N;
@@ -121,14 +62,6 @@ std::array<T, N> UntransposeBits(std::array<T, N> const & in)
   return out;
 }
 
-// Pack bits into transposed form.
-//
-// e.g.
-//
-// a b c d    a d g j
-// e f g h -> b e h k
-// i j k l    c f i l
-//
 template <typename T, size_t N>
 std::array<T, N> TransposeBits(std::array<T, N> const & in)
 {
@@ -140,8 +73,6 @@ std::array<T, N> TransposeBits(std::array<T, N> const & in)
 
   std::fill(out.begin(), out.end(), 0);
 
-  // go through all bits in input, msb first.  Shift distances
-  // are from msb.
   for (size_t b = 0; b < bit_count; b++) {
     size_t src_bit, dst_bit, src, dst;
     src = b / bits;
@@ -154,25 +85,14 @@ std::array<T, N> TransposeBits(std::array<T, N> const & in)
 
   return out;
 }
-}  // namespace internal
+}
 
-//
-// Public interfaces.
-//
-
-// Find the position of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-// sort order.
 template <typename T, size_t N>
 std::array<T, N> IndexToPosition(std::array<T, N> const & in)
 {
-  // First convert index to transpose.
+
   std::array<T, N> out(internal::TransposeBits(in));
 
-  // Initial gray encoding of transposed vector.
   {
     T tmp = out[N - 1] >> 1;
 
@@ -183,7 +103,6 @@ std::array<T, N> IndexToPosition(std::array<T, N> const & in)
     out[0] ^= tmp;
   }
 
-  // Apply transforms to gray code.
   {
     T cur_bit(2), low_bits;
 
@@ -195,10 +114,10 @@ std::array<T, N> IndexToPosition(std::array<T, N> const & in)
       do {
         n--;
         if (out[n] & cur_bit) {
-          // flip low bits of X
+
           out[0] ^= low_bits;
         } else {
-          // swap low bits with X
+
           T t((out[n] ^ out[0]) & low_bits);
           out[n] ^= t;
           out[0] ^= t;
@@ -212,12 +131,6 @@ std::array<T, N> IndexToPosition(std::array<T, N> const & in)
   return out;
 }
 
-// Find the index of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-// sort order.
 template <typename T, size_t N>
 std::array<T, N> PositionToIndex(std::array<T, N> const & in)
 {
@@ -225,7 +138,6 @@ std::array<T, N> PositionToIndex(std::array<T, N> const & in)
 
   std::array<T, N> out(in);
 
-  // reverse transforms to convert into transposed gray code.
   {
     T cur_bit(T(1) << (bits - 1)), low_bits;
 
@@ -234,10 +146,10 @@ std::array<T, N> PositionToIndex(std::array<T, N> const & in)
 
       for (size_t n = 0; n < N; n++) {
         if (out[n] & cur_bit) {
-          // flip low bits of X
+
           out[0] ^= low_bits;
         } else {
-          // swap low bits with X
+
           T t((out[n] ^ out[0]) & low_bits);
           out[n] ^= t;
           out[0] ^= t;
@@ -248,7 +160,6 @@ std::array<T, N> PositionToIndex(std::array<T, N> const & in)
     } while (low_bits > 1);
   }
 
-  // Remove gray code from transposed vector.
   {
     T cur_bit(T(1) << (bits - 1)), t(0);
 
@@ -270,18 +181,13 @@ std::array<T, N> PositionToIndex(std::array<T, N> const & in)
 
   return internal::UntransposeBits(out);
 }
-}  // namespace v1
+}
 
-// Implementation using metaprogramming to unroll most loops.
-// Optimised performance should be superior to v1 provided all code remains
-// in cache etc.
-//
-// At some value of N v1 should overtake v2.
 namespace v2
 {
 namespace internal
 {
-// Metaprogramming guts.  Unrolled loops, abandon all hope etc.
+
 namespace tmp
 {
 template <typename T, size_t N, size_t D>
@@ -302,8 +208,6 @@ T TransposeBits2(
   const size_t dst_bit = (B - 1);
   const T dst_bit_val = T(1) << dst_bit;
 
-  // Multiply rather than shift to avoid clang implicit
-  // conversion warning.
   T bit = ((in[src] & src_bit_val) >> src_bit) * dst_bit_val;
 
   return bit + TransposeBits2(
@@ -344,8 +248,6 @@ T UntransposeBits2(
   const size_t dst_bit(B - 1);
   const T dst_bit_val = T(1) << dst_bit;
 
-  // Multiply rather than shift to avoid clang implicit
-  // conversion warning.
   T bit = ((in[src] & src_bit_val) >> src_bit) * dst_bit_val;
 
   return bit + UntransposeBits2(
@@ -386,13 +288,11 @@ void ApplyGrayCode1(
   ApplyGrayCode1(in, out, std::integral_constant<size_t, I - 1>());
 }
 
-// Remove a gray code from a transposed vector
 template <typename T, size_t N>
 void RemoveGrayCode1(std::array<T, N> &, std::integral_constant<size_t, 0>)
 {
 }
 
-// xor array values with previous values.
 template <typename T, size_t N, size_t D>
 void RemoveGrayCode1(std::array<T, N> & in, std::integral_constant<size_t, D>)
 {
@@ -438,10 +338,10 @@ void GrayToHilbert2(
   const T low_bits(cur_bit - 1);
 
   if (out[n] & cur_bit) {
-    // flip low bits of X
+
     out[0] ^= low_bits;
   } else {
-    // swap low bits with X
+
     T t((out[n] ^ out[0]) & low_bits);
     out[n] ^= t;
     out[0] ^= t;
@@ -478,10 +378,10 @@ void HilbertToGray2(
   const size_t n(N - I);
 
   if (out[n] & cur_bit) {
-    // flip low bits of X
+
     out[0] ^= low_bits;
   } else {
-    // swap low bits with X
+
     T t((out[n] ^ out[0]) & low_bits);
     out[n] ^= t;
     out[0] ^= t;
@@ -515,16 +415,8 @@ void ApplyMaskToArray(std::array<T, N> & a, T mask, std::integral_constant<size_
 
   ApplyMaskToArray(a, mask, std::integral_constant<size_t, I - 1>());
 }
-}  // namespace tmp
+}
 
-// Pack bits into transposed form.
-//
-// e.g.
-//
-// a b c d    a d g j
-// e f g h -> b e h k
-// i j k l    c f i l
-//
 template <typename T, size_t N>
 std::array<T, N> TransposeBits(std::array<T, N> const & in)
 {
@@ -537,13 +429,6 @@ std::array<T, N> TransposeBits(std::array<T, N> const & in)
   return out;
 }
 
-// Extract bits from transposed form.
-// e.g.
-//
-// a d g j    a b c d
-// b e h k -> e f g h
-// c f i l    i j k l
-//
 template <typename T, size_t N>
 std::array<T, N> UntransposeBits(std::array<T, N> const & in)
 {
@@ -556,7 +441,6 @@ std::array<T, N> UntransposeBits(std::array<T, N> const & in)
   return out;
 }
 
-// Apply a gray code to a transformed vector.
 template <typename T, size_t N>
 std::array<T, N> ApplyGrayCode(std::array<T, N> const & in)
 {
@@ -573,23 +457,18 @@ std::array<T, N> RemoveGrayCode(std::array<T, N> const & in)
   const size_t bits = std::numeric_limits<T>::digits;
   std::array<T, N> out(in);
 
-  // Remove gray code from transposed vector.
   {
-    // xor values with prev values.
+
     tmp::RemoveGrayCode1(out, std::integral_constant<size_t, N - 1>());
 
-    // create a mask.
     T t = tmp::RemoveGrayCode2(out[N - 1], std::integral_constant<size_t, bits>());
 
-    // Apply mask to output.
     tmp::ApplyMaskToArray(out, t, std::integral_constant<size_t, N>());
   }
 
   return out;
 }
 
-// Generate code to convert from a transposed gray code to a hilbert
-// code.
 template <typename T, size_t N>
 std::array<T, N> GrayToHilbert(std::array<T, N> const & in)
 {
@@ -600,8 +479,6 @@ std::array<T, N> GrayToHilbert(std::array<T, N> const & in)
   return out;
 }
 
-// Generate code to convert from a hilbert code to a transposed gray
-// code.
 template <typename T, size_t N>
 std::array<T, N> HilbertToGray(std::array<T, N> const & in)
 {
@@ -611,37 +488,21 @@ std::array<T, N> HilbertToGray(std::array<T, N> const & in)
 
   return out;
 }
-}  // namespace internal
+}
 
-//
-// Public interfaces.
-//
-
-// Find the position of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-// sort order.
 template <typename T, size_t N>
 std::array<T, N> IndexToPosition(std::array<T, N> const & in)
 {
-  // First convert index to transpose.
+
   return internal::GrayToHilbert(internal::ApplyGrayCode(internal::TransposeBits(in)));
 }
 
-// Find the index of a point on an N dimensional Hilbert Curve.
-//
-// Based on the paper "Programming the Hilbert Curve" by John Skilling.
-//
-// Index is encoded with most significant objects first.  Lexographic
-//  sort order.
 template <typename T, size_t N>
 std::array<T, N> PositionToIndex(std::array<T, N> const & in)
 {
   return internal::UntransposeBits(internal::RemoveGrayCode(internal::HilbertToGray(in)));
 }
-}  // namespace v2
-}  // namespace hilbert
+}
+}
 
 #endif

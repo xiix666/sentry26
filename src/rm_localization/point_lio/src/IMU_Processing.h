@@ -2,14 +2,12 @@
 #include <math.h>
 
 #include <cmath>
-// #include <deque>
-// #include <mutex>
-// #include <thread>
+
 #include <csignal>
 #include <rclcpp/rclcpp.hpp>
-// #include <so3_math.h>
+
 #include <Eigen/Eigen>
-// #include "Estimator.h"
+
 #include <common_lib.h>
 #include <pcl/common/io.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -21,12 +19,9 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
-/// *************Preconfiguration
-
 #define MAX_INI_COUNT (100)
-const bool time_list(PointType & x, PointType & y);  // {return (x.curvature < y.curvature);};
+const bool time_list(PointType & x, PointType & y);
 
-/// *************IMU Process and undistortion
 class ImuProcess
 {
 public:

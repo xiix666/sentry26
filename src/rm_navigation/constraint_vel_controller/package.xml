@@ -2,10 +2,12 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>constraint_vel_controller</name>
-  <version>0.1.0</version>
-  <description>Nav2控制器wrapper</description>
-  <license>MIT</license>
+  <version>1.0.0</version>
+  <description>Nav2 controller wrapper for applying velocity and motion constraints.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
   <maintainer email="qza36@outlook.com">ZhiangQi</maintainer>
+  <license>MIT</license>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

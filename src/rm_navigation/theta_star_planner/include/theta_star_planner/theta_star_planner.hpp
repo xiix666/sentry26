@@ -50,39 +50,21 @@ protected:
   std::string global_frame_, name_;
   bool use_final_approach_orientation_;
 
-  // parent node weak ptr
   rclcpp_lifecycle::LifecycleNode::WeakPtr parent_node_;
 
   std::unique_ptr<theta_star::ThetaStar> planner_;
 
-  // Dynamic parameters handler
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
 
-
-  /**
-   * @brief the function responsible for calling the algorithm and retrieving a path from it
-   * @return global_path is the planned path to be taken
-   */
   void getPlan(nav_msgs::msg::Path & global_path);
 
-  /**
-   * @brief interpolates points between the consecutive waypoints of the path
-   * @param raw_path is used to send in the path received from the planner
-   * @param dist_bw_points is used to send in the interpolation_resolution (which has been set as the costmap resolution)
-   * @return the final path with waypoints at a distance of the value of interpolation_resolution of each other
-   */
   static nav_msgs::msg::Path linearInterpolation(
     const std::vector<coordsW> & raw_path,
     const double & dist_bw_points);
 
-  /**
-   * @brief Callback executed when a paramter change is detected
-   * @param parameters list of changed parameters
-   */
   rcl_interfaces::msg::SetParametersResult
   dynamicParametersCallback(std::vector<rclcpp::Parameter> parameters);
 
-  // 上一次接受的路径
   nav_msgs::msg::Path last_path_;
   geometry_msgs::msg::PoseStamped last_goal_;
 
@@ -115,6 +97,6 @@ protected:
     const nav_msgs::msg::Path & path,
     const geometry_msgs::msg::PoseStamped & goal);
 };
-}   //  namespace theta_star_planner
+}
 
-#endif  //  THETA_STAR_PLANNER__THETA_STAR_PLANNER_HPP_
+#endif

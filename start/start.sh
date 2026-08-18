@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# export ROS_DOMAIN_ID=2
 source ~/.bashrc
 
 source /home/xx/sentry26/install/setup.bash

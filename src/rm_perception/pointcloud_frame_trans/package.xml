@@ -2,10 +2,11 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>pointcloud_frame_trans</name>
-  <version>0.0.1</version>
-  <description>Point cloud frame transformation node</description>
-  <maintainer email="your.email@example.com">Your Name</maintainer>
-  <license>Apache License 2.0</license>
+  <version>1.0.0</version>
+  <description>Point cloud frame transformation and odometry adaptation node.</description>
+  <maintainer email="1834364183@qq.com">xx</maintainer>
+  <license>Apache-2.0</license>
+  <author email="1834364183@qq.com">xx</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

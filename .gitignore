@@ -3,6 +3,7 @@ build/
 install/
 log/
 bag/
+yuyin/
 # ROSBAG2录包文件（匹配所有日期的录包目录）
 rosbag2_*
 *.db3

@@ -18,10 +18,9 @@ bool use_imu_as_input = false, space_down_sample = true,
 int init_map_size = 10, con_frame_num = 1;
 double match_s = 81, satu_acc, satu_gyro, cut_frame_time_interval = 0.1;
 float plane_thr = 0.1f;
-//滤波参数
 double filter_size_surf_min = 0.5, filter_size_map_min = 0.5;
 double fov_deg = 180;
-// double cube_len = 2000;
+
 float DET_RANGE = 450;
 bool imu_en = true;
 double imu_time_inte = 0.005;
@@ -44,8 +43,8 @@ std::vector<double> init_pose;
 
 double lidar_time_inte = 0.1, first_imu_time = 0.0;
 int cut_frame_num = 1, orig_odom_freq = 10;
-double online_refine_time = 20.0;  //unit: s
-bool cut_frame_init = false;       // true;
+double online_refine_time = 20.0;
+bool cut_frame_init = false;
 std::string init_frame,lidar_frame,lidar_odom_frame;
 MeasureGroup Measures;
 
@@ -261,7 +260,7 @@ void readParameters(std::shared_ptr<rclcpp::Node> & nh)
   } else if (ivox_nearby_type == 26) {
     ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY26;
   } else {
-    // LOG(WARNING) << "unknown ivox_nearby_type, use NEARBY18";
+
     ivox_options_.nearby_type_ = IVoxType::NearbyType::NEARBY18;
   }
   p_imu->gravity_ << VEC_FROM_ARRAY(gravity);
@@ -306,6 +305,6 @@ void reset_cov_output(Eigen::Matrix<double, 30, 30> & P_init_output)
 {
   P_init_output = MD(30, 30)::Identity() * 0.01;
   P_init_output.block<3, 3>(21, 21) = MD(3, 3)::Identity() * 0.0001;
-  // P_init_output.block<6, 6>(6, 6) = MD(6,6)::Identity() * 0.0001;
+
   P_init_output.block<6, 6>(24, 24) = MD(6, 6)::Identity() * 0.001;
 }

@@ -10,7 +10,6 @@ class MapAutoSaver : public rclcpp::Node
 public:
     MapAutoSaver() : Node("map_auto_saver")
     {
-        // ====================== 可修改参数 ======================
         save_interval_ = this->declare_parameter<double>("save_interval", 20.0);
         save_path_ = this->declare_parameter<std::string>(
             "save_path",
@@ -21,7 +20,7 @@ public:
             "/slam_map"
         );
         save_id_ = 0;
-        // ========================================================
+
         while (
             std::filesystem::exists(save_path_ + std::to_string(save_id_) + ".yaml") ||
             std::filesystem::exists(save_path_ + std::to_string(save_id_) + ".pgm"))
@@ -39,7 +38,7 @@ public:
 private:
     void saveMapCallback()
     {
-        // ===================== 终极方案：直接调用官方命令 =====================
+
         std::string cmd = "ros2 run nav2_map_server map_saver_cli "
                           "-t " + map_topic_ + " "
                           "-f " + save_path_ + std::to_string(save_id_);

@@ -31,17 +31,6 @@ ThetaStar::ThetaStar()
   exp_node = new tree_node;
 }
 
-// void ThetaStar::setStartAndGoal(
-//   const geometry_msgs::msg::PoseStamped & start,
-//   const geometry_msgs::msg::PoseStamped & goal)
-// {
-//   unsigned int s[2], d[2];
-//   costmap_->worldToMap(start.pose.position.x, start.pose.position.y, s[0], s[1]);
-//   costmap_->worldToMap(goal.pose.position.x, goal.pose.position.y, d[0], d[1]);
-
-//   src_ = {static_cast<int>(s[0]), static_cast<int>(s[1])};
-//   dst_ = {static_cast<int>(d[0]), static_cast<int>(d[1])};
-// }
 void ThetaStar::setStartAndGoal(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & goal)
@@ -65,10 +54,6 @@ void ThetaStar::setStartAndGoal(
 
   dst_ = {static_cast<int>(d[0]),static_cast<int>(d[1])};
 
-  // ============================================================
-  // 区域1
-  // 起点或者目标点在区域1内，本轮才允许经过区域1
-  // ============================================================
   const bool start_inside_area1 =
     isInsideConditionalAreaWorld(
       start.pose.position.x,
@@ -107,7 +92,6 @@ void ThetaStar::setStartAndGoal(
       conditional_area2_max_x_,
       conditional_area2_min_y_,
       conditional_area2_max_y_);
-  // std::cout << goal_inside_area2 << std::endl;
   conditional_area2_allowed_for_plan_ =
     start_inside_area2 ||
     goal_inside_area2;
@@ -115,13 +99,13 @@ void ThetaStar::setStartAndGoal(
 bool ThetaStar::generatePath(std::vector<coordsW> & raw_path)
 {
   resetContainers();
-  addToNodesData(index_generated_);//nodes_data_ [index_generated_] = {};
+  addToNodesData(index_generated_);
   double src_g_cost = getTraversalCost(src_.x, src_.y), src_h_cost = getHCost(src_.x, src_.y);
   nodes_data_[index_generated_] =
   {src_.x, src_.y, src_g_cost, src_h_cost, &nodes_data_[index_generated_], true,
-    src_g_cost + src_h_cost};  //起点
+    src_g_cost + src_h_cost};
   queue_.push({&nodes_data_[index_generated_]});
-  addIndex(src_.x, src_.y, &nodes_data_[index_generated_]);//node_position_[size_x_ * src_.y + src_.x] = &nodes_data_[index_generated_];
+  addIndex(src_.x, src_.y, &nodes_data_[index_generated_]);
   tree_node * curr_data = &nodes_data_[index_generated_];
   index_generated_++;
   nodes_opened = 0;
@@ -176,7 +160,7 @@ void ThetaStar::setNeighbors(const tree_node * curr_data)
   tree_node * m_id = nullptr;
   double g_cost, h_cost, cal_cost;
 
-  for (int i = 0; i < how_many_corners_; i++) {//遍历邻居节点
+  for (int i = 0; i < how_many_corners_; i++) {
     mx = curr_data->x + moves[i].x;
     my = curr_data->y + moves[i].y;
 
@@ -189,11 +173,11 @@ void ThetaStar::setNeighbors(const tree_node * curr_data)
     }
 
     g_cost = curr_data->g + getEuclideanCost(curr_data->x, curr_data->y, mx, my) +
-      getTraversalCost(mx, my); //加上距离代价 和 地图代价
+      getTraversalCost(mx, my);
 
     m_id = getIndex(mx, my);
 
-    if (m_id == nullptr) {    //如果这个格子之前没见过
+    if (m_id == nullptr) {
       addToNodesData(index_generated_);
       m_id = &nodes_data_[index_generated_];
       addIndex(mx, my, m_id);
@@ -204,7 +188,7 @@ void ThetaStar::setNeighbors(const tree_node * curr_data)
 
     h_cost = getHCost(mx, my);
     cal_cost = g_cost + h_cost;
-    if (exp_node->f > cal_cost) { //如果算出的新代价更小，更新邻居节点，并加入队列
+    if (exp_node->f > cal_cost) {
       exp_node->g = g_cost;
       exp_node->h = h_cost;
       exp_node->f = cal_cost;
@@ -303,7 +287,7 @@ void ThetaStar::resetContainers()
   int last_size_y = size_y_;
   int curr_size_x = static_cast<int>(costmap_->getSizeInCellsX());
   int curr_size_y = static_cast<int>(costmap_->getSizeInCellsY());
-  //如果地图尺寸变了 扩容
+
   if (((last_size_x != curr_size_x) || (last_size_y != curr_size_y)) &&
     static_cast<int>(node_position_.size()) < (curr_size_x * curr_size_y))
   {
@@ -376,7 +360,7 @@ bool ThetaStar::findNearestFreeCell(
 
     for (int dx = -r; dx <= r; ++dx) {
       for (int dy = -r; dy <= r; ++dy) {
-        // 只检查当前这一圈的边界，避免重复检查内圈
+
         if (std::abs(dx) != r && std::abs(dy) != r) {
           continue;
         }
@@ -472,8 +456,6 @@ bool ThetaStar::isConditionalAreaBlockedCell(
     wx,
     wy);
 
-  // 使用整个栅格和禁行区域是否相交判断，
-  // 防止沿矩形边界擦过去。
   const double half_cell =
     0.5 * costmap_->getResolution();
 
@@ -489,7 +471,6 @@ bool ThetaStar::isConditionalAreaBlockedCell(
   const double cell_max_y =
     wy + half_cell;
 
-
   auto cellIntersectsArea =
     [&](
       double area_min_x,
@@ -504,13 +485,6 @@ bool ThetaStar::isConditionalAreaBlockedCell(
         cell_min_y <= area_max_y;
     };
 
-
-  // ============================================================
-  // 区域1
-  //
-  // 只有起点或目标位于区域1时，
-  // 才允许规划路径经过区域1。
-  // ============================================================
   if (
     !conditional_area_allowed_for_plan_ &&
     cellIntersectsArea(
@@ -522,15 +496,6 @@ bool ThetaStar::isConditionalAreaBlockedCell(
     return true;
   }
 
-
-  // ============================================================
-  // 区域2
-  //
-  // (19.0,-1.2) ~ (20.7,0.8)
-  //
-  // 只有起点或目标位于区域2时，
-  // 才允许规划路径经过区域2。
-  // ============================================================
   if (
     !conditional_area2_allowed_for_plan_ &&
     cellIntersectsArea(
@@ -542,7 +507,6 @@ bool ThetaStar::isConditionalAreaBlockedCell(
     return true;
   }
 
-
   return false;
 }
-}  //  namespace theta_star
+}

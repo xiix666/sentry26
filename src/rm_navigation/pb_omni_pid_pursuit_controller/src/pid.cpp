@@ -9,10 +9,8 @@ double PID::calculate(double set_point, double pv)
 {
   double error = set_point - pv;
 
-  // P
   double p_out = kp_ * error;
 
-  // I
   integral_ += error * dt_;
 
   if (integral_ > 1.0) {
@@ -23,7 +21,6 @@ double PID::calculate(double set_point, double pv)
 
   double i_out = ki_ * integral_;
 
-  // D
   double derivative = 0.0;
 
   if (has_pre_error_ && dt_ > 1e-9) {

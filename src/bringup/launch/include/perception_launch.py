@@ -7,7 +7,7 @@ from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
-    # Getting directories and launch-files
+
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
     
@@ -35,15 +35,11 @@ def generate_launch_description():
         ),
     )
 
-    
     ld = LaunchDescription()
 
-    # Set environment variables
     ld.add_action(stdout_linebuf_envvar)
     ld.add_action(colorized_output_envvar)
 
-    # ld.add_action(rs_node)
-    # ld.add_action(depth_node)
     ld.add_action(pointcloud_seg_node)
 
     return ld

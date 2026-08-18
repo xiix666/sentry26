@@ -9,7 +9,6 @@
 namespace faster_lio
 {
 
-// squared distance of two pcl points
 template <typename PointT>
 inline double distance2(const PointT & pt1, const PointT & pt2)
 {
@@ -17,7 +16,6 @@ inline double distance2(const PointT & pt1, const PointT & pt2)
   return d.squaredNorm();
 }
 
-// convert from pcl point to eigen
 template <typename T, int dim, typename PointType>
 inline Eigen::Matrix<T, dim, 1> ToEigen(const PointType & pt)
 {
@@ -54,7 +52,7 @@ public:
   struct DistPoint;
 
   IVoxNode() = default;
-  IVoxNode(const PointT & center, const float & side_length) {}  /// same with phc
+  IVoxNode(const PointT & center, const float & side_length) {}
 
   void InsertPoint(const PointT & pt);
 
@@ -161,7 +159,7 @@ int IVoxNode<PointT, dim>::KNNPointByCondition(
   const double & max_range)
 {
   std::size_t old_size = dis_points.size();
-// #define INNER_TIMER
+
 #ifdef INNER_TIMER
   static std::unordered_map<std::string, std::vector<int64_t>> stats;
   if (stats.empty()) {
@@ -195,7 +193,7 @@ int IVoxNode<PointT, dim>::KNNPointByCondition(
 #ifdef INNER_TIMER
   auto t1 = std::chrono::high_resolution_clock::now();
 #endif
-  // sort by distance
+
   if (old_size + K >= dis_points.size()) {
   } else {
     std::nth_element(
@@ -449,4 +447,4 @@ uint32_t IVoxNodePhc<PointT, dim>::CalculatePhcIndex(const PointT & pt) const
   return idx;
 }
 
-}  // namespace faster_lio
+}

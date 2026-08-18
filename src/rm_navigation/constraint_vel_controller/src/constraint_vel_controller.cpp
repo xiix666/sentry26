@@ -1,14 +1,10 @@
-// goal_approach_controller.cpp
-// Nav2控制器wrapper：在接近目标时限制线速度，防止高速冲过目标点
-// 原理：透明代理内部控制器（如MPPI），仅在距目标 < approach_distance 时
-//       将合速度钳位到 approach_velocity
+
 
 #include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
 #include <numeric>
-// #include <Eigen/Dense>
 
 #include "nav2_core/controller.hpp"
 #include "nav2_core/exceptions.hpp"
@@ -24,7 +20,7 @@ using std::abs;
 using std::hypot;
 using std::max;
 using std::min;
-using namespace nav2_costmap_2d;  // NOLINT
+using namespace nav2_costmap_2d;
 namespace constraint_vel_controller
 {
 
@@ -46,7 +42,6 @@ ConstraintVelController() = default;
     costmap_ = costmap_ros_->getCostmap();
     clock_ = node->get_clock();
     tf_ = tf;
-    // 声明本wrapper的参数
     declare_parameter_if_not_declared(
       node, name + ".inner_plugin",
       rclcpp::ParameterValue("nav2_mppi_controller::MPPIController"));
@@ -75,9 +70,7 @@ ConstraintVelController() = default;
       node, name + ".lookahead_time", rclcpp::ParameterValue(1.0));
     declare_parameter_if_not_declared(
       node, name + ".use_interpolation", rclcpp::ParameterValue(true));
-    // declare_parameter_if_not_declared(
-    //   node, name + ".max_robot_pose_search_dist",
-    //   rclcpp::ParameterValue(getCostmapMaxExtent()));  
+
     declare_parameter_if_not_declared(
       node, name + ".curvature_min", rclcpp::ParameterValue(0.4));
     declare_parameter_if_not_declared(
@@ -104,7 +97,7 @@ ConstraintVelController() = default;
     node->get_parameter(name + ".approach_velocity", approach_velocity_);
     node->get_parameter(name + ".direct_approach_distance", direct_approach_distance_);
     node->get_parameter(name + ".direct_approach_kp", direct_approach_kp_);
-    // node->get_parameter(name + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
+
     node->get_parameter(name + ".curvature_min", curvature_min_);
     node->get_parameter(name + ".curvature_max", curvature_max_);
     node->get_parameter(
@@ -124,7 +117,7 @@ ConstraintVelController() = default;
     node->get_parameter(name + ".lookahead_dist", lookahead_dist_);
 
     control_duration_ = 1.0 / control_frequency;
-    // 通过pluginlib加载内部控制器
+
     loader_ = std::make_unique<pluginlib::ClassLoader<nav2_core::Controller>>(
       "nav2_core", "nav2_core::Controller");
     inner_controller_ = loader_->createUniqueInstance(inner_plugin_type);
@@ -185,12 +178,7 @@ ConstraintVelController() = default;
           "Inner controller speed invalid (nan/inf or too large): %.3f, force P-drive",
           inner_speed);
       }
-      // speed_exceeded = (inner_speed > max_inner_speed_);
-      // if (speed_exceeded) {
-      //   RCLCPP_WARN(logger_, 
-      //     "Inner controller speed too large: %.3f > %.3f, using P-control temporarily",
-      //     inner_speed, max_inner_speed_);
-      // }
+
     } catch (const std::runtime_error & e) {
       RCLCPP_WARN(logger_, "Inner controller exception: %s, force P-drive", e.what());
       error_count++;
@@ -198,10 +186,9 @@ ConstraintVelController() = default;
       force_p_drive = true;   
       last_error_increase_time_ = now;
     }
-    // std::cout << "error_count: " << error_count << std::endl;
     if (!fallback_p_mode_ && error_count > 10) {
       fallback_p_mode_ = true;
-      // fallback_enter_error_count_ = error_count;
+
       fallback_enter_time_ = now;
       last_error_increase_time_ = now;
   
@@ -228,7 +215,7 @@ ConstraintVelController() = default;
             "No new errors for %.1f sec, switch back to normal mode and reset error_count",
             stable_time);
         } else {
-          // Fallback 模式下的 P 驱动
+
           target_speed = (dist * direct_approach_kp_);
           double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
           cmd.twist.linear.x = target_speed * cos(theta_dist);
@@ -246,7 +233,7 @@ ConstraintVelController() = default;
           return cmd;
         }
       } else {
-        // speed_exceeded 为 true 时，直接走 P 驱动，不涉及状态恢复
+
         target_speed = (dist * direct_approach_kp_);
         double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
         cmd.twist.linear.x = target_speed * cos(theta_dist);
@@ -268,7 +255,7 @@ ConstraintVelController() = default;
       g_last_inner_cmd = current_inner_cmd;
       g_has_last_inner_cmd = true;
     } else {
-      // 这里只比较线速度变化量（x,y 合速度变化）
+
       double delta_v = std::hypot(
         current_inner_cmd.linear.x - g_last_inner_cmd.linear.x,
         current_inner_cmd.linear.y - g_last_inner_cmd.linear.y);
@@ -287,8 +274,7 @@ ConstraintVelController() = default;
         cmd.twist.angular.y = g_last_inner_cmd.angular.y * 0.8;
         cmd.twist.angular.z = g_last_inner_cmd.angular.z * 0.8;
         g_last_inner_cmd = cmd.twist;
-        // 注意：这里不更新 g_last_inner_cmd
-        // 这样下次还是拿“上一次正常的 inner 输出”作比较
+
       } else {
         g_last_inner_cmd = current_inner_cmd;
       }
@@ -307,16 +293,7 @@ ConstraintVelController() = default;
       }
       cmd.twist.angular.z = 0.0;
     } 
-    // else if (dist < approach_distance_) {
-    //   double speed = std::hypot(cmd.twist.linear.x, cmd.twist.linear.y);
-    //   if (speed > approach_velocity_) {
-    //     double scale = approach_velocity_ / speed;
-    //     cmd.twist.linear.x *= scale;
-    //     cmd.twist.linear.y *= scale;
-    //     // 角速度也按比例降低，避免原地打转
-    //     cmd.twist.angular.z *= scale;
-    //   }
-    // }
+
     double linear_speed = 0.0;
     linear_speed = std::hypot(cmd.twist.linear.x, cmd.twist.linear.y);
     double limited_speed = linear_speed;
@@ -329,8 +306,7 @@ ConstraintVelController() = default;
     applyCurvatureLimitation(transformed_plan, carrot_pose, limited_speed);
 
     double scale_ratio = limited_speed / linear_speed;
-    
-    // 按比例缩放 x 和 y，保持运动方向不变
+
     cmd.twist.linear.x *= scale_ratio;
     cmd.twist.linear.y *= scale_ratio;
 
@@ -343,25 +319,8 @@ ConstraintVelController() = default;
   }
   double getLookAheadDistance(const geometry_msgs::msg::Twist & speed)
   {
-  // If using velocity-scaled look ahead distances, find and clamp the dist
-  // Else, use the static look ahead distance
 
   double lookahead_dist = lookahead_dist_;
-  // if (use_velocity_scaled_lookahead_dist_) {
-  //   double vel_to_use = 0.0;
-  //   if (has_prev_cmd_vel_) {
-  //     // 计算历史速度的合成线速度（vx, vy的模长）
-  //     vel_to_use = hypot(
-  //       prev_cmd_vel_.twist.linear.x,
-  //       prev_cmd_vel_.twist.linear.y
-  //     );
-  //   } else {
-  //     // 第一次运行，用当前反馈速度
-  //     vel_to_use = hypot(speed.linear.x, speed.linear.y);
-  //   }
-  //   lookahead_dist = vel_to_use * lookahead_time_;
-  //   lookahead_dist = std::clamp(lookahead_dist, min_lookahead_dist_, max_lookahead_dist_);
-  // }
 
   return lookahead_dist;
   }
@@ -385,21 +344,16 @@ ConstraintVelController() = default;
   geometry_msgs::msg::PoseStamped getLookAheadPoint(
     const double & lookahead_dist, const nav_msgs::msg::Path & transformed_plan)
   {
-    // Find the first pose which is at a distance greater than the lookahead distance
+
     auto goal_pose_it = std::find_if(
       transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
         return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist;
       });
-  
-    // If the no pose is not far enough, take the last pose
+
     if (goal_pose_it == transformed_plan.poses.end()) {
       goal_pose_it = std::prev(transformed_plan.poses.end());
     } else if (use_interpolation_ && goal_pose_it != transformed_plan.poses.begin()) {
-      // Find the point on the line segment between the two poses
-      // that is exactly the lookahead distance away from the robot pose (the origin)
-      // This can be found with a closed form for the intersection of a segment and a circle
-      // Because of the way we did the std::find_if, prev_pose is guaranteed to be inside the circle,
-      // and goal_pose is guaranteed to be outside the circle.
+
       auto prev_pose_it = std::prev(goal_pose_it);
       auto point = circleSegmentIntersection(
         prev_pose_it->pose.position, goal_pose_it->pose.position, lookahead_dist);
@@ -415,14 +369,7 @@ ConstraintVelController() = default;
   geometry_msgs::msg::Point circleSegmentIntersection(
     const geometry_msgs::msg::Point & p1, const geometry_msgs::msg::Point & p2, double r)
   {
-    // Formula for intersection of a line with a circle centered at the origin,
-    // modified to always return the point that is on the segment between the two points.
-    // https://mathworld.wolfram.com/Circle-LineIntersection.html
-    // This works because the poses are transformed into the robot frame.
-    // This can be derived from solving the system of equations of a line and a circle
-    // which results in something that is just a reformulation of the quadratic formula.
-    // Interactive illustration in doc/circle-segment-intersection.ipynb as well as at
-    // https://www.desmos.com/calculator/td5cwbuocd
+
     double x1 = p1.x;
     double x2 = p2.x;
     double y1 = p1.y;
@@ -432,8 +379,7 @@ ConstraintVelController() = default;
     double dy = y2 - y1;
     double dr2 = dx * dx + dy * dy;
     double d = x1 * y2 - x2 * y1;
-  
-    // Augmentation to only return point within segment
+
     double d1 = x1 * x1 + y1 * y1;
     double d2 = x2 * x2 + y2 * y2;
     double dd = d2 - d1;
@@ -457,33 +403,26 @@ ConstraintVelController() = default;
       throw nav2_core::PlannerException("Received plan with zero length");
     }
 
-    // let's get the pose of the robot in the frame of the plan
     geometry_msgs::msg::PoseStamped robot_pose;
     if (!transformPose(global_plan_.header.frame_id, pose, robot_pose)) {
       throw nav2_core::PlannerException("Unable to transform robot pose into global plan's frame");
     }
 
-    // We'll discard points on the plan that are outside the local costmap
     double max_costmap_extent = getCostmapMaxExtent();
 
     auto closest_pose_upper_bound = nav2_util::geometry_utils::first_after_integrated_distance(
       global_plan_.poses.begin(), global_plan_.poses.end(), max_robot_pose_search_dist_);
 
-    // First find the closest pose on the path to the robot
-    // bounded by when the path turns around (if it does) so we don't get a pose from a later
-    // portion of the path
     auto transformation_begin = nav2_util::geometry_utils::min_by(
       global_plan_.poses.begin(), closest_pose_upper_bound,
       [&robot_pose](const geometry_msgs::msg::PoseStamped & ps) {
         return euclidean_distance(robot_pose, ps);
       });
 
-    // Find points up to max_transform_dist so we only transform them.
     auto transformation_end = std::find_if(
       transformation_begin, global_plan_.poses.end(),
       [&](const auto & pose) { return euclidean_distance(pose, robot_pose) > max_costmap_extent; });
 
-    // Lambda to transform a PoseStamped from global frame to local
     auto transform_global_pose_to_local = [&](const auto & global_plan_pose) {
       geometry_msgs::msg::PoseStamped stamped_pose, transformed_pose;
       stamped_pose.header.frame_id = global_plan_.header.frame_id;
@@ -494,7 +433,6 @@ ConstraintVelController() = default;
       return transformed_pose;
     };
 
-    // Transform the near part of the global plan into the robot's frame of reference.
     nav_msgs::msg::Path transformed_plan;
     std::transform(
       transformation_begin, transformation_end, std::back_inserter(transformed_plan.poses),
@@ -502,10 +440,7 @@ ConstraintVelController() = default;
     transformed_plan.header.frame_id = costmap_ros_->getBaseFrameID();
     transformed_plan.header.stamp = robot_pose.header.stamp;
 
-    // Remove the portion of the global plan that we've already passed so we don't
-    // process it on the next iteration (this is called path pruning)
     global_plan_.poses.erase(begin(global_plan_.poses), transformation_begin);
-    // local_path_pub_->publish(transformed_plan);
 
     if (transformed_plan.poses.empty()) {
       throw nav2_core::PlannerException("Resulting plan has 0 poses in it.");
@@ -524,7 +459,6 @@ ConstraintVelController() = default;
     if(!slow && curvature >= large_slow_) slow = true;
     double scaled_linear_vel = linear_vel;
 
-    
     if (curvature > curvature_min_) {
       double reduction_ratio = 1.0;
       if (curvature > curvature_max_) {
@@ -537,7 +471,7 @@ ConstraintVelController() = default;
       double target_scaled_vel = linear_vel * reduction_ratio;
   
       if(slow && last_velocity_scaling_factor_ >= last_vel_){
-        // scaled_linear_vel = last_vel_;
+
         scaled_linear_vel =
         last_velocity_scaling_factor_ + std::clamp(
                                           last_vel_-last_velocity_scaling_factor_,
@@ -552,15 +486,12 @@ ConstraintVelController() = default;
                                           max_velocity_scaling_factor_rate_ * control_duration_);
       }                                    
     }
-    // scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
+
     RCLCPP_DEBUG(logger_, "Scaled linear vel: %.3f", scaled_linear_vel);
     linear_vel = std::min(linear_vel, scaled_linear_vel);
     linear_vel = std::clamp(linear_vel,last_velocity_scaling_factor_-lower_speed_,last_velocity_scaling_factor_+lower_speed_);
-    // std::lock_guard<std::mutex> lock(sm_mutex);
+
     last_velocity_scaling_factor_ = linear_vel;
-    // std::cout << "cur " << curvature << std::endl;
-    // std::cout << "slow " << slow << std::endl;
-    // std::cout << "vel " << last_velocity_scaling_factor_ << std::endl;
   }
   double calculateCurvature(
     const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
@@ -584,7 +515,7 @@ ConstraintVelController() = default;
     double curvature_radius = calculateCurvatureRadius(
       backward_pose.pose.position, lookahead_pose.pose.position, forward_pose.pose.position);
     double curvature = 1.0 / curvature_radius;
-    // visualizeCurvaturePoints(backward_pose, forward_pose);
+
     return curvature;
   }
   double calculateCurvatureRadius(
@@ -699,15 +630,15 @@ private:
   bool g_has_last_inner_cmd = false;
   rclcpp::Clock::SharedPtr clock_;
 
-  bool fallback_p_mode_{false};                    // 是否处于纯P降级模式
-  rclcpp::Time fallback_enter_time_{0, 0, RCL_ROS_TIME};      // 进入降级的时间
-  rclcpp::Time last_error_increase_time_{0, 0, RCL_ROS_TIME}; // 最近一次 error_count 增加的时间
-  double fallback_recover_time_sec_{30.0};        // 30s 内无新增错误则恢复
+  bool fallback_p_mode_{false};
+  rclcpp::Time fallback_enter_time_{0, 0, RCL_ROS_TIME};
+  rclcpp::Time last_error_increase_time_{0, 0, RCL_ROS_TIME};
+  double fallback_recover_time_sec_{30.0};
   geometry_msgs::msg::Twist g_last_inner_cmd;
   double max_inner_speed_ = 5.0; 
 };
 
-}  // namespace goal_approach_controller
+}
 
 PLUGINLIB_EXPORT_CLASS(
   constraint_vel_controller::ConstraintVelController,

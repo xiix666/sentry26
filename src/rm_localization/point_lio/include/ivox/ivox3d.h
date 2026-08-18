@@ -1,6 +1,4 @@
-//
-// Created by xiang on 2021/9/16.
-//
+
 
 #ifndef FASTER_LIO_IVOX3D_H
 #define FASTER_LIO_IVOX3D_H
@@ -18,11 +16,10 @@ namespace faster_lio
 {
 
 enum class IVoxNodeType {
-  DEFAULT,  // linear ivox
-  PHC,      // phc ivox
+  DEFAULT,
+  PHC,
 };
 
-/// traits for NodeType
 template <IVoxNodeType node_type, typename PointT, int dim>
 struct IVoxNodeTypeTraits
 {
@@ -52,7 +49,7 @@ public:
   using DistPoint = typename NodeType::DistPoint;
 
   enum class NearbyType {
-    CENTER,  // center only
+    CENTER,
     NEARBY6,
     NEARBY18,
     NEARBY26,
@@ -60,47 +57,33 @@ public:
 
   struct Options
   {
-    float resolution_ = 0.2;                        // ivox resolution
-    float inv_resolution_ = 10.0;                   // inverse resolution
-    NearbyType nearby_type_ = NearbyType::NEARBY6;  // nearby range
-    // std::size_t capacity_ = 1000000;                // capacity
+    float resolution_ = 0.2;
+    float inv_resolution_ = 10.0;
+    NearbyType nearby_type_ = NearbyType::NEARBY6;
+
     std::size_t capacity_ = 300000;    
   };
 
-  /**
-     * constructor
-     * @param options  ivox options
-     */
   explicit IVox(Options options) : options_(options)
   {
     options_.inv_resolution_ = 1.0 / options_.resolution_;
     GenerateNearbyGrids();
   }
 
-  /**
-     * add points
-     * @param points_to_add
-     */
   void AddPoints(const PointVector & points_to_add);
 
   bool TouchPoint(const PointType & pt);
-  /// get nn
   bool GetClosestPoint(const PointType & pt, PointType & closest_pt);
 
-  /// get nn with condition
   bool GetClosestPoint(
     const PointType & pt, PointVector & closest_pt, int max_num = 5, double max_range = 5.0);
 
-  /// get nn in cloud
   bool GetClosestPoint(const PointVector & cloud, PointVector & closest_cloud);
 
-  /// get number of points
   size_t NumPoints() const;
 
-  /// get number of valid grids
   size_t NumValidGrids() const;
 
-  /// get statistics of the points
   std::vector<float> StatGridPoints() const;
 
   std::unordered_map<
@@ -110,17 +93,12 @@ public:
   KeyType Pos2Grid_(const PtType & pt, const double & defined_res) const;
 
 private:
-  /// generate the nearby grids according to the given options
   void GenerateNearbyGrids();
 
-  /// position to grid
-  // KeyType Pos2Grid(const PtType& pt) const;
-
   Options options_;
-  // std::unordered_map<KeyType, typename std::list<std::pair<KeyType, NodeType>>::iterator, hash_vec<dim>>
-  // grids_map_;                                        // voxel hash map
-  std::list<std::pair<KeyType, NodeType>> grids_cache_;  // voxel cache
-  std::vector<KeyType> nearby_grids_;                    // nearbys
+
+  std::list<std::pair<KeyType, NodeType>> grids_cache_;
+  std::vector<KeyType> nearby_grids_;
 };
 
 template <int dim, IVoxNodeType node_type, typename PointType>
@@ -160,7 +138,6 @@ bool IVox<dim, node_type, PointType>::GetClosestPoint(
 
   auto key = Pos2Grid(ToEigen<float, dim>(pt));
 
-// #define INNER_TIMER
 #ifdef INNER_TIMER
   static std::unordered_map<std::string, std::vector<int64_t>> stats;
   if (stats.empty()) {
@@ -255,7 +232,7 @@ void IVox<dim, node_type, PointType>::GenerateNearbyGrids()
                      KeyType(-1, 1, 1),  KeyType(1, -1, 1),  KeyType(1, 1, -1),  KeyType(-1, -1, 1),
                      KeyType(-1, 1, -1), KeyType(1, -1, -1), KeyType(-1, -1, -1)};
   } else {
-    // LOG(ERROR) << "Unknown nearby_type!";
+
   }
 }
 
@@ -301,9 +278,8 @@ void IVox<dim, node_type, PointType>::AddPoints(const PointVector & points_to_ad
       
     } else {
       iter->second->second.InsertPoint(points_to_add[i]);
-      grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);//把当前访问的节点移动到链表头部
+      grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);
       grids_map_[key] = grids_cache_.begin();
-      // std::cout << grids_map_.size() << std::endl;
     }
   }
 }
@@ -317,12 +293,9 @@ bool IVox<dim, node_type, PointType>::TouchPoint(const PointType & pt)
     return false;
   }
 
-  // 把这个 voxel 移到 grids_cache_ 最前面，表示最近被命中
   grids_cache_.splice(grids_cache_.begin(), grids_cache_, iter->second);
 
-  // 更新 map 里保存的 iterator
   iter->second = grids_cache_.begin();
-  // std::cout << grids_map_.size() << std::endl;
   return true;
 }
 template <int dim, IVoxNodeType node_type, typename PointType>
@@ -357,6 +330,6 @@ std::vector<float> IVox<dim, node_type, PointType>::StatGridPoints() const
     static_cast<float>(valid_num), ave, static_cast<float>(max), static_cast<float>(min), stddev};
 }
 
-}  // namespace faster_lio
+}
 
 #endif

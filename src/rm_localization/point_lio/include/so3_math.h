@@ -4,9 +4,7 @@
 #include <math.h>
 #include <Eigen/Core>
 
-// #include <common_lib.h>
-
-#define SKEW_SYM_MATRX(v) 0.0,-v[2],v[1],v[2],0.0,-v[0],-v[1],v[0],0.0  //反对称矩阵
+#define SKEW_SYM_MATRX(v) 0.0,-v[2],v[1],v[2],0.0,-v[0],-v[1],v[0],0.0
 
 template<typename T>
 Eigen::Matrix<T, 3, 3> skew_sym_mat(const Eigen::Matrix<T, 3, 1> &v)
@@ -26,7 +24,6 @@ Eigen::Matrix<T, 3, 3> Exp(const Eigen::Matrix<T, 3, 1> &ang)
         Eigen::Matrix<T, 3, 1> r_axis = ang / ang_norm;
         Eigen::Matrix<T, 3, 3> K;
         K << SKEW_SYM_MATRX(r_axis);
-        /// Roderigous Tranformation
         return Eye3 + std::sin(ang_norm) * K + (1.0 - std::cos(ang_norm)) * K * K;
     }
     else
@@ -50,7 +47,6 @@ Eigen::Matrix<T, 3, 3> Exp(const Eigen::Matrix<T, 3, 1> &ang_vel, const Ts &dt)
 
         T r_ang = ang_vel_norm * dt;
 
-        /// Roderigous Tranformation
         return Eye3 + std::sin(r_ang) * K + (1.0 - std::cos(r_ang)) * K * K;
     }
     else
@@ -70,7 +66,6 @@ Eigen::Matrix<T, 3, 3> Exp(const T &v1, const T &v2, const T &v3)
         Eigen::Matrix<T, 3, 3> K;
         K << SKEW_SYM_MATRX(r_ang);
 
-        /// Roderigous Tranformation
         return Eye3 + std::sin(norm) * K + (1.0 - std::cos(norm)) * K * K;
     }
     else
@@ -79,7 +74,6 @@ Eigen::Matrix<T, 3, 3> Exp(const T &v1, const T &v2, const T &v3)
     }
 }
 
-/* Logrithm of a Rotation Matrix */
 template<typename T>
 Eigen::Matrix<T,3,1> Log(const Eigen::Matrix<T, 3, 3> R)
 {

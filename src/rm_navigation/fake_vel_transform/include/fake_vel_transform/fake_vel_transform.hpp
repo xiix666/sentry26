@@ -92,30 +92,23 @@ private:
 
   double current_robot_base_angle_{0.0};
 
-  // 控制器最后一次发来的目标速度。
   geometry_msgs::msg::Twist::SharedPtr last_cmd_vel_;
 
-  // 经过最大减速度限制后的输出速度。
   geometry_msgs::msg::Twist limited_cmd_vel_;
 
-  // 最后一次收到控制器速度的时间。
   rclcpp::Time last_cmd_vel_time_;
 
-  // 上一次执行速度限制的时间。
   rclcpp::Time last_velocity_limit_time_;
 
-  // 是否启用线速度最大减速度限制。
   bool enable_linear_deceleration_limit_{true};
 
-  // 最大线减速度，单位m/s²。
   double max_linear_deceleration_{6.0};
 
   rclcpp::Time last_controller_activate_time_;
 
-  // 原有成员保留，防止其他代码还在使用。
   geometry_msgs::msg::Twist::SharedPtr latest_cmd_vel_;
 };
 
-}  // namespace fake_vel_transform
+}
 
-#endif  // FAKE_VEL_TRANSFORM__FAKE_VEL_TRANSFORM_HPP_
+#endif

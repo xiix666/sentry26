@@ -33,13 +33,6 @@ constexpr uint16_t W_CRC_TABLE[256] = {
   0xf78f, 0xe606, 0xd49d, 0xc514, 0xb1ab, 0xa022, 0x92b9, 0x8330, 0x7bc7, 0x6a4e, 0x58d5, 0x495c,
   0x3de3, 0x2c6a, 0x1ef1, 0x0f78};
 
-/**
-  * @brief CRC16 Caculation function
-  * @param[in] pchMessage : Data to Verify,
-  * @param[in] dwLength : Stream length = Data + checksum
-  * @param[in] wCRC : CRC16 init value(default : 0xFFFF)
-  * @return : CRC16 checksum
-  */
 uint16_t Get_CRC16_Check_Sum(const uint8_t * pchMessage, uint32_t dwLength, uint16_t wCRC)
 {
   uint8_t ch_data;
@@ -54,12 +47,6 @@ uint16_t Get_CRC16_Check_Sum(const uint8_t * pchMessage, uint32_t dwLength, uint
   return wCRC;
 }
 
-/**
-  * @brief CRC16 Verify function
-  * @param[in] pchMessage : Data to Verify,
-  * @param[in] dwLength : Stream length = Data + checksum
-  * @return : True or False (CRC Verify Result)
-  */
 uint32_t Verify_CRC16_Check_Sum(const uint8_t * pchMessage, uint32_t dwLength)
 {
   uint16_t w_expected = 0;
@@ -72,12 +59,6 @@ uint32_t Verify_CRC16_Check_Sum(const uint8_t * pchMessage, uint32_t dwLength)
     ((w_expected >> 8) & 0xff) == pchMessage[dwLength - 1]);
 }
 
-/**
-  * @brief Append CRC16 value to the end of the buffer
-  * @param[in] pchMessage : Data to Verify,
-  * @param[in] dwLength : Stream length = Data + checksum
-  * @return none
-  */
 void Append_CRC16_Check_Sum(uint8_t * pchMessage, uint32_t dwLength)
 {
   uint16_t w_crc = 0;
@@ -90,4 +71,4 @@ void Append_CRC16_Check_Sum(uint8_t * pchMessage, uint32_t dwLength)
   pchMessage[dwLength - 1] = (uint8_t)((w_crc >> 8) & 0x00ff);
 }
 
-}  // namespace crc16
+}
