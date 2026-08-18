@@ -1,25 +1,12 @@
-// Copyright 2025 Lihan Chen
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 #ifndef SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 #define SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 
+#include <Eigen/Geometry>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
@@ -31,7 +18,6 @@
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
-
 namespace small_gicp_relocalization
 {
 
@@ -41,74 +27,61 @@ public:
   explicit SmallGicpRelocalizationNode(const rclcpp::NodeOptions & options);
 
 private:
-  bool initial_registration_done_{false};
-  bool target_ready_{false};
   void registeredPcdCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void loadGlobalMap(const std::string & file_name);
+  void prepareTargetCloud();
   void performRegistration();
   void publishTransform();
-  void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-  void prepareTargetCloud();
   void cancelRelocalization();
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
-  int tmp_points;
-  int num_threads_;
-  int num_neighbors_;
-  float global_leaf_size_;
-  float registered_leaf_size_;
-  float max_dist_sq_;
-  bool has_target_cloud_ = false;
+
+  int num_threads_{4};
+  int num_neighbors_{20};
+  float global_leaf_size_{0.25F};
+  float registered_leaf_size_{0.25F};
+  float max_dist_sq_{1.0F};
+  double max_registration_error_{0.5};
+
   std::vector<double> init_pose_;
-  bool initial_registration_attempted_{false};  //尝试过一次了就不再尝试了
+
+  bool initial_registration_done_{false};
+  bool initial_registration_attempted_{false};
+  bool relocalization_failed_{false};
+  bool accumulation_started_{false};
 
   int accumulated_scan_count_{0};
   int min_accumulated_scans_{10};
   int min_accumulated_points_{3000};
-
-  bool relocalization_failed_{false};
   std::size_t max_relocalization_points_{100000};
-  int max_relocalization_scans_{100};
+  int max_relocalization_scans_{50};
   double max_accumulation_time_sec_{3.0};
-  double max_registration_error_{0.5};  
   rclcpp::Time accumulation_start_time_;
-  bool accumulation_started_{false};
+
   std::string map_frame_;
   std::string odom_frame_;
+
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
+
   std::string prior_pcd_file_;
-  std::string base_frame_;
-  std::string robot_base_frame_;
-  std::string lidar_frame_;
-  std::string current_scan_frame_id_;
-  rclcpp::Time last_scan_time_;
-  Eigen::Isometry3d result_t_;
-  Eigen::Isometry3d previous_result_t_;
+
+  Eigen::Isometry3d result_t_{Eigen::Isometry3d::Identity()};
+  Eigen::Isometry3d fixed_bias_{Eigen::Isometry3d::Identity()};
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr registered_scan_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_cloud_;
   pcl::PointCloud<pcl::PointCovariance>::Ptr target_;
   pcl::PointCloud<pcl::PointCovariance>::Ptr source_;
 
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
-  std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> source_tree_;
-  std::shared_ptr<
-    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
-    register_;
 
+  std::shared_ptr<small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>> register_;
+
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::TimerBase::SharedPtr transform_timer_;
   rclcpp::TimerBase::SharedPtr register_timer_;
-
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
-  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-  Eigen::Isometry3d fixed_bias_;  // 固定偏置变换
-  pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-  // small_gicp::PointCloud::Ptr target_ = std::make_shared<small_gicp::PointCloud>();
-  // small_gicp::KdTree::Ptr target_tree_;
-  // bool has_target_cloud_ = false;  // 标记是否已初始化目标地图
 };
 
-}  // namespace small_gicp_relocalization
+}
 
-#endif  // SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
+#endif

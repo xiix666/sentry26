@@ -20,7 +20,8 @@
 #include <iomanip>
 #include <algorithm>
 #include <chrono> 
-
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include "nav_msgs/msg/odometry.hpp"
 #include "pcl/filters/voxel_grid.h"
 #include "pcl/kdtree/kdtree_flann.h"
@@ -64,21 +65,10 @@ double localTerrainMapRadius = 4.0;
 constexpr float terrainVoxelSize = 2.0;
 int terrainVoxelShiftX = 0;
 int terrainVoxelShiftY = 0;
-int terrainVoxelShiftX2 = 0;
-int terrainVoxelShiftY2 = 0;
 constexpr int terrainVoxelWidth = 41;
 
 constexpr int terrainVoxelHalfWidth = (terrainVoxelWidth - 1) / 2;
 constexpr int kTerrainVoxelNum = terrainVoxelWidth * terrainVoxelWidth;
-constexpr int terrainVoxelWidth2 = terrainVoxelWidth / 2 + 1;
-constexpr int terrainVoxelHalfWidth2 = (terrainVoxelWidth2 - 1) / 2;
-constexpr float terrainVoxelSize2 = terrainVoxelSize / 2;
-constexpr int kTerrainVoxelNum2 = terrainVoxelWidth2 * terrainVoxelWidth2;
-
-double scanVoxelSize2;    // 局部点云下采样分辨率（=scanVoxelSize/2）
-double voxelTimeUpdateThre2; // 局部体素更新时间阈值（=voxelTimeUpdateThre/2）
-double terrainConnThre2;  // 局部地形连通性阈值（=terrainConnThre/2）
-
 // planar voxel parameters
 float planarVoxelSize = 0.4;
 const int planarVoxelWidth = 101;
@@ -93,7 +83,6 @@ std::string odom_frame;
 // 点云缓存
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr laserCloud(new pcl::PointCloud<pcl::PointXYZINormal>());
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr laserCloudCrop(new pcl::PointCloud<pcl::PointXYZINormal>());
-pcl::PointCloud<pcl::PointXYZINormal>::Ptr laserCloudDwz(new pcl::PointCloud<pcl::PointXYZINormal>());
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainCloud(new pcl::PointCloud<pcl::PointXYZINormal>());
 // pcl::PointCloud<pcl::PointXYZI>::Ptr terrainCloudElev(new pcl::PointCloud<pcl::PointXYZI>());
 // pcl::PointCloud<pcl::PointXYZI>::Ptr terrainCloudLocal(new pcl::PointCloud<pcl::PointXYZI>());
@@ -103,13 +92,10 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainCloudLocal(
   new pcl::PointCloud<pcl::PointXYZINormal>());
 // 体素网格数组
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloud[kTerrainVoxelNum];
-pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloud2[kTerrainVoxelNum2];
 
 // 体素更新计数和时间
 int terrainVoxelUpdateNum[kTerrainVoxelNum] = {0};
 float terrainVoxelUpdateTime[kTerrainVoxelNum] = {0};
-int terrainVoxelUpdateNum2[kTerrainVoxelNum2] = {0};
-float terrainVoxelUpdateTime2[kTerrainVoxelNum2] = {0};
 
 // 平面体素相关
 float planarVoxelElev[kPlanarVoxelNum] = {0};
@@ -141,12 +127,91 @@ float cloudVehicleYaw = 0.0F;
 
 // PCL滤波器和KD树
 pcl::VoxelGrid<pcl::PointXYZINormal> downSizeFilter;
-pcl::VoxelGrid<pcl::PointXYZINormal> downSizeFilter2;
 pcl::KdTreeFLANN<pcl::PointXYZINormal> kdtree;
 
+// 单帧裁剪点云的可选下采样缓存。
+// 下采样发生在 laserCloudCrop 写入 terrainVoxelCloud 之前，
+// 因而能同时降低后续地图维护、地面分析和法向量计算开销。
+pcl::PointCloud<pcl::PointXYZINormal>::Ptr laserCloudCropDownsampled(
+  new pcl::PointCloud<pcl::PointXYZINormal>());
+
+// 法向量计算算法选择：
+// false：保留原始 PCL NormalEstimation + KDTree
+// true ：使用轻量化 3D Voxel PCA
+bool useVoxelPCA = false;
+
+// 是否对每帧 laserCloudCrop 在写入 terrainVoxelCloud 前做 VoxelGrid 下采样。
+// false：保持当前完整点云。
+// true ：前置下采样，后续所有流程都会使用更稀疏的输入。
+bool useInputDownsampling = false;
+
+// 前置下采样体素尺寸。
+double inputDownsampleLeafSize = 0.10;
+
+// 3D Voxel PCA 参数。
+// 先固定为 0.20m、3x3x3 邻域、至少 10 个点，便于与原算法做 A/B 对比。
+constexpr double normalVoxelSize = 0.20;
+constexpr int normalVoxelNeighborRadius = 1;
+constexpr int normalVoxelMinPoints = 10;
+
+struct NormalVoxelKey
+{
+  int x;
+  int y;
+  int z;
+
+  bool operator==(const NormalVoxelKey & other) const
+  {
+    return x == other.x && y == other.y && z == other.z;
+  }
+};
+
+struct NormalVoxelKeyHash
+{
+  std::size_t operator()(const NormalVoxelKey & key) const
+  {
+    std::size_t seed = 0;
+
+    auto combine = [&seed](int value)
+    {
+      seed ^= std::hash<int>{}(value) +
+        0x9e3779b9 + (seed << 6) + (seed >> 2);
+    };
+
+    combine(key.x);
+    combine(key.y);
+    combine(key.z);
+
+    return seed;
+  }
+};
+
+struct NormalVoxelStats
+{
+  int count{0};
+
+  // 用统计量直接构造协方差，不保存 voxel 内所有原始点。
+  Eigen::Vector3d sum = Eigen::Vector3d::Zero();
+  Eigen::Matrix3d sum_outer = Eigen::Matrix3d::Zero();
+
+  // 同一个 3D voxel 的法向量只计算一次，后续点直接复用。
+  bool normal_computed{false};
+  bool normal_valid{false};
+
+  Eigen::Vector3d normal = Eigen::Vector3d(0.0, 0.0, 1.0);
+  float gradient{0.0F};
+};
 // 计时辅助函数
 inline double calcDurationMs(const TimePoint& start, const TimePoint& end) {
   return std::chrono::duration_cast<DurationMs>(end - start).count();
+}
+
+inline NormalVoxelKey getNormalVoxelKey(double x, double y, double z)
+{
+  return NormalVoxelKey{
+    static_cast<int>(std::floor(x / normalVoxelSize)),
+    static_cast<int>(std::floor(y / normalVoxelSize)),
+    static_cast<int>(std::floor(z / normalVoxelSize))};
 }
 
 // 判断是否在局部体素区域内
@@ -223,6 +288,21 @@ void laserCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr laser
     }
   }
 
+  // 可选前置下采样：
+  // 所有 laserCloudCrop 点都来自当前这一帧，并且 intensity 都被赋成同一个
+  // laserCloudTime - systemInitTime，因此这里做 VoxelGrid 不会混合不同帧时间。
+  //
+  // 不要对已经累积多帧的 terrainVoxelCloud 再做 VoxelGrid，
+  // 否则 intensity（这里承担时间戳语义）会被跨帧平均，破坏 decayTime 老化逻辑。
+  if (useInputDownsampling && !laserCloudCrop->empty()) {
+    laserCloudCropDownsampled->clear();
+
+    downSizeFilter.setInputCloud(laserCloudCrop);
+    downSizeFilter.filter(*laserCloudCropDownsampled);
+
+    laserCloudCrop->swap(*laserCloudCropDownsampled);
+  }
+
   newlaserCloud = true;
 }
 
@@ -250,71 +330,8 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
                               rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubTerrainCloudLocal) noexcept {
   TimePoint loop_start_time = Clock::now();
   
-  // 1. 更新小地图体素偏移
-  float terrainVoxelCenX2 = terrainVoxelSize2 * terrainVoxelShiftX2;
-  float terrainVoxelCenY2 = terrainVoxelSize2 * terrainVoxelShiftY2;
-  
-  while (cloudVehicleX - terrainVoxelCenX2 < -terrainVoxelSize2) {
-    for (int indY = 0; indY < terrainVoxelWidth2; indY++) {
-      pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloudPtr =
-          terrainVoxelCloud2[terrainVoxelWidth2 * (terrainVoxelWidth2 - 1) + indY];
-      for (int indX = terrainVoxelWidth2 - 1; indX >= 1; indX--) {
-        terrainVoxelCloud2[terrainVoxelWidth2 * indX + indY] =
-            terrainVoxelCloud2[terrainVoxelWidth2 * (indX - 1) + indY];
-      }
-      terrainVoxelCloud2[indY] = terrainVoxelCloudPtr;
-      terrainVoxelCloud2[indY]->clear();
-    }
-    terrainVoxelShiftX2--;
-    terrainVoxelCenX2 = terrainVoxelSize2 * terrainVoxelShiftX2;
-  }
-  
-  while (cloudVehicleX - terrainVoxelCenX2 > terrainVoxelSize2) {
-    for (int indY = 0; indY < terrainVoxelWidth2; indY++) {
-      pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloudPtr =
-          terrainVoxelCloud2[indY];
-      for (int indX = 0; indX < terrainVoxelWidth2 - 1; indX++) {
-        terrainVoxelCloud2[terrainVoxelWidth2 * indX + indY] =
-            terrainVoxelCloud2[terrainVoxelWidth2 * (indX + 1) + indY];
-      }
-      terrainVoxelCloud2[terrainVoxelWidth2 * (terrainVoxelWidth2 - 1) + indY] = terrainVoxelCloudPtr;
-      terrainVoxelCloud2[terrainVoxelWidth2 * (terrainVoxelWidth2 - 1) + indY]->clear();
-    }
-    terrainVoxelShiftX2++;
-    terrainVoxelCenX2 = terrainVoxelSize2 * terrainVoxelShiftX2;
-  }
-  
-  while (cloudVehicleY - terrainVoxelCenY2 < -terrainVoxelSize2) {
-    for (int indX = 0; indX < terrainVoxelWidth2; indX++) {
-      pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloudPtr =
-          terrainVoxelCloud2[terrainVoxelWidth2 * indX + (terrainVoxelWidth2 - 1)];
-      for (int indY = terrainVoxelWidth2 - 1; indY >= 1; indY--) {
-        terrainVoxelCloud2[terrainVoxelWidth2 * indX + indY] =
-            terrainVoxelCloud2[terrainVoxelWidth2 * indX + (indY - 1)];
-      }
-      terrainVoxelCloud2[terrainVoxelWidth2 * indX] = terrainVoxelCloudPtr;
-      terrainVoxelCloud2[terrainVoxelWidth2 * indX]->clear();
-    }
-    terrainVoxelShiftY2--;
-    terrainVoxelCenY2 = terrainVoxelSize2 * terrainVoxelShiftY2;
-  }
-  
-  while (cloudVehicleY - terrainVoxelCenY2 > terrainVoxelSize2) {
-    for (int indX = 0; indX < terrainVoxelWidth2; indX++) {
-      pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloudPtr =
-          terrainVoxelCloud2[terrainVoxelWidth2 * indX];
-      for (int indY = 0; indY < terrainVoxelWidth2 - 1; indY++) {
-        terrainVoxelCloud2[terrainVoxelWidth2 * indX + indY] =
-            terrainVoxelCloud2[terrainVoxelWidth2 * indX + (indY + 1)];
-      }
-      terrainVoxelCloud2[terrainVoxelWidth2 * indX + (terrainVoxelWidth2 - 1)] = terrainVoxelCloudPtr;
-      terrainVoxelCloud2[terrainVoxelWidth2 * indX + (terrainVoxelWidth2 - 1)]->clear();
-    }
-    terrainVoxelShiftY2++;
-    terrainVoxelCenY2 = terrainVoxelSize2 * terrainVoxelShiftY2;
-  }
+  // 1. 更新大地图体素偏移
 
-  // 2. 更新大地图体素偏移
   float terrainVoxelCenX = terrainVoxelSize * terrainVoxelShiftX;
   float terrainVoxelCenY = terrainVoxelSize * terrainVoxelShiftY;
   
@@ -378,7 +395,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     terrainVoxelCenY = terrainVoxelSize * terrainVoxelShiftY;
   }
 
-  // 3. 将裁剪后的点云存入体素网格
+  // 2. 将裁剪后的点云存入体素网格
   pcl::PointXYZINormal point;
   int laserCloudCropSize = laserCloudCrop->points.size();
   for (int i = 0; i < laserCloudCropSize; i++) {
@@ -398,8 +415,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     }
   }
 
-  // 4. 下采样并更新大地图体素点云
-  // 4. 逐点超时清理，不再统一下采样和重建体素
+  // 3. 逐点超时清理，不再统一下采样和重建体素
   const float current_relative_time =
     static_cast<float>(
       laserCloudTime -
@@ -450,36 +466,8 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
 
     terrainVoxelUpdateNum[ind] = 0;
   }
-  // for (int ind = 0; ind < kTerrainVoxelNum; ind++) {
-  //   if (terrainVoxelUpdateNum[ind] >= voxelPointUpdateThre ||
-  //       laserCloudTime - systemInitTime - terrainVoxelUpdateTime[ind] >= voxelTimeUpdateThre ) {
-  //     pcl::PointCloud<pcl::PointXYZINormal>::Ptr terrainVoxelCloudPtr = terrainVoxelCloud[ind];
 
-  //     laserCloudDwz->clear();
-  //     downSizeFilter.setInputCloud(terrainVoxelCloudPtr);
-  //     downSizeFilter.filter(*laserCloudDwz);
-
-  //     terrainVoxelCloudPtr->clear();
-  //     int laserCloudDwzSize = laserCloudDwz->points.size();
-  //     for (int i = 0; i < laserCloudDwzSize; i++) {
-  //       point = laserCloudDwz->points[i];
-  //       float dis = sqrt((point.x - cloudVehicleX) * (point.x - cloudVehicleX) +
-  //                        (point.y - cloudVehicleY) * (point.y - cloudVehicleY));
-
-  //       bool is_fresh = (laserCloudTime - systemInitTime - point.intensity < decayTime);
-  //       if (point.z - cloudVehicleZ > lowerBoundZ - disRatioZ * dis &&
-  //           point.z - cloudVehicleZ < upperBoundZ + disRatioZ * dis &&
-  //           is_fresh) {
-  //         terrainVoxelCloudPtr->push_back(point);
-  //       }
-  //     }
-
-  //     terrainVoxelUpdateNum[ind] = 0;
-  //     terrainVoxelUpdateTime[ind] = laserCloudTime - systemInitTime;
-  //   }
-  // }
-
-  // 5. 拼接地形点云
+  // 4. 拼接地形点云
   terrainCloud->clear();
   int terrainCloudSize = 0;
   for (int indX = terrainVoxelHalfWidth - 10; indX <= terrainVoxelHalfWidth + 10; indX++) {
@@ -498,12 +486,11 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     }
   }
 
-  // 6. 计算平面体素高度
+  // 5. 计算平面体素高度
   for (int i = 0; i < kPlanarVoxelNum; ++i) {
     planarVoxelElev[i] = 0.0F;
     planarVoxelConn[i] = 0;
     planarVoxelHasPoint[i] = false;
-
     if (useSorting) {
       planarPointElev[i].clear();
     }
@@ -546,9 +533,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
                 planarVoxelElev[voxel_index] = point.z;
               } else {
                 planarVoxelElev[voxel_index] =
-                  std::min(
-                    planarVoxelElev[voxel_index],
-                    point.z);
+                  std::min(planarVoxelElev[voxel_index], point.z);
               }
             }
 
@@ -559,7 +544,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     }
   }
 
-  // 7. 计算每个平面体素的代表高度（排序取分位数或最小值）
+  // 6. 计算每个平面体素的代表高度（排序取分位数或最小值）
   if (useSorting) {
     // 地面提取应该使用较低分位数。
     // 0.05～0.10通常比0.25更适合地面。
@@ -674,7 +659,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
   //   }
   // }
 
-  // 8. 地形连通性检测（移除天花板）
+  // 7. 地形连通性检测（移除天花板）
   if (checkTerrainConn) {
     int ind =
       planarVoxelWidth *
@@ -735,7 +720,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     }
   }
 
-  // 9. 筛选最终的地形点云 并赋值梯度
+  // 8. 筛选最终的地形点云 并赋值梯度
   terrainCloudElev->clear();
   terrainCloudLocal->clear();
   int terrainCloudElevSize = 0;
@@ -758,9 +743,18 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
         float disZ = fabs(point.z - planarVoxelElev[ind]);
         if (disZ < vehicleHeight && disZ > 0.1 &&
             (planarVoxelConn[ind] == 2 || !checkTerrainConn)) {
-          terrainCloudElev->push_back(point);
-          terrainCloudElev->points.back().intensity = disZ;
-          terrainCloudElevSize++;
+        terrainCloudElev->push_back(point);
+
+        auto & output_point = terrainCloudElev->points.back();
+        output_point.intensity = disZ;
+
+        // 法向量和梯度统一在后面的二选一算法中计算。
+        output_point.normal_x = 0.0F;
+        output_point.normal_y = 0.0F;
+        output_point.normal_z = 1.0F;
+        output_point.curvature = 0.0F;
+
+        terrainCloudElevSize++;
 
           // if (dis <= localTerrainMapRadius) {
           //   terrainCloudLocal->push_back(point);
@@ -770,16 +764,170 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
       }
     }
   }
-  if (!terrainCloudElev->empty() && !terrainCloud->empty()) {
 
+  if (useVoxelPCA && !terrainCloudElev->empty() && !terrainCloud->empty()) {
+    using NormalVoxelMap = std::unordered_map<
+      NormalVoxelKey,
+      NormalVoxelStats,
+      NormalVoxelKeyHash>;
+
+    NormalVoxelMap normal_voxels;
+    normal_voxels.reserve(
+      std::max<std::size_t>(128, terrainCloud->size() / 4));
+
+    // --------------------------------------------------------------------------
+    // 1. O(N) 构建 3D voxel 统计量：count、Σp、Σ(pp^T)
+    // --------------------------------------------------------------------------
+    for (const auto & p : terrainCloud->points) {
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        continue;
+      }
+
+      const NormalVoxelKey key = getNormalVoxelKey(p.x, p.y, p.z);
+      auto & voxel = normal_voxels[key];
+
+      const Eigen::Vector3d v(
+        static_cast<double>(p.x),
+        static_cast<double>(p.y),
+        static_cast<double>(p.z));
+
+      ++voxel.count;
+      voxel.sum += v;
+      voxel.sum_outer += v * v.transpose();
+    }
+
+    // --------------------------------------------------------------------------
+    // 2. 只给 terrainCloudElev 涉及到的 voxel 求 PCA。
+    //    同一 voxel 内所有点复用同一个法向量和 gradient。
+    // --------------------------------------------------------------------------
+    for (auto & p : terrainCloudElev->points) {
+      const NormalVoxelKey center_key = getNormalVoxelKey(p.x, p.y, p.z);
+      auto center_it = normal_voxels.find(center_key);
+
+      // terrainCloudElev 本身来自 terrainCloud，正常情况下不会进入这里。
+      if (center_it == normal_voxels.end()) {
+        p.normal_x = 0.0F;
+        p.normal_y = 0.0F;
+        p.normal_z = 1.0F;
+        p.curvature = 0.0F;
+        continue;
+      }
+
+      auto & center_voxel = center_it->second;
+
+      if (!center_voxel.normal_computed) {
+        center_voxel.normal_computed = true;
+
+        int total_count = 0;
+        Eigen::Vector3d total_sum = Eigen::Vector3d::Zero();
+        Eigen::Matrix3d total_sum_outer = Eigen::Matrix3d::Zero();
+
+        // 3x3x3 voxel 邻域（radius=1），最多 27 次 hash 查询。
+        for (int dx = -normalVoxelNeighborRadius;
+          dx <= normalVoxelNeighborRadius; ++dx)
+        {
+          for (int dy = -normalVoxelNeighborRadius;
+            dy <= normalVoxelNeighborRadius; ++dy)
+          {
+            for (int dz = -normalVoxelNeighborRadius;
+              dz <= normalVoxelNeighborRadius; ++dz)
+            {
+              const NormalVoxelKey neighbor_key{
+                center_key.x + dx,
+                center_key.y + dy,
+                center_key.z + dz};
+
+              const auto neighbor_it = normal_voxels.find(neighbor_key);
+              if (neighbor_it == normal_voxels.end()) {
+                continue;
+              }
+
+              const auto & neighbor = neighbor_it->second;
+              total_count += neighbor.count;
+              total_sum += neighbor.sum;
+              total_sum_outer += neighbor.sum_outer;
+            }
+          }
+        }
+
+        if (total_count >= normalVoxelMinPoints) {
+          const double inv_count = 1.0 / static_cast<double>(total_count);
+          const Eigen::Vector3d mean = total_sum * inv_count;
+
+          // C = E[p p^T] - μ μ^T
+          Eigen::Matrix3d covariance =
+            total_sum_outer * inv_count - mean * mean.transpose();
+
+          // 消除浮点累计导致的极小非对称项。
+          covariance = 0.5 * (covariance + covariance.transpose());
+
+          Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covariance);
+
+          if (solver.info() == Eigen::Success) {
+            // SelfAdjointEigenSolver 的特征值默认由小到大排列。
+            // 最小特征值对应的特征向量就是局部平面法向量。
+            Eigen::Vector3d normal = solver.eigenvectors().col(0);
+
+            if (normal.allFinite() && normal.norm() > 1e-9) {
+              normal.normalize();
+
+              // 法向量正负不影响 gradient，统一朝 +Z 便于查看。
+              if (normal.z() < 0.0) {
+                normal = -normal;
+              }
+
+              const double nx = normal.x();
+              const double ny = normal.y();
+              const double nz = normal.z();
+
+              // 保持与原算法相同的梯度定义：
+              // gradient = (nx^2 + ny^2) / nz^2
+              // 接近垂直面时 nz 很小，使用下限避免除零，并封顶防止异常大值。
+              const double nz_sq = nz * nz;
+              double gradient =
+                (nx * nx + ny * ny) /
+                std::max(nz_sq, 1e-4);
+
+              gradient = std::min(gradient, 100.0);
+
+              center_voxel.normal = normal;
+              center_voxel.gradient = static_cast<float>(gradient);
+              center_voxel.normal_valid = true;
+            }
+          }
+        }
+      }
+
+      if (center_voxel.normal_valid) {
+        p.normal_x = static_cast<float>(center_voxel.normal.x());
+        p.normal_y = static_cast<float>(center_voxel.normal.y());
+        p.normal_z = static_cast<float>(center_voxel.normal.z());
+        p.curvature = center_voxel.gradient;
+      } else {
+        p.normal_x = 0.0F;
+        p.normal_y = 0.0F;
+        p.normal_z = 1.0F;
+        p.curvature = 0.0F;
+      }
+    }
+  } else if (!useVoxelPCA && !terrainCloudElev->empty() && !terrainCloud->empty()) {
+    // --------------------------------------------------------------------------
+    // 原始算法：完整保留 PCL NormalEstimation + KDTree + KNN(15)。
+    //
+    // 如果 useInputDownsampling=true，terrainCloud 本身已经由前置下采样后的
+    // 单帧点云累积而成，因此这里不再重复下采样。
+    // --------------------------------------------------------------------------
     pcl::NormalEstimation<pcl::PointXYZINormal, pcl::PointXYZINormal> ne;
-    pcl::search::KdTree<pcl::PointXYZINormal>::Ptr tree_full(new pcl::search::KdTree<pcl::PointXYZINormal>());
+    pcl::search::KdTree<pcl::PointXYZINormal>::Ptr tree_full(
+      new pcl::search::KdTree<pcl::PointXYZINormal>());
 
     ne.setInputCloud(terrainCloud);
     ne.setSearchMethod(tree_full);
     ne.setKSearch(15);
     // ne.setRadiusSearch(0.25);
-    pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_normals_full(new pcl::PointCloud<pcl::PointXYZINormal>());
+
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_normals_full(
+      new pcl::PointCloud<pcl::PointXYZINormal>());
     ne.compute(*cloud_normals_full);
 
     pcl::KdTreeFLANN<pcl::PointXYZINormal> kdtree_full;
@@ -790,35 +938,36 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
     std::vector<float> dist(knn);
 
     for (size_t i = 0; i < terrainCloudElev->size(); ++i) {
-        auto& p = terrainCloudElev->points[i];
+      auto & p = terrainCloudElev->points[i];
 
-        if (kdtree_full.nearestKSearch(p, knn, idx, dist) > 0) {
-            int original_idx = idx[0];
-            auto& normal = cloud_normals_full->points[original_idx];
+      if (kdtree_full.nearestKSearch(p, knn, idx, dist) > 0) {
+        const int original_idx = idx[0];
+        const auto & normal = cloud_normals_full->points[original_idx];
 
-            p.normal_x = normal.normal_x;
-            p.normal_y = normal.normal_y;
-            p.normal_z = normal.normal_z;
+        p.normal_x = normal.normal_x;
+        p.normal_y = normal.normal_y;
+        p.normal_z = normal.normal_z;
 
-            if (fabs(normal.normal_z) < 1e-6f) {
-                p.curvature = 0.0f;
-                continue;
-            }
-
-            float nx = normal.normal_x;
-            float ny = normal.normal_y;
-            float nz = normal.normal_z;
-            float gradient = (nx*nx + ny*ny) / (nz*nz);
-
-            p.curvature = gradient;
-        } else {
-            p.normal_x = 0;
-            p.normal_y = 0;
-            p.normal_z = 1;
-            p.curvature = 0.0f;
+        if (fabs(normal.normal_z) < 1e-6f) {
+          p.curvature = 0.0f;
+          continue;
         }
+
+        const float nx = normal.normal_x;
+        const float ny = normal.normal_y;
+        const float nz = normal.normal_z;
+        const float gradient = (nx * nx + ny * ny) / (nz * nz);
+
+        p.curvature = gradient;
+      } else {
+        p.normal_x = 0.0F;
+        p.normal_y = 0.0F;
+        p.normal_z = 1.0F;
+        p.curvature = 0.0F;
+      }
     }
-}
+  }
+
   for (int i = 0; i < terrainCloudElev->size(); i++) {
     auto& p = terrainCloudElev->points[i];
     float dis = sqrt((p.x - cloudVehicleX)*(p.x - cloudVehicleX) +
@@ -827,7 +976,7 @@ double processTerrainAnalysis(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::
       terrainCloudLocal->push_back(p);  
     }
   }
-  // 10. 发布地形点云
+  // 9. 发布地形点云
   clearingCloud = false;
   sensor_msgs::msg::PointCloud2 terrainCloud2;
   pcl::toROSMsg(*terrainCloudElev, terrainCloud2);
@@ -872,6 +1021,9 @@ int main(int argc, char **argv) {
   nh->declare_parameter<std::string>("cloud_in", cloud_in);
   nh->declare_parameter<std::string>("odom_in", odom_in);
   nh->declare_parameter<std::string>("odom_frame", odom_frame);
+  nh->declare_parameter<bool>("useVoxelPCA", useVoxelPCA);
+  nh->declare_parameter<bool>("useInputDownsampling", useInputDownsampling);
+  nh->declare_parameter<double>("inputDownsampleLeafSize",inputDownsampleLeafSize);
   // 获取参数值
   nh->get_parameter("odom_frame",odom_frame);
   nh->get_parameter("cloud_in", cloud_in);
@@ -894,16 +1046,13 @@ int main(int argc, char **argv) {
   nh->get_parameter("terrainConnThre", terrainConnThre);
   nh->get_parameter("ceilingFilteringThre", ceilingFilteringThre);
   nh->get_parameter("localTerrainMapRadius", localTerrainMapRadius);
+  nh->get_parameter("useVoxelPCA", useVoxelPCA);
+  nh->get_parameter("useInputDownsampling", useInputDownsampling);
+  nh->get_parameter("inputDownsampleLeafSize",inputDownsampleLeafSize);
 
-  // 计算派生参数
-  scanVoxelSize2 = scanVoxelSize / 2.0;
-  voxelTimeUpdateThre2 = voxelTimeUpdateThre / 2.0;
-  terrainConnThre2 = terrainConnThre / 2.0;
-
-  // 计算派生参数
-  scanVoxelSize2 = scanVoxelSize / 2.0;
-  voxelTimeUpdateThre2 = voxelTimeUpdateThre / 2.0;
-  terrainConnThre2 = terrainConnThre / 2.0;
+  // 防止错误参数导致 PCL VoxelGrid leaf size 非法。
+  inputDownsampleLeafSize =
+    std::max(0.01, inputDownsampleLeafSize);
 
   // 创建订阅器
   auto subOdometry = nh->create_subscription<nav_msgs::msg::Odometry>(
@@ -921,13 +1070,12 @@ int main(int argc, char **argv) {
   for (int i = 0; i < kTerrainVoxelNum; i++) {
     terrainVoxelCloud[i].reset(new pcl::PointCloud<pcl::PointXYZINormal>());
   }
-  for (int i = 0; i < kTerrainVoxelNum2; i++) {
-    terrainVoxelCloud2[i].reset(new pcl::PointCloud<pcl::PointXYZINormal>());
-  }
   
-  // 初始化下采样滤波器
-  downSizeFilter.setLeafSize(scanVoxelSize, scanVoxelSize, scanVoxelSize);
-  downSizeFilter2.setLeafSize(scanVoxelSize2, scanVoxelSize2, scanVoxelSize2);
+  // 前置单帧下采样滤波器。
+  downSizeFilter.setLeafSize(
+    static_cast<float>(inputDownsampleLeafSize),
+    static_cast<float>(inputDownsampleLeafSize),
+    static_cast<float>(inputDownsampleLeafSize));
 
   // 主循环
   rclcpp::Rate rate(100);

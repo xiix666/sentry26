@@ -109,6 +109,11 @@ small_gicp_relocalization:
     min_accumulated_scans: 10
     min_accumulated_points: 3000
     max_accumulation_time_sec: 3.0
+    max_relocalization_points: 100000
+    max_relocalization_scans: 50
+    fixed_bias_x: 0.0
+    fixed_bias_y: 0.0
+    fixed_bias_z: 0.0
 
     # prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_home/5_-0.00--0.01--0.04-0.01--0.00-0.01.pcd"
     prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_dxl/5_0.01-0.01--0.00-0.00-0.00-0.00.pcd"
@@ -133,7 +138,9 @@ terrain_analysis_ext:
     localTerrainMapRadius: 4.0
     cloud_in: "/livox/pointcloud2/transframe"
     odom_in: "lidar_odometry"
-
+    useVoxelPCA: true
+    useInputDownsampling: false
+    inputDownsampleLeafSize: 0.1
 slam_toolbox:
   ros__parameters:
     # https://github.com/SteveMacenski/slam_toolbox/tree/humble?#configuration

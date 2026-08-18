@@ -24,12 +24,9 @@ public:
     this->declare_parameter<std::string>("topic2", "livox/lidar_192_168_2_121");
     this->declare_parameter<std::string>("target_frame_id", "lidar_link");
 
-    // 无PTP时，两台雷达原始header.stamp/timebase可能固定错开几十毫秒。
-    // 这个值必须大于原始时间差；10 Hz时又应尽量小于半个发布周期。
     this->declare_parameter<double>("sync_max_delay", 0.050);
     this->declare_parameter<int>("sync_queue_size", 20);
 
-    // 软件时钟重基准化：以雷达1（以及雷达1的IMU）为主时钟。
     this->declare_parameter<bool>("enable_software_rebase", true);
     this->declare_parameter<double>("rebase_alpha", 0.02);
     this->declare_parameter<double>("rebase_max_jump", 0.010);
@@ -54,7 +51,6 @@ public:
     sub1_.subscribe(this, topic_1_);
     sub2_.subscribe(this, topic_2_);
 
-    // ========== 修复：Synchronizer 构造方式 ==========
     sync_ = std::make_shared<message_filters::Synchronizer<ApproxSyncPolicy>>(
       static_cast<uint32_t>(sync_queue_size_), sub1_, sub2_);
     sync_->getPolicy()->setMaxIntervalDuration(rclcpp::Duration::from_seconds(sync_max_delay_));
@@ -76,7 +72,7 @@ public:
   }
 
 private:
-  // 雷达1过滤参数
+
   const float L1_MIN_DIST = 0.1f;
   const float L1_X_MIN = -0.2f;
   const float L1_X_MAX = 0.2f;
@@ -85,7 +81,6 @@ private:
   const float L1_Z_MIN = -0.2f;
   const float L1_Z_MAX = 0.1f;
 
-  // 雷达2过滤参数
   const float L2_MIN_DIST = 0.1f;
   const float L2_X_MIN = -0.2f;
   const float L2_X_MAX = 0.2f;
@@ -136,8 +131,6 @@ private:
       static_cast<uint64_t>(-(value + 1)) + 1ULL;
   }
 
-  // 估计：雷达2时钟 - 雷达1时钟。
-  // 首帧直接初始化，后续用低通滤波跟踪两台无PTP时钟的缓慢漂移。
   bool update_clock_offset(const int64_t measured_offset_ns)
   {
     if (!clock_offset_initialized_) {
@@ -153,7 +146,6 @@ private:
     const int64_t innovation_ns =
       measured_offset_ns - estimated_clock_offset_ns_;
 
-    // 一般意味着ApproximateTime配错了相邻帧，不能拿它更新时钟偏移。
     if (abs_i64(innovation_ns) > static_cast<uint64_t>(rebase_max_jump_ns_)) {
       RCLCPP_WARN_THROTTLE(
         this->get_logger(), *this->get_clock(), 2000,
@@ -230,12 +222,11 @@ private:
         if (!update_clock_offset(measured_clock_offset_ns)) {
           return;
         }
-        // 把雷达2映射到雷达1的时钟域。
+
         lidar2_corrected_base_ns =
           lidar2_raw_base_ns - estimated_clock_offset_ns_;
       }
 
-      // 取两个校正后帧起点中的较早值，保证所有新offset_time非负。
       const int64_t output_base_ns =
         std::min(lidar1_base_ns, lidar2_corrected_base_ns);
 
@@ -247,7 +238,6 @@ private:
       LivoxCustomMsg output_msg;
       output_msg.header = msg1->header;
       output_msg.header.frame_id = target_frame_id_;
-      // ========== 修复：移除 to_msg()，直接隐式转换 ==========
       output_msg.header.stamp = rclcpp::Time(output_base_ns);
       output_msg.timebase = static_cast<uint64_t>(output_base_ns);
       output_msg.lidar_id = msg1->lidar_id;
@@ -300,7 +290,6 @@ private:
         return;
       }
 
-      // 不在这里排序；按你当前Point-LIO版本，由预处理阶段统一按offset_time排序。
       output_msg.point_num = static_cast<uint32_t>(output_msg.points.size());
       pub_merged_cloud_->publish(output_msg);
 
