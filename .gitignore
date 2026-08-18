@@ -23,3 +23,7 @@ rosbag2_*
 .history
 rm2026_decision/
 *.pcd
+
+# 本机开发环境排障记录
+asset/image.png
+docs/gui_troubleshooting.md
