@@ -16,6 +16,10 @@
 
   详细实现说明见[技术文档](docs/technical_document.md)。PDF版本保存在`docs`目录中，可下载后阅读。
 
+## 效果展示
+
+[地形跨越效果](https://www.bilibili.com/video/BV1HQ8c6HE2r/)
+
 ## 项目结构
 
 以下结构列出当前开源源码中的主要目录和模块。
