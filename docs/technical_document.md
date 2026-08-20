@@ -184,9 +184,10 @@ v_{\kappa}=\sqrt{\frac{a_{\mathrm{lat,max}}}{\max(\kappa,\varepsilon)}}
 最终参考速度取原始期望速度与曲率速度上限中的较小值，并限制在设定的最低速度和最高速度范围内：
 
 ```math
-v_{\mathrm{ref}}=\operatorname{clamp}\!\left(
-\min(v_{\mathrm{des}},v_{\kappa}),v_{\min},v_{\mathrm{des}}
-\right)
+v_{\mathrm{ref}}=
+\min\!\left(v_{\max},
+\max\!\left(v_{\min},
+\min\!\left(v_{\mathrm{des}},v_{\kappa}\right)\right)\right)
 ```
 
 实际计算不会直接使用单个采样点的最大曲率，而是对前方多处曲率进行采样，并对其中较大的若干结果加权，减小孤立异常点对速度的影响。曲率估计还限制了相邻控制周期的上升和下降速度，PID或比例控制侧设置了减速进入与退出滞回，避免车辆在临界曲率附近反复加减速。这样直线路段可以保持较高速度，进入大曲率弯道前则自动减速，兼顾通行效率与跟踪稳定性。
