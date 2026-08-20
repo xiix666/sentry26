@@ -13,12 +13,18 @@ public:
         save_interval_ = this->declare_parameter<double>("save_interval", 20.0);
         save_path_ = this->declare_parameter<std::string>(
             "save_path",
-            "/home/chakfan/ros_ws/map/map"
+            "map"
         );
         map_topic_ = this->declare_parameter<std::string>(
             "map_topic",
             "/slam_map"
         );
+
+        const auto parent_path = std::filesystem::path(save_path_).parent_path();
+        if (!parent_path.empty()) {
+            std::filesystem::create_directories(parent_path);
+        }
+
         save_id_ = 0;
 
         while (

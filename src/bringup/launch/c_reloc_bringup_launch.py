@@ -38,6 +38,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     use_omni_perception = LaunchConfiguration("use_omni_perception")
     use_map_save = LaunchConfiguration("use_map_save")
+    map_save_path = LaunchConfiguration("map_save_path")
 
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
 
@@ -76,7 +77,9 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
 
-        "map", default_value="/home/xx/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
+        "map",
+        default_value=os.path.join(bringup_dir, "map", "map_uc.yaml"),
+        description="Full path to map yaml file to load",
 
     )                                                                                                 
 
@@ -128,6 +131,11 @@ def generate_launch_description():
     )
     declare_use_map_save_cmd = DeclareLaunchArgument(
         "use_map_save", default_value="False"
+    )
+    declare_map_save_path_cmd = DeclareLaunchArgument(
+        "map_save_path",
+        default_value=os.path.join(os.path.expanduser("~"), "sentry26_maps", "map"),
+        description="Output prefix used by the periodic map saver",
     )
 
     bringup_cmd_group = GroupAction(
@@ -212,7 +220,7 @@ def generate_launch_description():
         parameters=[configured_params,
         {
             "save_interval": 30.0,
-            "save_path": "/home/xx/sentry26/map/map",
+            "save_path": map_save_path,
             "map_topic": "/slam_map",
         }
         ],
@@ -242,6 +250,7 @@ def generate_launch_description():
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_omni_perception_cmd)
     ld.add_action(declare_use_map_save_cmd)
+    ld.add_action(declare_map_save_path_cmd)
 
     ld.add_action(bringup_cmd_group)
     ld.add_action(delayed_omni_node)

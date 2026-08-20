@@ -1,11 +1,15 @@
 #!/bin/bash
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+
 source ~/.bashrc
+source "${PROJECT_ROOT}/install/setup.bash"
 
-source /home/xx/sentry26/install/setup.bash
+ros2 launch bringup c_reloc_bringup_launch.py
 
-ros2 launch bringup c_reloc_bringup_launch.py 
-
-ros2 bag play /home/xx/sentry26/bag/0802/0802_1_0.db3 --clock
+if [ -n "$1" ]; then
+    ros2 bag play "$1" --clock
+fi
 
 exit 0

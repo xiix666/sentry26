@@ -1,8 +1,0 @@
-image: blue1.png
-mode: trinary
-resolution: 0.05
-# origin: [-4.01, -8.35, 0]
-origin: [-3.627, -9.119, 0.0]
-negate: 0
-occupied_thresh: 0.65
-free_thresh: 0.25

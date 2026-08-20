@@ -1,12 +1,14 @@
 #!/bin/bash
 
-export ROS_LOG_DIR=/home/rps/sentry26/log
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+
+export ROS_LOG_DIR="${PROJECT_ROOT}/log"
 
 source ~/.bashrc
+source "${PROJECT_ROOT}/install/setup.bash"
 
-source /home/rps/sentry26/install/setup.bash
-
-cd /home/rps/sentry26
+cd "${PROJECT_ROOT}"
 
 ros2 launch bringup nav_launch.py
 

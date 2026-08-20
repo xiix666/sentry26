@@ -8,8 +8,10 @@ if [ $# -eq 0 ]; then
 fi
 
 SUB_DIR=$1
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
-BAG_BASE_PATH="/home/rps/sentry26/bag"
+BAG_BASE_PATH="${PROJECT_ROOT}/bag"
 BAG_FULL_PATH="${BAG_BASE_PATH}/${SUB_DIR}"
 
 BAG_OUTPUT_NAME="${BAG_FULL_PATH}"

@@ -1,6 +1,6 @@
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -24,8 +24,15 @@ def generate_launch_description():
     bringup_dir = get_package_share_directory("bringup")
     launch_dir = os.path.join(bringup_dir, "launch")
 
-    rm_decision_dir = get_package_share_directory("rm2026_decision")
-    decisionparams_file = os.path.join(rm_decision_dir, "config", "rm2026_decision_params.yaml")
+    try:
+        rm_decision_dir = get_package_share_directory("rm2026_decision")
+        decisionparams_file = os.path.join(
+            rm_decision_dir, "config", "rm2026_decision_params.yaml"
+        )
+        decision_available = True
+    except PackageNotFoundError:
+        decisionparams_file = ""
+        decision_available = False
 
     namespace = LaunchConfiguration("namespace")
     relocate = LaunchConfiguration("relocate")
@@ -41,6 +48,8 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("use_rviz")
     use_omni_perception = LaunchConfiguration("use_omni_perception")
     use_map_save = LaunchConfiguration("use_map_save")
+    use_decision = LaunchConfiguration("use_decision")
+    map_save_path = LaunchConfiguration("map_save_path")
 
     param_substitutions = {"use_sim_time": use_sim_time, "yaml_filename": map_yaml_file}
 
@@ -79,7 +88,9 @@ def generate_launch_description():
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
 
-        "map", default_value="/home/rps/sentry26/src/bringup/map/map_uc.yaml", description="Full path to map yaml file to load"
+        "map",
+        default_value=os.path.join(bringup_dir, "map", "map_uc.yaml"),
+        description="Full path to map yaml file to load",
 
     )                                                                                                 
 
@@ -131,6 +142,16 @@ def generate_launch_description():
     )
     declare_use_map_save_cmd = DeclareLaunchArgument(
         "use_map_save", default_value="False"
+    )
+    declare_use_decision_cmd = DeclareLaunchArgument(
+        "use_decision",
+        default_value="True" if decision_available else "False",
+        description="Start rm2026_decision when the private package is installed",
+    )
+    declare_map_save_path_cmd = DeclareLaunchArgument(
+        "map_save_path",
+        default_value=os.path.join(os.path.expanduser("~"), "sentry26_maps", "map"),
+        description="Output prefix used by the periodic map saver",
     )
 
     bringup_cmd_group = GroupAction(
@@ -196,13 +217,12 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(launch_dir, "include", "omni_perception_launch.py")),
     )
     rm26_decision = Node(
-        
-            package="rm2026_decision",
-            executable="rm2026_decision_node",
-            name="rm2026_decision_node",
-            output="screen",
-            parameters=[decisionparams_file],
-        
+        condition=IfCondition(use_decision),
+        package="rm2026_decision",
+        executable="rm2026_decision_node",
+        name="rm2026_decision_node",
+        output="screen",
+        parameters=[decisionparams_file] if decision_available else [],
     )
 
     rviz_cmd = IncludeLaunchDescription(
@@ -224,7 +244,7 @@ def generate_launch_description():
         parameters=[configured_params,
         {
             "save_interval": 20.0,
-            "save_path": "/home/rps/sentry26/map/map",
+            "save_path": map_save_path,
             "map_topic": "/slam_map",
         }
         ],
@@ -236,8 +256,9 @@ def generate_launch_description():
     )
 
     delayed_decision_node = TimerAction(
-        period=10.0,  
-        actions=[rm26_decision]
+        condition=IfCondition(use_decision),
+        period=10.0,
+        actions=[rm26_decision],
     )
     ld = LaunchDescription()
 
@@ -258,6 +279,8 @@ def generate_launch_description():
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_use_omni_perception_cmd)
     ld.add_action(declare_use_map_save_cmd)
+    ld.add_action(declare_use_decision_cmd)
+    ld.add_action(declare_map_save_path_cmd)
 
     ld.add_action(bringup_cmd_group)
     ld.add_action(delayed_omni_node)

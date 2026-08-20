@@ -35,10 +35,7 @@ point_lio:
 
     prior_pcd:
       enable: False
-      # NOTE: `prior_pcd_map_path` will be provided in the launch file
-      # prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/PCDts/36.pcd"
-      prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/blue/27_0.01-0.01--0.02--0.07--0.01--0.03.pcd"
-      # prior_pcd_map_path: "/home/rps/sentry26/src/rm_localization/point_lio/red/18_-0.01-0.03-0.01--0.02-0.00--0.01.pcd"
+      prior_pcd_map_path: ""
       init_pose: [ 0.0, 0.0, 0.0 ]
 
     preprocess:
@@ -91,7 +88,7 @@ point_lio:
       pcd_save_en: False
       interval: 30                                      # how many LiDAR frames saved in each pcd file;
                                                         # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
-      save_path: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_dxl/"
+      save_path: ""
 
 small_gicp_relocalization:
   ros__parameters:
@@ -115,8 +112,7 @@ small_gicp_relocalization:
     fixed_bias_y: 0.0
     fixed_bias_z: 0.0
 
-    # prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_home/5_-0.00--0.01--0.04-0.01--0.00-0.01.pcd"
-    prior_pcd_file: "/home/rps/sentry26/src/rm_localization/point_lio/pcd_dxl/5_0.01-0.01--0.00-0.00-0.00-0.00.pcd"
+    prior_pcd_file: "$(find-pkg-share bringup)/pcd/relocalization.pcd"
 terrain_analysis_ext:
   ros__parameters:
     scanVoxelSize: 0.05
@@ -330,7 +326,7 @@ controller_server:
       yaw_goal_tolerance: 6.28
     FollowPath:
       # controller_frequency: 20.0
-      plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"
+      plugin: "rps_omni_controller::OmniPidPursuitController"
       translation_kp: 13.0
       translation_ki: 0.0
       translation_kd: 0.5
@@ -465,7 +461,7 @@ controller_server:
       #   enabled: true
       #   cost_power: 1
       #   cost_weight: 3.0
-      
+
       # GoalCritic:
       #   enabled: true
       #   cost_power: 1
@@ -562,7 +558,6 @@ local_costmap:
         combination_method: 1
         mark_threshold: 0
         origin_z: 0.0
-        unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
 
@@ -636,33 +631,7 @@ global_costmap:
         clear_max_x: 4.5
         clear_min_y: -1.8
         clear_max_y: 0.8
-      # obstacle_layer:
-        # plugin: "nav2_costmap_2d::ObstacleLayer"
-        # plugin: "decaying_layer::DecayingObstacleLayer"
-        # enabled: True
-        # footprint_clearing_enabled: true
-        # decay_time: 0.0          # default 0.0s
-        # observation_sources: scan depth
-        # scan:
-        #   topic: /cloud_segmented
-        #   max_obstacle_height: 2.0
-        #   clearing: True
-        #   marking: True
-        #   data_type: "PointCloud2"
-        #   raytrace_max_range: 7.5
-        #   raytrace_min_range: 0.0
-        #   obstacle_max_range: 7.0
-        #   obstacle_min_range: 0.4
-        # depth:
-        #   topic: /scan
-        #   max_obstacle_height: 1.0
-        #   clearing: True
-        #   marking: True
-        #   data_type: "LaserScan"
-        #   raytrace_max_range: 2.5
-        #   raytrace_min_range: 0.0
-        #   obstacle_max_range: 2.0
-        #   obstacle_min_range: 0.4
+
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
         continuous_hit_threshold: 0          # 连续命中2次
@@ -704,8 +673,6 @@ global_costmap:
 
         height_score_full: 0.4
 
-        speed_low_confidence_mps: 4.0
-
         velocity_odom_topic:  "/aft_mapped_to_init"
         acceleration_suppression_threshold_mps2: 6.0
 
@@ -713,8 +680,6 @@ global_costmap:
 
         # 加速度超限后，继续关闭近场感知的时间
         acceleration_suppression_hold_time: 0.1
-
-        enable_sudden_obstacle_history_filter: true
 
         enable_sudden_obstacle_history_filter: true
 
@@ -734,7 +699,6 @@ global_costmap:
         combination_method: 1
         mark_threshold: 0
         origin_z: 0.0
-        unknown_threshold: 5
         z_resolution: 0.05
         z_voxels: 16
         min_obstacle_height: 0.2
@@ -800,6 +764,11 @@ planner_server:
       w_euc_cost: 1.0
       w_traversal_cost: 2.5
       w_heuristic_cost: 1.0
+      same_goal_tolerance: 0.15
+      switch_improvement_ratio: 0.1
+      max_reuse_path_deviation: 0.20
+      compare_distance_weight: 3.0
+      compare_traversal_weight: 1.0
 
 smoother_server:
   ros__parameters:

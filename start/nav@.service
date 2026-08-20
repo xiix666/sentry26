@@ -1,0 +1,13 @@
+[Unit]
+Description=nav
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=%i
+ExecStartPre=/bin/sleep 20
+WorkingDirectory=%h/sentry26
+ExecStart=%h/sentry26/start/nav.sh
+SuccessExitStatus=143
+Restart=always
+[Install]
+WantedBy=multi-user.target

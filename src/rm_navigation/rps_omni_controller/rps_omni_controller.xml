@@ -1,0 +1,9 @@
+<class_libraries>
+    <library path="rps_omni_controller">
+        <class type="rps_omni_controller::OmniPidPursuitController" base_class_type="nav2_core::Controller">
+            <description>
+                rps_omni_controller
+            </description>
+        </class>
+    </library>
+</class_libraries>

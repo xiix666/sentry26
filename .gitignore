@@ -14,6 +14,8 @@ rosbag2_*
 .DS_Store
 .idea/
 .vscode/
+.codex/
+.public-test.HnZ8yc/
 # 二进制可执行文件
 *.bin
 *.exe
@@ -21,9 +23,13 @@ rosbag2_*
 *.log
 *.cache
 .history
+__pycache__/
+*.pyc
 rm2026_decision/
 *.pcd
+!src/bringup/pcd/relocalization.pcd
 
 # 本机开发环境排障记录
 asset/image.png
+
 docs/gui_troubleshooting.md

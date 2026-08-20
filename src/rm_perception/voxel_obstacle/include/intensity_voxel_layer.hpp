@@ -98,11 +98,6 @@ private:
     double last_hit_time{0.0};
   };
 
-  struct ObstacleHistoryFrame {
-    double stamp_sec{0.0};
-    std::unordered_set<std::uint64_t> keys;
-  };
-
   void clusterCandidatePoints(const std::vector<CandidateObstaclePoint> &points,
                               std::vector<std::vector<std::size_t>> &clusters,
                               int min_points);
@@ -167,7 +162,6 @@ private:
   nav2_voxel_grid::VoxelGrid voxel_grid_;
   double z_resolution_{0.05};
   double origin_z_{16.0};
-  int unknown_threshold_{15};
   int mark_threshold_{0};
   int size_z_{16};
   int obstacle_expand_size_{1};
@@ -186,8 +180,6 @@ private:
   double tilt_disable_threshold_deg_{20.0};
   double tilt_recover_threshold_deg_{15.0};
   bool dynamic_map_suppressed_by_tilt_{false};
-  double current_roll_deg_{0.0};
-  double current_pitch_deg_{0.0};
   double current_tilt_deg_{0.0};
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr lio_odom_sub_;

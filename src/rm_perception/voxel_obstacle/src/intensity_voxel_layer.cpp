@@ -62,9 +62,6 @@ void IntensityVoxelLayer::onInitialize() {
   node->declare_parameter(name_ + ".z_resolution", 0.05);
   node->get_parameter(name_ + ".z_resolution", z_resolution_);
 
-  node->declare_parameter(name_ + ".unknown_threshold", 15);
-  node->get_parameter(name_ + ".unknown_threshold", unknown_threshold_);
-
   node->declare_parameter(name_ + ".mark_threshold", 0);
   node->get_parameter(name_ + ".mark_threshold", mark_threshold_);
 
@@ -192,7 +189,6 @@ void IntensityVoxelLayer::onInitialize() {
                       sudden_obstacle_history_retention_);
 
   size_z_ = std::clamp(size_z_, 1, VOXEL_BITS);
-  unknown_threshold_ += (VOXEL_BITS - size_z_);
   z_resolution_ = std::max(1e-3, z_resolution_);
   obstacle_hold_time_ = std::max(0.0, obstacle_hold_time_);
   obstacle_expand_size_ = std::max(0, obstacle_expand_size_);
@@ -648,9 +644,11 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
       const double pz = *it_z;
       const double relative_height = *it_i;
       const double gradient = *it_gradient;
+
       if (clear_forced_area && isInForcedDynamicObstacleArea(px, py)) {
         continue;
       }
+
       if (!std::isfinite(px) || !std::isfinite(py) || !std::isfinite(pz) ||
           !std::isfinite(relative_height) || !std::isfinite(gradient)) {
         continue;
@@ -690,6 +688,7 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
           sq_range <= acceleration_suppression_radius_sq) {
         continue;
       }
+
       unsigned int mx = 0;
       unsigned int my = 0;
       unsigned int mz = 0;
@@ -716,13 +715,10 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
     }
   }
 
-  constexpr double debug_target_x = 2.71;
-  constexpr double debug_target_y = 0.02;
-  constexpr double debug_radius = 0.5;
-  constexpr double debug_radius_sq = debug_radius * debug_radius;
   constexpr double kAdaptiveNearRange = 5.0;
   constexpr double kAdaptiveFarRange = 10.0;
   constexpr double kFarHoldTimeBonus = 0.4;
+
   auto distance_adaptation_ratio = [&](double range) {
     if (!std::isfinite(range)) {
       return 0.0;
@@ -743,11 +739,13 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
     return obstacle_hold_time_ +
            kFarHoldTimeBonus * distance_adaptation_ratio(range);
   };
-  std::vector<std::vector<std::size_t>> point_clusters;
 
+  std::vector<std::vector<std::size_t>> point_clusters;
   clusterCandidatePoints(candidate_points, point_clusters, 1);
+
   std::unordered_set<unsigned int> accepted_columns;
   accepted_columns.reserve(candidate_points.size());
+
   const double tilt_confidence = clamp01(
       1.0 - current_tilt_deg_ / std::max(1.0, tilt_disable_threshold_deg_));
   const double speed = current_speed_mps_.load(std::memory_order_relaxed);
@@ -766,7 +764,7 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
     double soft_range_sum = 0.0;
     double soft_height_sum = 0.0;
     double cluster_range_sum = 0.0;
-    bool in_debug_region = false;
+
     std::unordered_set<unsigned int> cluster_columns;
     cluster_columns.reserve(cluster.size());
 
@@ -775,14 +773,6 @@ void IntensityVoxelLayer::updateBounds(double robot_x, double robot_y,
 
       cluster_columns.insert(point.column_idx);
       cluster_range_sum += point.range;
-      const double debug_dx = point.x - debug_target_x;
-      const double debug_dy = point.y - debug_target_y;
-      const double debug_distance_sq =
-          debug_dx * debug_dx + debug_dy * debug_dy;
-
-      if (debug_distance_sq <= debug_radius_sq) {
-        in_debug_region = true;
-      }
 
       if (point.hard_gradient) {
         ++hard_gradient_count;
@@ -1154,8 +1144,6 @@ void IntensityVoxelLayer::updateOrigin(double new_origin_x,
 bool IntensityVoxelLayer::updateTiltSuppressionState() {
   if (!disable_dynamic_map_on_tilt_) {
     dynamic_map_suppressed_by_tilt_ = false;
-    current_roll_deg_ = 0.0;
-    current_pitch_deg_ = 0.0;
     current_tilt_deg_ = 0.0;
     return false;
   }
@@ -1198,8 +1186,6 @@ bool IntensityVoxelLayer::updateTiltSuppressionState() {
       }
     }
 
-    current_roll_deg_ = roll_deg;
-    current_pitch_deg_ = pitch_deg;
     current_tilt_deg_ = max_tilt_deg;
   } catch (const tf2::TransformException &exception) {
     RCLCPP_WARN_THROTTLE(
@@ -1231,7 +1217,6 @@ void IntensityVoxelLayer::clearNearDynamicObstacleHistory(
     double robot_x, double robot_y, double radius, double *min_x, double *min_y,
     double *max_x, double *max_y) {
   const double valid_radius = std::max(0.0, radius);
-  const double radius_sq = valid_radius * valid_radius;
   const double expand_distance = obstacle_expand_size_ * resolution_;
   const double effective_clear_radius =
       valid_radius + std::sqrt(2.0) * expand_distance + 0.5 * resolution_;
