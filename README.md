@@ -14,7 +14,7 @@
 
   这个项目从本赛季开始开发，至今不足一年。开始开发前我没有ROS2使用经验，项目也几乎完全从零搭建，因此目前仍不够成熟和完善。后续会持续更新。
 
-  详细实现说明见[docs/technical_document.md](docs/technical_document.md)，也可直接阅读[PDF版本](docs/technical_document.pdf)。
+  详细实现说明见[技术文档](docs/technical_document.md)。PDF版本保存在`docs`目录中，可下载后阅读。
 
 ## 项目结构
 
