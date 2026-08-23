@@ -130,9 +130,9 @@ Livox驱动读取[`src/bringup/config/mid360_user_config.json`](src/bringup/conf
 - 确保NUC与雷达处于同一网段，且配置中的数据端口没有被其他程序占用；
 - [`nav_params.yaml`](src/bringup/config/nav_params.yaml)和[`nav_params_1.yaml`](src/bringup/config/nav_params_1.yaml)中的`user_config_path`指向该配置文件。
 
-本项目的双雷达PTP软同步在NUC机器人运算平台上完成，并非由雷达侧执行。实车启动前应先确认NUC上的时间同步配置正常，再检查两台雷达消息的时间戳是否稳定。
+本项目的双雷达PTP软同步在NUC机器人运算平台上完成。实车启动前应先确认时间同步配置正常，再检查两台雷达消息的时间戳是否稳定。
 
-公开仓库不包含队内的`rm2026_decision`。`nav_launch.py`和`nav2_launch.py`会在启动时检测该包：未安装时自动关闭决策节点，其余导航模块仍可正常启动；队内环境安装该包后可通过`use_decision:=true`启用。
+公开仓库不包含队内的`rm2026_decision`。`nav_launch.py`和`nav2_launch.py`会在启动时检测该包：未安装时自动关闭决策节点，其余导航模块仍可正常启动；
 
 ### 雷达外参与静态坐标变换
 
@@ -173,7 +173,7 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-如需设置开机自启，可将`start/nav@.service`安装为systemd模板服务，并用实际Linux用户名实例化。例如仓库位于`~/sentry26`且用户名为`rps`时，启用`nav@rps.service`。模板会根据用户名解析用户主目录，不再依赖写死的`/home/rps`路径。
+如需设置开机自启，可将`start/nav@.service`安装为systemd模板服务，并用实际Linux用户名实例化。例如仓库位于`~/sentry26`且用户名为`rps`时，启用`nav@rps.service`。模板会根据用户名解析用户主目录，不再依赖写死的路径。
 
 ## 运行
 
