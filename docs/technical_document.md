@@ -18,24 +18,41 @@
 
 每组配对点云到达后，节点根据两帧Livox`timebase`计算测量偏移：
 
-```text
-measured_offset=lidar2.timebase-lidar1.timebase
+```math
+\Delta t_k^{\mathrm{meas}}=t_{2,k}^{\mathrm{base}}-t_{1,k}^{\mathrm{base}}
 ```
 
 首次配对时使用测量值初始化双雷达相对时钟偏移，后续使用指数低通滤波在线更新：
 
-```text
-estimated_offset+=rebase_alpha*(measured_offset-estimated_offset)
+```math
+\widehat{\Delta t}_k=
+\widehat{\Delta t}_{k-1}
++\alpha\left(\Delta t_k^{\mathrm{meas}}-\widehat{\Delta t}_{k-1}\right)
 ```
+
+其中，下标1和2分别表示两台雷达，`alpha`对应参数`rebase_alpha`。
 
 该处理保留了长期时钟偏移的缓慢变化，同时抑制ApproximateTime配帧和消息调度造成的瞬时抖动。若一次测量相对当前估计的跳变量超过`rebase_max_jump`，节点将其视为疑似错配帧并拒绝更新和融合，防止错误样本污染时钟估计。
 
 ### 1.4软件时钟rebase
 
-得到相对时钟偏移后，第二雷达的`timebase`先减去估计偏移，映射到第一雷达的时钟域。节点选择两路校正后帧起始时刻的较小值作为融合点云的统一`timebase`，再逐点重算两台雷达的`offset_time`：
+得到相对时钟偏移后，第二雷达的`timebase`先减去估计偏移，映射到第一雷达的时钟域：
 
-```text
-new_offset_time=corrected_source_timebase-output_timebase+old_offset_time
+```math
+t_{2,k}^{\mathrm{corr}}=t_{2,k}^{\mathrm{base}}-\widehat{\Delta t}_k
+```
+
+节点选择两路校正后帧起始时刻的较小值作为融合点云的统一`timebase`：
+
+```math
+t_k^{\mathrm{out}}=\min\left(t_{1,k}^{\mathrm{base}},t_{2,k}^{\mathrm{corr}}\right)
+```
+
+对于来自任一雷达的激光点，将校正后的帧时间基准与原始点时间偏移换算到统一输出基准：
+
+```math
+\delta t_i^{\mathrm{out}}=
+t_k^{\mathrm{corr}}-t_k^{\mathrm{out}}+\delta t_i
 ```
 
 这样输出点云中的所有点都以同一个时间原点表达，Point-LIO读取`timebase+offset_time`时能够正确恢复每个点的采样时刻，避免两台雷达的点在同一帧中仍处于不同时间基准。
@@ -84,6 +101,18 @@ PCD保存支持按指定雷达帧数分批写盘，文件名包含递增编号�
 逐点法向量估计是地形链路中的主要性能瓶颈。传统模式先对完整地形点云计算法向量，再为每个输出点查询对应法向量，点数较多时近邻搜索和特征分解开销明显。
 
 `useVoxelPCA=true`时启用VoxelPCA模式。它先将点云划分到体素中，根据体素内点的平均位置和协方差计算法向量及梯度。同一体素内的点复用计算结果，不再为每个点单独计算法向量，思路上类似一次面向梯度计算的下采样。在当前数据和参数下，开启VoxelPCA后该部分CPU占用约降为原来的五分之一。该结果是当前平台实测值，实际效果会随点频和体素参数变化。
+
+下图是在相同测试环境下记录的进程占用。关闭VoxelPCA时CPU占用约为17.5%，开启后约为2.3%，可以直观看到体素级梯度计算带来的性能收益。
+
+<p align="center">
+  <strong>关闭VoxelPCA</strong><br>
+  <img src="../asset/voxel_false.png" alt="关闭VoxelPCA时的系统占用" width="92%">
+</p>
+
+<p align="center">
+  <strong>开启VoxelPCA</strong><br>
+  <img src="../asset/voxel_true.png" alt="开启VoxelPCA时的系统占用" width="92%">
+</p>
 
 ### 3.2候选点过滤与空间聚簇
 
@@ -143,6 +172,12 @@ J_{\mathrm{new}}\le J_{\mathrm{old}}(1-r_{\mathrm{switch}})
 当起点或目标点落入障碍栅格时，规划器不会立即结束本次规划，而是先在附近搜索可用栅格并尝试恢复搜索，从而减小定位波动、代价地图膨胀或目标点设置误差造成的规划失败。
 
 规划器还支持条件禁行区域。机器人起点和目标点都位于区域外时，该区域在图搜索中被视为不可通行；只有起点或目标点位于区域内时才允许路径进入。这一功能用于加入与比赛策略相关的先验约束，例如从敌方半场返回己方区域时，避免机器人从容易暴露在敌方火力下的高地区域经过，同时仍允许目标点就在该区域内的任务正常执行。
+
+下图展示了条件禁行区域生效时的规划结果。即使直接穿过预设区域的路径更短，规划器仍会沿区域外侧生成路径，避免机器人进入不希望经过的危险位置。
+
+<p align="center">
+  <img src="../asset/plan.png" alt="规划器绕开预设危险区域" width="58%">
+</p>
 
 ### 4.2路径后端处理
 

@@ -31,5 +31,8 @@ rm2026_decision/
 
 # 本机开发环境排障记录
 asset/image.png
+asset/plan.png
+asset/voxel_false.png
+asset/voxel_true.png
 
 docs/gui_troubleshooting.md
