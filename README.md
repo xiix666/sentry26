@@ -209,8 +209,11 @@ ros2 launch bringup c_reloc_bringup_launch.py use_sim_time:=true
 
 ## 参考与致谢
 
+2026赛季是RPS视觉组较为艰难的一年，特别感谢丁紫函对哨兵自瞄系统的开发与调试。
+
 本项目在开发过程中参考了以下开源项目和技术资料，在此向相关作者与团队表示感谢：
 
 - [SMBU PolarBear Robotics Team：pb2025_sentry_nav](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav)
 - [Yancey2023：small_point_lio](https://github.com/Yancey2023/small_point_lio)
 - 中国科学技术大学RoboWalker战队《2025赛季哨兵技术报告》
+
