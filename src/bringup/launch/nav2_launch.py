@@ -138,7 +138,9 @@ def generate_launch_description():
         "use_rviz", default_value="False", description="Whether to start RVIZ"
     )
     declare_use_omni_perception_cmd = DeclareLaunchArgument(
-        "use_omni_perception", default_value="True"
+        "use_omni_perception",
+        default_value="False",
+        description="Start the optional four-camera omni perception adapter",
     )
     declare_use_map_save_cmd = DeclareLaunchArgument(
         "use_map_save", default_value="False"

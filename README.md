@@ -88,7 +88,7 @@
 | `mapping_mode` | 是否启动`pc2scan`和`slam_toolbox`建图链路 |
 | `relocate` | 是否启动`small_gicp_relocalization` |
 | `use_rviz` | 是否启动RViz |
-| `use_omni_perception` | 是否启动全向感知模块 |
+| `use_omni_perception` | 是否启动四相机全向感知适配模块，默认关闭 |
 | `use_map_save` | 是否周期性保存地图 |
 | `map_save_path` | 周期地图保存的输出前缀，默认为`~/sentry26_maps/map` |
 | `use_decision` | 是否启动队内决策节点；未安装`rm2026_decision`时默认关闭 |
@@ -216,4 +216,3 @@ ros2 launch bringup c_reloc_bringup_launch.py use_sim_time:=true
 - [SMBU PolarBear Robotics Team：pb2025_sentry_nav](https://github.com/SMBU-PolarBear-Robotics-Team/pb2025_sentry_nav)
 - [Yancey2023：small_point_lio](https://github.com/Yancey2023/small_point_lio)
 - 中国科学技术大学RoboWalker战队《2025赛季哨兵技术报告》
-
