@@ -59,6 +59,18 @@
         └── rm_serial_driver-main/   # 导航系统与底盘控制器通信
 ```
 
+### 系统架构图
+
+<p align="center">
+  <img src="asset/system_architecture.svg" alt="RPS舵轮哨兵导航系统架构图" width="80%">
+</p>
+
+### 数据流图
+
+<p align="center">
+  <img src="asset/data_flow.svg" alt="RPS舵轮哨兵导航系统数据流图" width="80%">
+</p>
+
 ## 启动配置
 
 项目保留三个相互独立的顶层启动文件，便于针对调试和实车部署分别增删模块：

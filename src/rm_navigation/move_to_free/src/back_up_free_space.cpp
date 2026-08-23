@@ -1,7 +1,7 @@
 #include "back_up_free_space.hpp"
 #include <limits>
 using ServiceResponseFuture = rclcpp::Client<nav2_msgs::srv::GetCostmap>::SharedFuture;
-namespace pb_nav2_behaviors
+namespace xx_nav2_behaviors
 {
 
 void BackUpFreeSpace::onConfigure()
@@ -447,4 +447,4 @@ void BackUpFreeSpace::visualize(
 }
 
 #include "pluginlib/class_list_macros.hpp"
-PLUGINLIB_EXPORT_CLASS(pb_nav2_behaviors::BackUpFreeSpace, nav2_core::Behavior)
+PLUGINLIB_EXPORT_CLASS(xx_nav2_behaviors::BackUpFreeSpace, nav2_core::Behavior)

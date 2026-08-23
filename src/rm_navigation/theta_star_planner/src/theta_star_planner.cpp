@@ -74,6 +74,20 @@ void ThetaStarPlanner::configure(
     name_ + ".max_reuse_path_deviation",
     max_reuse_path_deviation_);
 
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".compare_distance_weight",
+    rclcpp::ParameterValue(8.0));
+  node->get_parameter(
+    name_ + ".compare_distance_weight",
+    compare_distance_weight_);
+
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".compare_traversal_weight",
+    rclcpp::ParameterValue(1.0));
+  node->get_parameter(
+    name_ + ".compare_traversal_weight",
+    compare_traversal_weight_);
+
   same_goal_tolerance_ = std::max(0.0, same_goal_tolerance_);
   switch_improvement_ratio_ =
     std::clamp(switch_improvement_ratio_, 0.0, 0.99);

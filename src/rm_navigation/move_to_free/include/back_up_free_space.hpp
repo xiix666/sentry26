@@ -1,5 +1,5 @@
-#ifndef PB_NAV2_PLUGINS__BEHAVIORS__BACK_UP_FREE_SPACE_HPP_
-#define PB_NAV2_PLUGINS__BEHAVIORS__BACK_UP_FREE_SPACE_HPP_
+#ifndef XX_NAV2_PLUGINS__BEHAVIORS__BACK_UP_FREE_SPACE_HPP_
+#define XX_NAV2_PLUGINS__BEHAVIORS__BACK_UP_FREE_SPACE_HPP_
 
 #include <memory>
 #include <string>
@@ -13,7 +13,7 @@
 
 using BackUpAction = nav2_msgs::action::BackUp;
 
-namespace pb_nav2_behaviors
+namespace xx_nav2_behaviors
 {
 
 class BackUpFreeSpace : public nav2_behaviors::DriveOnHeading<nav2_msgs::action::BackUp>

@@ -51,6 +51,7 @@ public:
     this->declare_parameter("special_p4_x", 7.2);
     this->declare_parameter("special_p4_y", 5.2);
     this->declare_parameter("special_hysteresis_margin", 0.2);
+    this->declare_parameter("special_active_duration_sec", 6.0);
 
     this->get_parameter("special_p1_x", special_p1_x_);
     this->get_parameter("special_p1_y", special_p1_y_);
@@ -62,6 +63,8 @@ public:
     this->get_parameter("special_p4_y", special_p4_y_);
     this->get_parameter("special_hysteresis_margin",
                         special_hysteresis_margin_);
+    this->get_parameter("special_active_duration_sec",
+                        special_active_duration_sec_);
 
     fight_outpost_on_island_ =
         this->declare_parameter<bool>("fight_outpost_on_island", false);

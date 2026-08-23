@@ -320,7 +320,6 @@ controller_server:
       rotation_ki: 0.1
       rotation_kd: 0.3
       transform_tolerance: 0.02
-      min_max_sum_error: 1.0
       lookahead_dist: 0.3
       use_velocity_scaled_lookahead_dist: true
       lookahead_time: 0.15
@@ -340,7 +339,6 @@ controller_server:
       reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
       curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
       curvature_backward_dist: 0.4                      # 后向距离，用于曲率计算
-      large_slow: 0.8
       max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
       last_vel: 1.4           #如果上一次速度大于这个，曲率减速大减
       lower_speed: 0.5        #每次减速的上限
@@ -484,9 +482,6 @@ local_costmap:
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
-        continuous_hit_threshold: 1          # 连续命中2次
-        neighborhood_radius: 2               # 5x5邻域（半径2）
-        neighborhood_min_voxels: 1   
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
@@ -562,9 +557,6 @@ global_costmap:
         #   obstacle_min_range: 0.4
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
-        continuous_hit_threshold: 0          # 连续命中2次
-        neighborhood_radius: 2               # 5x5邻域（半径2）
-        neighborhood_min_voxels: 0           # 邻域内至少3个有效体素
         obstacle_hold_time: 0.5              # 障碍物保持时间
         obstacle_expand_size: 0
         enabled: true
@@ -645,7 +637,6 @@ planner_server:
       how_many_corners: 8
       w_euc_cost: 1.0
       w_traversal_cost: 2.5
-      w_heuristic_cost: 1.0
 
 smoother_server:
   ros__parameters:
@@ -681,10 +672,7 @@ behavior_server:
     spin:
       plugin: "nav2_behaviors/Spin"
     backup:
-      plugin: "pb_nav2_behaviors/BackUpFreeSpace"
-      # plugin: "nav2_behaviors/BackUp"
-      # plugin: "nav2_behaviors/BackUpTwzFree"
-      max_radius: 1.0
+      plugin: "xx_nav2_behaviors/BackUpFreeSpace"
     drive_on_heading:
       plugin: "nav2_behaviors/DriveOnHeading"
     wait:
@@ -699,9 +687,7 @@ behavior_server:
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
-    # params for pb_nav2_behaviors/BackUpFreeSpace
     service_name: "global_costmap/get_costmap"
-    robot_radius: 0.4
     max_radius: 2.0
     visualize: false
 
@@ -744,13 +730,12 @@ special_area:
     third_p2_x: 19.898225
     third_p2_y: 7.1
     third_hysteresis_margin: 0.2
-    special_left_top_x: 8.4
-    special_left_top_y: 4.0
-    special_right_bottom_x: 6.0
-    special_right_bottom_y: 1.7
+    special_p1_x: 8.4
+    special_p1_y: 4.0
+    special_p2_x: 8.4
+    special_p2_y: 1.7
+    special_p3_x: 6.0
+    special_p3_y: 1.7
+    special_p4_x: 6.0
+    special_p4_y: 4.0
     special_hysteresis_margin: 0.2
-    # special_left_top_x: 0.4
-    # special_left_top_y: 0.4
-    # special_right_bottom_x: -0.4
-    # special_right_bottom_y: -0.4
-    # special_hysteresis_margin: 0.2

@@ -231,10 +231,8 @@ pc2scan:
 
 pointcloud_frame_trans:
   ros__parameters:
-    # input_topic: /livox/lidar/pointcloud
     input_topic: /cloud_registered
     output_topic: /livox/pointcloud2/transframe
-    # output_frame: base_link
     output_frame: odom
     tran_odom: true
     odom_in: aft_mapped_to_init
@@ -335,7 +333,6 @@ controller_server:
       rotation_ki: 0.1
       rotation_kd: 0.3
       transform_tolerance: 0.02
-      min_max_sum_error: 1.0
       lookahead_dist: 0.3
       use_velocity_scaled_lookahead_dist: true
       lookahead_time: 0.15
@@ -350,11 +347,11 @@ controller_server:
       v_linear_max: 3.5
       v_angular_min: -3.0
       v_angular_max: 3.0
-      curvature_min: 0.35                                # 低曲率阈值，低于此值不减速。
-      curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
-      reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
-      curvature_forward_dist: 0.7                       # 前向距离，用于曲率计算
-      curvature_backward_dist: 0.4                      # 后向距离，用于曲率计算
+      curvature_min: 0.35                                
+      curvature_max: 0.65                                
+      reduction_ratio_at_high_curvature: 0.8           
+      curvature_forward_dist: 0.7                       
+      curvature_backward_dist: 0.4                
       pid_curve_kappa_min: 0.4
       pid_curve_kappa_max: 1.20
       pid_curve_a_lat_max: 3.6
@@ -366,23 +363,22 @@ controller_server:
       pid_curve_projection_trust_dist: 0.2
       pid_curve_kappa_hysteresis: 0.15
       pid_curve_recover_rate: 10.0
-      pid_curve_kappa_fall_rate: 5.0       # 曲率下降速度，越小出弯恢复越慢
-      max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
-      last_vel: 2.0           #如果上一次速度大于这个，曲率减速大减
-      lower_speed: 0.5        #每次减速的上限
+      pid_curve_kappa_fall_rate: 5.0      
+      max_velocity_scaling_factor_rate: 0.8           
+      last_vel: 2.0          
+      lower_speed: 0.5       
       enable_sg_filter: false
       sg_window_size: 5
       sg_poly_order: 2
       use_mpc_control: false
       mpc_Np: 15
       mpc_Nc: 6
-      # 终端目标点
+
       mpc_S_x: 15.0
       mpc_S_y: 15.0
       mpc_S_vx: 0.0
       mpc_S_vy: 0.0
 
-      # 每一步路径跟踪
       mpc_Q_x: 15.0
       mpc_Q_y: 15.0
       mpc_Q_vx: 3.0
@@ -404,25 +400,25 @@ controller_server:
       # inner_plugin: "nav2_mppi_controller::MPPIController"
       # controller_frequency: 50.0
       # lookahead_dist: 0.3
-      # curvature_min: 0.3                                # 低曲率阈值，低于此值不减速。
-      # curvature_max: 0.65                                # 高曲率阈值，高于此值大幅减速。
-      # reduction_ratio_at_high_curvature: 0.8            # 高曲率时的速度降低比例。 0.5 (即减速 50%)
-      # curvature_forward_dist: 0.8                       # 前向距离，用于曲率计算
-      # curvature_backward_dist: 0.2                      # 后向距离，用于曲率计算
+      # curvature_min: 0.3                                
+      # curvature_max: 0.65                              
+      # reduction_ratio_at_high_curvature: 0.8           
+      # curvature_forward_dist: 0.8                      
+      # curvature_backward_dist: 0.2                      
       # large_slow: 0.8
-      # max_velocity_scaling_factor_rate: 0.8             # 速度缩放因子的最大变化率
-      # last_vel: 1.6           #如果上一次速度大于这个，曲率减速大减
-      # lower_speed: 0.5        #每次减速的上限
+      # max_velocity_scaling_factor_rate: 0.8            
+      # last_vel: 1.6           
+      # lower_speed: 0.5    
 
-      # approach_distance: 0.5  #距目标时开始限速
+      # approach_distance: 0.5  
       # approach_velocity: 0.8
-      # direct_approach_distance: 1.5  #进入直接驱动模式的距离，绕过MPPI防止画弧
-      # direct_approach_kp: 8.0  #直接驱动P控制增益
+      # direct_approach_distance: 1.5  
+      # direct_approach_kp: 8.0 
       # time_steps: 60 # prediction horizon = time_steps x model_dt = 3s
       # model_dt: 0.02 # =1/controller_frequency
       # batch_size: 800 # Count of randomly sampled candidate trajectories from current optimal control sequence in a given iteration. 1000 @ 50 Hz or 2000 @ 30 Hz seems to produce good results.
       # open_loop: false
-      # vx_std: 0.35 #增大采样多样性，让MPPI能采到更多减速/停止轨迹
+      # vx_std: 0.35 
       # vy_std: 0.35
       # wz_std: 0.1
 
@@ -434,11 +430,11 @@ controller_server:
       # vy_min: -3.5
       # wz_min: -3.5
 
-      # ax_max: 4.0 #加速度提高，高速时能快速响应
+      # ax_max: 4.0
       # ay_max: 4.0
       # az_max: 4.0
 
-      # ax_min: -4.0 #关键：制动力必须对称，高速下刹得住
+      # ax_min: -4.0 
       # ay_min: -4.0
       # az_min: -4.0
       # iteration_count: 1 # Recommended to remain as 1 and instead prefer larger batch sizes.
@@ -468,11 +464,11 @@ controller_server:
       #   cost_weight: 5.0
       #   threshold_to_consider: 1.0 # Minimal distance (m) between robot and goal above which goal distance cost considered. It is wise to start with this as being the same as your prediction horizon to have a clean hand-off with the path follower critic.
       #   # i.e. When this critic is add to the cost function
-      # CostCritic: #通过 costmap 梯度引导避障
+      # CostCritic: 
       #   enabled: true
       #   cost_power: 1
-      #   cost_weight: 3.0 #适当降低，配合修正后的 inflation 梯度
-      #   critical_cost: 5.0 #关键修正！只有 inscribed/lethal 才触发碰撞惩罚，不再把整个膨胀区都当碰撞
+      #   cost_weight: 3.0 
+      #   critical_cost: 5.0 
       #   consider_footprint: true
       #   collision_cost: 5.0
       #   near_goal_distance: 1.0
@@ -486,11 +482,11 @@ controller_server:
       # ObstaclesCritic:
       #   enabled: false
       #   cost_power: 1
-      #   repulsion_weight: 1.5 #靠近障碍时><collision_margin_distance的代价  ! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
+      #   repulsion_weight: 1.5  ! Higher radii should correspond to reduced repulsion_weight due to the penalty formation (e.g. inflation_radius - min_dist_to_obstacle). 
       #   # This is separated from the critical term to allow for fine tuning of obstacle behaviors with path alignment for dynamic scenes without impacting actions which may directly lead to near-collisions. This is applied within the inflation_radius distance from obstacles.
-      #   critical_weight: 3.0  #特别接近障碍，<collision_margin_distance时的代价
+      #   critical_weight: 3.0  
       #   consider_footprint: true # turn on this can increase computation cost
-      #   collision_cost: 5.0 #如果采样的轨迹碰撞了，给一个很大的代价
+      #   collision_cost: 5.0 
       #   collision_margin_distance: 0.01 # 0.05 # Margin distance (m) from collision to apply severe penalty, similar to footprint inflation. Between 0.05-0.2 is reasonable. Note that it will highly influence the controller not to enter spaces more confined than this, so ensure this parameter is set lower than the narrowest you expect the robot to need to traverse through.
       #   near_goal_distance: 1.0 # if the robot is within this distance of the goal, it will not be repelled by obstacles.
       #   # inflation_radius: 0.4 # Radius to inflate costmap around lethal obstacles. This should be the same as for your inflation layer (Humble only)
@@ -517,7 +513,7 @@ local_costmap:
       publish_frequency: 20.0
       global_frame: odom
       robot_base_frame: fake_base_link
-      rolling_window: true              #滚动优化
+      rolling_window: true             
       width: 8
       height: 8
       resolution: 0.05
@@ -538,9 +534,6 @@ local_costmap:
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
         enabled: true
-        continuous_hit_threshold: 1          # 连续命中2次
-        neighborhood_radius: 2               # 5x5邻域（半径2）
-        neighborhood_min_voxels: 1   
         track_unknown_space: true
         footprint_clearing_enabled: true
         publish_voxel_map: false
@@ -567,11 +560,10 @@ local_costmap:
         tilt_recover_threshold_deg: 20.0
 
         point_cluster_tolerance: 0.2
-        min_cluster_points: 3   # 硬条件簇至少有3个点
-        cluster_hard_evidence_min_points: 2  # 至少2个点达到硬梯度
+        min_cluster_points: 3   
+        cluster_hard_evidence_min_points: 2  
         soft_min_cluster_points: 2
 
-        # 软簇基础通过阈值
         soft_score_threshold: 0.6
 
         height_score_full: 0.4
@@ -634,10 +626,7 @@ global_costmap:
 
       intensity_voxel_layer:
         plugin: xx_nav2_costmap_2d::IntensityVoxelLayer
-        continuous_hit_threshold: 0          # 连续命中2次
-        neighborhood_radius: 2               # 5x5邻域（半径2）
-        neighborhood_min_voxels: 0           # 邻域内至少3个有效体素
-        obstacle_hold_time: 0.5              # 障碍物保持时间
+        obstacle_hold_time: 0.5              
         near_obstacle_radius: 2.0
         obstacle_expand_size: 0
         enabled: true
@@ -664,11 +653,10 @@ global_costmap:
         tilt_recover_threshold_deg: 15.0
 
         point_cluster_tolerance: 0.2
-        min_cluster_points: 3   # 硬条件簇至少有3个点
-        cluster_hard_evidence_min_points: 2  # 至少2个点达到硬梯度
+        min_cluster_points: 3  
+        cluster_hard_evidence_min_points: 2  
         soft_min_cluster_points: 2
 
-        # 软簇基础通过阈值
         soft_score_threshold: 0.6
 
         height_score_full: 0.4
@@ -678,20 +666,16 @@ global_costmap:
 
         acceleration_suppression_radius: 2.0
 
-        # 加速度超限后，继续关闭近场感知的时间
         acceleration_suppression_hold_time: 0.1
 
         enable_sudden_obstacle_history_filter: true
 
         sudden_obstacle_near_radius: 4.0
 
-        # 每个栅格需持续空闲1秒
         sudden_obstacle_stable_free_duration: 2.0
 
-        # 适合15Hz以上costmap；频率低时适当增大
         sudden_obstacle_max_observation_gap: 0.2
 
-        # 一帧30个固定世界栅格由空闲变障碍
         sudden_obstacle_rising_cell_threshold: 30
 
         sudden_obstacle_history_retention: 5.0
@@ -738,32 +722,10 @@ planner_server:
     expected_planner_frequency: 20.0
     planner_plugins: ["GridBased"]
     GridBased:
-      # plugin: "nav2_smac_planner/SmacPlanner2D"
-      # tolerance: 0.11                      # tolerance for planning if unable to reach exact pose, in meters
-      # downsample_costmap: false             # whether or not to downsample the map
-      # downsampling_factor: 1                # multiplier for the resolution of the costmap layer (e.g. 2 on a 5cm costmap would be 10cm)
-      # allow_unknown: True                   # allow traveling in unknown space
-      # max_iterations: 50000               # maximum total iterations to search for before failing (in case unreachable), set to -1 to disable
-      # max_on_approach_iterations: 100      # maximum number of iterations to attempt to reach goal once in tolerance
-      # max_planning_time: 0.5                # max time in s for planner to plan, smooth
-      # cost_travel_multiplier: 2.0           # Cost multiplier to apply to search to steer away from high cost areas. Larger values will place in the center of aisles more exactly (if non-`FREE` cost potential field exists) but take slightly longer to compute. To optimize for speed, a value of 1.0 is reasonable. A reasonable tradeoff value is 2.0. A value of 0.0 effective disables steering away from obstacles and acts like a naive binary search A*.
-      # use_final_approach_orientation: false # Whether to set the final path pose at the goal's orientation to the requested orientation (false) or in line with the approach angle so the robot doesn't rotate to heading (true)
-      # smoother:
-      #   max_iterations: 500
-      #   w_smooth: 0.1
-      #   w_data: 0.4
-      #   tolerance: 1.0e-8
 
-      # plugin: "nav2_navfn_planner/NavfnPlanner"
-      # tolerance: 0.1
-      # use_astar: false
-      # allow_unknown: true
-
-      plugin: "theta_star_planner/ThetaStarPlanner" # In Iron and older versions, "/" was used instead of "::"
-      how_many_corners: 8
+      plugin: "theta_star_planner/ThetaStarPlanner" 
       w_euc_cost: 1.0
       w_traversal_cost: 2.5
-      w_heuristic_cost: 1.0
       same_goal_tolerance: 0.15
       switch_improvement_ratio: 0.1
       max_reuse_path_deviation: 0.20
@@ -786,11 +748,7 @@ fake_vel_transform:
     fake_robot_base_frame: "fake_base_link"
     input_cmd_vel_topic: "cmd_vel"
     output_cmd_vel_topic: "cmd_vel_base"
-    # cmd_spin_topic: "cmd_spin"
-    # init_spin_speed: 3.14
-    enable_linear_deceleration_limit: true
-
-    # 最大线减速度，单位m/s²
+    enable_linear_deceleration_limit: false
     max_linear_deceleration: 6.0
 behavior_server:
   ros__parameters:
@@ -803,10 +761,7 @@ behavior_server:
     spin:
       plugin: "nav2_behaviors/Spin"
     backup:
-      plugin: "pb_nav2_behaviors/BackUpFreeSpace"
-      # plugin: "nav2_behaviors/BackUp"
-      # plugin: "nav2_behaviors/BackUpTwzFree"
-      max_radius: 1.0
+      plugin: "xx_nav2_behaviors/BackUpFreeSpace"
     drive_on_heading:
       plugin: "nav2_behaviors/DriveOnHeading"
     wait:
@@ -821,17 +776,15 @@ behavior_server:
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
-    # params for pb_nav2_behaviors/BackUpFreeSpace
     service_name: "global_costmap/get_costmap"
-    robot_radius: 0.4
     max_radius: 2.0
     visualize: false
 
 waypoint_follower:
   ros__parameters:
-    loop_rate: 20  #检查导航任务结果的频率
-    stop_on_failure: false #如果单个航点失败继续移动到下一个航点
-    waypoint_task_executor_plugin: "wait_at_waypoint" #到达航点后暂停指定长度的时间
+    loop_rate: 20  
+    stop_on_failure: false 
+    waypoint_task_executor_plugin: "wait_at_waypoint" 
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: True
@@ -854,28 +807,16 @@ velocity_smoother:
 special_area:
   ros__parameters:
     fight_outpost_on_island: true
-    # left_top_x: 0.494120
-    # left_top_y: -5.220203
-    # right_bottom_x: 5.402241
-    # right_bottom_y: -7.835625
     left_top_x: 0.3
     left_top_y: -5.620203
     right_bottom_x: 4.5
     right_bottom_y: -8.035625
-    # left_top_x: 8.9
-    # left_top_y: 0.7
-    # right_bottom_x: 7.5
-    # right_bottom_y: -2.5
     special_active_duration_sec: 20.0
     third_p1_x: 17.02
     third_p1_y: 5.991264
-    third_p2_x: 19.898225sudo apt install screenruler
+    third_p2_x: 19.898225
     third_p2_y: 7.1
     third_hysteresis_margin: 0.2
-    # special_left_top_x: 8.4
-    # special_left_top_y: 4.0
-    # special_right_bottom_x: 6.0
-    # special_right_bottom_y: 1.7
     special_p1_x: 8.4
     special_p1_y: 5.2
     special_p2_x: 5.8
@@ -884,8 +825,4 @@ special_area:
     special_p3_y: 1.8
     special_p4_x: 7.2
     special_p4_y: 5.2
-    # special_left_top_x: 118.8
-    # special_left_top_y: 114.0
-    # special_right_bottom_x: 116.0
-    # special_right_bottom_y: 111.0
     special_hysteresis_margin: 0.2
